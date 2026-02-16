@@ -1,48 +1,41 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 
-// 1. Tạo Context
 const AuthContext = createContext();
 
-// 2. Tạo Hook useAuth (Cái bạn đang thiếu đây!)
-// Dòng này rất quan trọng, nó giúp các file khác dùng được hàm useAuth()
-export const useAuth = () => {
-  return useContext(AuthContext);
-};
-
-// 3. Tạo Provider
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
+    // 1. Khởi tạo state bằng cách đọc ngay từ LocalStorage (để F5 không bị mất)
+    const [user, setUser] = useState(() => {
+        const savedUser = localStorage.getItem('user');
+        return savedUser ? JSON.parse(savedUser) : null;
+    });
 
-  // Tự động nạp user từ bộ nhớ khi tải trang
-  useEffect(() => {
-    const storedUser = localStorage.getItem('discord_user');
-    if (storedUser) {
-      try {
-        setUser(JSON.parse(storedUser));
-      } catch (e) {
-        console.error("Lỗi đọc user cũ:", e);
-        localStorage.removeItem('discord_user');
-      }
-    }
-  }, []);
+    // 2. Hàm đăng nhập (Lưu vào bộ nhớ)
+    const loginDiscord = (userData) => {
+        setUser(userData);
+        localStorage.setItem('user', JSON.stringify(userData));
+    };
 
-  // Hàm đăng nhập
-  const loginDiscord = (userData) => {
-    setUser(userData);
-    localStorage.setItem('discord_user', JSON.stringify(userData));
-  };
+    // 3. Hàm đăng xuất (Xóa bộ nhớ)
+    const logout = () => {
+        setUser(null);
+        localStorage.removeItem('user');
+        localStorage.removeItem('token');
+        window.location.href = '/'; // Tải lại trang cho sạch
+    };
 
-  // Hàm đăng xuất
-  const logout = () => {
-    setUser(null);
-    localStorage.removeItem('discord_user');
-  };
+    // 4. Theo dõi thay đổi (Phòng hờ)
+    useEffect(() => {
+        const savedUser = localStorage.getItem('user');
+        if (savedUser && !user) {
+            setUser(JSON.parse(savedUser));
+        }
+    }, []);
 
-  return (
-    <AuthContext.Provider value={{ user, loginDiscord, logout }}>
-      {children}
-    </AuthContext.Provider>
-  );
+    return (
+        <AuthContext.Provider value={{ user, loginDiscord, logout }}>
+            {children}
+        </AuthContext.Provider>
+    );
 };
 
-export default AuthContext;
+export const useAuth = () => useContext(AuthContext);
