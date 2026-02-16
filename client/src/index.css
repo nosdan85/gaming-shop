@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-[#000000] text-[#F5F5F7] overflow-x-hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Animations */
+@keyframes popIn {
+  0% { opacity: 0; transform: scale(0.95); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+.animate-pop-in {
+  animation: popIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+/* Scrollbar */
+.custom-scrollbar::-webkit-scrollbar { width: 4px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 4px; }
+
+/* Hide Scrollbar */
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Utilities */
+.btn-primary {
+  @apply bg-[#0071e3] text-white font-medium rounded-full transition-all duration-300 hover:bg-[#0077ED] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed;
+}
+
+.card-apple {
+  @apply bg-[#1c1c1e] rounded-[24px] overflow-hidden transition-all duration-500 hover:bg-[#2c2c2e] hover:scale-[1.02] cursor-pointer relative;
+}
