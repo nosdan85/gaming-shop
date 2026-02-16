@@ -1,38 +1,64 @@
-import { useContext, useState } from 'react';
+import { useContext, useState, useEffect } from 'react';
 import { ShopContext } from '../context/ShopContext';
 import { XMarkIcon, CheckBadgeIcon, UserCircleIcon } from '@heroicons/react/24/outline';
 import axios from 'axios';
 
 const CartModal = () => {
-  const { cart, removeFromCart, isCartOpen, setIsCartOpen, user, logoutDiscord, clearCart } = useContext(ShopContext);
+  // Lấy user từ Context (có thể bị null khi F5)
+  const { cart, removeFromCart, isCartOpen, setIsCartOpen, user: contextUser, logoutDiscord, clearCart } = useContext(ShopContext);
+  
   const [isProcessing, setIsProcessing] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [inviteLink, setInviteLink] = useState("");
+  
+  // --- FIX QUAN TRỌNG: Tự lấy user từ LocalStorage nếu Context chưa có ---
+  const [localUser, setLocalUser] = useState(null);
+
+  useEffect(() => {
+      // Mỗi khi mở giỏ hàng, kiểm tra lại LocalStorage ngay lập tức
+      const stored = localStorage.getItem('user');
+      if (stored) {
+          try {
+              setLocalUser(JSON.parse(stored));
+          } catch (e) {
+              console.error("Lỗi đọc LocalStorage", e);
+          }
+      }
+  }, [isCartOpen]); // Chạy lại khi mở giỏ hàng
+
+  // Ưu tiên dùng Context, nếu không có thì dùng LocalStorage
+  const user = contextUser || localUser;
+  // --------------------------------------------------------------------
 
   const total = cart.reduce((acc, item) => acc + item.price * item.quantity, 0).toFixed(2);
 
   const handleDiscordLogin = () => {
-    const CLIENT_ID = import.meta.env.VITE_DISCORD_CLIENT_ID;
+    // Sửa lại cách lấy biến môi trường cho chắc chắn
+    const CLIENT_ID = import.meta.env.VITE_DISCORD_CLIENT_ID || "1439615003572572250"; // ID dự phòng
     const REDIRECT_URI = `${window.location.origin}/auth/discord/callback`;
     const SCOPE = "identify guilds.join"; 
     window.location.href = `https://discord.com/api/oauth2/authorize?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=code&scope=${encodeURIComponent(SCOPE)}`;
   };
 
   const handleCheckout = async () => {
-    if (!user) return alert("Please link Discord first!");
+    // Kiểm tra kỹ hơn: Phải có user VÀ có discordId
+    if (!user || !user.discordId) return alert("Please link Discord first!");
     
     setIsProcessing(true);
     try {
+      // Dùng user.discordId lấy được từ fallback
       const res = await axios.post('/api/shop/checkout', { discordId: user.discordId, cartItems: cart });
       alert(`✅ Order Success! ID: ${res.data.orderId}\nPlease check your Discord Ticket.`);
       clearCart();
       setIsCartOpen(false);
     } catch (err) {
+      console.error(err);
       if (err.response && err.response.data.error_code === "USER_NOT_IN_GUILD") {
           setInviteLink(err.response.data.invite_link);
           setShowJoinModal(true);
       } else {
-          alert("Checkout Failed. Please try again.");
+          // Hiện lỗi chi tiết hơn chút để dễ debug
+          alert(`Checkout Failed: ${err.response?.data?.error || "Unknown Error"}`);
       }
     } finally {
       setIsProcessing(false);
@@ -46,7 +72,7 @@ const CartModal = () => {
       {/* Backdrop */}
       <div className="absolute inset-0 bg-black/80 backdrop-blur-xl transition-opacity" onClick={() => setIsCartOpen(false)}></div>
 
-      {/* MAIN MODAL - Thêm class animate-pop-in để có hiệu ứng nảy */}
+      {/* MAIN MODAL */}
       <div className="relative bg-[#09090b] w-full h-full md:h-[85vh] md:max-w-4xl md:rounded-[32px] shadow-2xl flex flex-col md:flex-row overflow-hidden border border-[#2c2c2e] animate-pop-in">
         
         {/* Nút đóng Mobile */}
@@ -84,11 +110,12 @@ const CartModal = () => {
            <button onClick={() => setIsCartOpen(false)} className="hidden md:block self-end p-2 bg-[#2c2c2e] rounded-full text-white mb-4"><XMarkIcon className="w-5 h-5"/></button>
            
            <div className="bg-[#000000] p-5 rounded-2xl border border-[#2c2c2e] mb-4">
-              {user ? (
+              {/* Kiểm tra User ở đây: Dùng biến user đã được fallback */}
+              {user && user.discordId ? (
                 <div className="text-center">
                    <div className="flex items-center justify-center gap-2 mb-2">
                       <CheckBadgeIcon className="w-6 h-6 text-green-500"/>
-                      <span className="text-white font-bold truncate max-w-[150px]">{user.discordUsername}</span>
+                      <span className="text-white font-bold truncate max-w-[150px]">{user.discordUsername || user.username}</span>
                    </div>
                    <button onClick={logoutDiscord} className="text-[#ff3b30] text-xs hover:underline">Sign Out</button>
                 </div>
