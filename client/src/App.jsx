@@ -5,7 +5,16 @@ import Home from './pages/Home';
 import AuthCallback from './pages/AuthCallback';
 import { ShopProvider } from './context/ShopContext';
 import { AuthProvider } from './context/AuthContext';
-import CartModal from './components/CartModal'; // Import đúng
+import CartModal from './components/CartModal';
+import axios from 'axios'; // <-- 1. Import Axios
+
+// --- 2. THÊM ĐOẠN CẤU HÌNH NÀY ---
+// Lấy link server từ biến môi trường (đã cài trên Vercel)
+const apiUrl = import.meta.env.VITE_API_URL; 
+if (apiUrl) {
+  axios.defaults.baseURL = apiUrl;
+}
+// --------------------------------
 
 function App() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -13,8 +22,7 @@ function App() {
   return (
     <AuthProvider>
       <ShopProvider>
-        <div className="min-h-screen bg-[#050B1E] text-white font-sans selection:bg-purple-500 selection:text-white">
-           {/* Đặt CartModal ở đây để nó có thể đè lên mọi trang (nếu muốn) */}
+        <div className="min-h-screen bg-[#000000] text-[#F5F5F7] font-sans selection:bg-blue-500 selection:text-white">
            <CartModal /> 
 
            <Routes>
@@ -22,14 +30,10 @@ function App() {
                <>
                  <Navbar onSearch={setSearchTerm}/>
                  <Home searchTerm={searchTerm}/>
-                 {/* Đã xóa <CartSidebar /> cũ */}
                </>
              } />
 
-             {/* Route xử lý login Discord */}
              <Route path="/auth/discord/callback" element={<AuthCallback />} />
-             
-             {/* Route Admin */}
              <Route path="/admin" element={<div>Admin Login</div>} />
            </Routes>
         </div>
