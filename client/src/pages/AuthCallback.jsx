@@ -1,42 +1,55 @@
-import { useEffect, useContext, useRef } from 'react'; // Thêm useRef
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { ShopContext } from '../context/ShopContext';
+import { useAuth } from '../context/AuthContext';
 
 const AuthCallback = () => {
-  const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
-  const { loginDiscord } = useContext(ShopContext);
-  const processed = useRef(false); // Cờ chống chạy 2 lần
-
-  useEffect(() => {
-    const code = searchParams.get('code');
+    const navigate = useNavigate();
+    const { loginDiscord } = useAuth();
     
-    // Nếu có code và chưa xử lý
-    if (code && !processed.current) {
-      processed.current = true; // Đánh dấu đã chạy
+    // useRef giúp biến này không bị reset khi component render lại
+    const hasFetched = useRef(false); 
 
-      axios.post('/api/shop/auth/discord', { code })
-        .then(res => {
-          loginDiscord(res.data);
-          navigate('/');
-        })
-        .catch(err => {
-          console.error("Login Failed", err);
-          // Nếu lỗi do code cũ, vẫn về trang chủ
-          navigate('/');
-        });
-    } else if (!code) {
-        navigate('/');
-    }
-  }, []);
+    useEffect(() => {
+        const handleAuth = async () => {
+            // Lấy code từ URL
+            const params = new URLSearchParams(window.location.search);
+            const code = params.get('code');
 
-  return (
-    <div className="min-h-screen bg-[#050B1E] flex flex-col items-center justify-center text-white">
-      <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#4DA3FF] mb-4"></div>
-      <h2 className="text-xl font-bold">Verifying Discord...</h2>
-    </div>
-  );
+            // NẾU: Không có code HOẶC Đã chạy rồi -> Thì dừng lại ngay
+            if (!code || hasFetched.current) return;
+
+            // Đánh dấu là đã chạy
+            hasFetched.current = true;
+
+            try {
+                // Gọi về Server Render để đổi code lấy thông tin User
+                // Lưu ý: Đảm bảo biến môi trường VITE_API_URL đã đúng
+                const response = await axios.post('/api/shop/auth/discord', { code });
+
+                if (response.data.user) {
+                    loginDiscord(response.data.user);
+                    navigate('/'); // Thành công -> Về trang chủ
+                }
+            } catch (error) {
+                console.error("Login Failed:", error);
+                // Lỗi cũng về trang chủ luôn, KHÔNG ĐƯỢC redirect lại Discord
+                navigate('/'); 
+            }
+        };
+
+        handleAuth();
+    }, [navigate, loginDiscord]);
+
+    return (
+        <div className="min-h-screen flex items-center justify-center bg-black text-white">
+            <div className="text-center">
+                <h2 className="text-2xl font-bold mb-4">Processing Login...</h2>
+                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-white mx-auto"></div>
+                <p className="mt-4 text-gray-400">Please wait a moment.</p>
+            </div>
+        </div>
+    );
 };
 
 export default AuthCallback;
