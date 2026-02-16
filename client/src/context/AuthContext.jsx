@@ -4,6 +4,7 @@ import { createContext, useContext, useState, useEffect } from 'react';
 const AuthContext = createContext();
 
 // 2. Tạo Hook useAuth (Cái bạn đang thiếu đây!)
+// Dòng này rất quan trọng, nó giúp các file khác dùng được hàm useAuth()
 export const useAuth = () => {
   return useContext(AuthContext);
 };
