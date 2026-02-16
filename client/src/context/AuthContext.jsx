@@ -1,23 +1,47 @@
-import { createContext, useState } from 'react';
+import { createContext, useContext, useState, useEffect } from 'react';
 
-export const AuthContext = createContext();
+// 1. Tạo Context
+const AuthContext = createContext();
 
-export const AuthProvider = ({ children }) => {
-    const [token, setToken] = useState(localStorage.getItem('adminToken'));
-
-    const login = (newToken) => {
-        setToken(newToken);
-        localStorage.setItem('adminToken', newToken);
-    };
-
-    const logout = () => {
-        setToken(null);
-        localStorage.removeItem('adminToken');
-    };
-
-    return (
-        <AuthContext.Provider value={{ token, login, logout }}>
-            {children}
-        </AuthContext.Provider>
-    );
+// 2. Tạo Hook useAuth (Cái bạn đang thiếu đây!)
+export const useAuth = () => {
+  return useContext(AuthContext);
 };
+
+// 3. Tạo Provider
+export const AuthProvider = ({ children }) => {
+  const [user, setUser] = useState(null);
+
+  // Tự động nạp user từ bộ nhớ khi tải trang
+  useEffect(() => {
+    const storedUser = localStorage.getItem('discord_user');
+    if (storedUser) {
+      try {
+        setUser(JSON.parse(storedUser));
+      } catch (e) {
+        console.error("Lỗi đọc user cũ:", e);
+        localStorage.removeItem('discord_user');
+      }
+    }
+  }, []);
+
+  // Hàm đăng nhập
+  const loginDiscord = (userData) => {
+    setUser(userData);
+    localStorage.setItem('discord_user', JSON.stringify(userData));
+  };
+
+  // Hàm đăng xuất
+  const logout = () => {
+    setUser(null);
+    localStorage.removeItem('discord_user');
+  };
+
+  return (
+    <AuthContext.Provider value={{ user, loginDiscord, logout }}>
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+export default AuthContext;
