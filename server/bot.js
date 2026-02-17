@@ -130,13 +130,16 @@ client.on('messageCreate', async message => {
         }
     }
 
-    // Các lệnh phía dưới CHỈ cho owner
-    if (message.author.id !== OWNER_ID) {
-        return; // Không báo gì để tránh spam
-    }
-
     // 2) Xem nhanh người đã link trong DB: !linked_users hoặc !checkdb
     if (cmd === '!linked_users' || cmd === '!checkdb') {
+        if (message.author.id !== OWNER_ID) {
+            return message.reply(
+                `Bạn không có quyền dùng lệnh này.\n` +
+                `Your ID: \`${message.author.id}\`\n` +
+                `OWNER_ID (env): \`${OWNER_ID}\``
+            );
+        }
+
         const User = require('./models/User');
         const users = await User.find({}).sort({ joinedAt: 1 });
 
@@ -155,6 +158,14 @@ client.on('messageCreate', async message => {
     // 3) GỬI DM CHO TẤT CẢ USER ĐÃ LIÊN KẾT KHI SERVER CŨ BỊ BAN / CHUYỂN SERVER MỚI
     // Cú pháp: !notify_new_server https://discord.gg/xxxx
     if (cmd === '!notify_new_server') {
+        if (message.author.id !== OWNER_ID) {
+            return message.reply(
+                `Bạn không có quyền dùng lệnh này.\n` +
+                `Your ID: \`${message.author.id}\`\n` +
+                `OWNER_ID (env): \`${OWNER_ID}\``
+            );
+        }
+
         const inviteLink = args[1];
         if (!inviteLink) {
             return message.reply('Vui lòng nhập link invite server mới.\nVí dụ: `!notify_new_server https://discord.gg/xxxx`');
