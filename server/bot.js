@@ -98,18 +98,88 @@ client.on('interactionCreate', async interaction => {
 
 // --- ADMIN COMMANDS ---
 client.on('messageCreate', async message => {
-    const MY_ID = '123456789012345678'; // <-- ID ADMIN CỦA BẠN
-    if (message.author.id !== MY_ID) return;
+    // Bỏ qua bot & DM
+    if (message.author.bot || !message.guild) return;
 
-    if (message.content === '!checkdb') {
+    // CHỈ ADMIN ĐƯỢC DÙNG CÁC LỆNH NÀY
+    const OWNER_ID = process.env.DISCORD_OWNER_ID || '123456789012345678'; // <-- ĐỔI TRONG .env HOẶC GIỮ NGUYÊN
+    if (message.author.id !== OWNER_ID) return;
+
+    const args = message.content.trim().split(/\s+/);
+    const cmd = args[0].toLowerCase();
+
+    // 1) Xem nhanh người đã link trong DB (giữ nguyên logic cũ, đổi sang !linked_users)
+    if (cmd === '!linked_users' || cmd === '!checkdb') {
+        const User = require('./models/User');
+        const users = await User.find({}).sort({ joinedAt: 1 });
+
+        if (!users.length) {
+            return message.reply('Hiện chưa có ai liên kết Discord với bot.');
+        }
+
+        let content = `**Total Linked Users:** ${users.length}\n`;
+        users.slice(-50).forEach((u, idx) => { 
+            content += `${idx + 1}. <@${u.discordId}> (${u.discordUsername})\n`;
+        });
+        if(users.length > 50) content += `...and ${users.length - 50} more.`;
+        return message.reply(content);
+    }
+
+    // 2) GỬI DM CHO TẤT CẢ USER ĐÃ LIÊN KẾT KHI SERVER CŨ BỊ BAN / CHUYỂN SERVER MỚI
+    // Cú pháp: !notify_new_server https://discord.gg/xxxx
+    if (cmd === '!notify_new_server') {
+        const inviteLink = args[1];
+        if (!inviteLink) {
+            return message.reply('Vui lòng nhập link invite server mới.\nVí dụ: `!notify_new_server https://discord.gg/xxxx`');
+        }
+
         const User = require('./models/User');
         const users = await User.find({});
-        let content = `**Total Linked Users:** ${users.length}\n`;
-        users.slice(-20).forEach(u => { 
-            content += `<@${u.discordId}> (${u.discordUsername})\n`;
-        });
-        if(users.length > 20) content += `...and ${users.length - 20} more.`;
-        message.reply(content);
+
+        if (!users.length) {
+            return message.reply('Hiện chưa có ai liên kết Discord với bot, không có ai để gửi DM.');
+        }
+
+        await message.reply(`Bắt đầu gửi DM cho **${users.length}** người đã liên kết. Việc này có thể mất một lúc...`);
+
+        for (const u of users) {
+            try {
+                const discordUser = await client.users.fetch(u.discordId);
+                await discordUser.send(
+                    `Server cũ của shop đã bị ban / không còn hoạt động.\n` +
+                    `Đây là link server mới, hãy join lại nhé:\n${inviteLink}`
+                );
+
+                // Nghỉ nhẹ để hạn chế rate-limit
+                await new Promise(res => setTimeout(res, 500));
+            } catch (err) {
+                console.error(`Không gửi được DM tới ${u.discordId}:`, err);
+            }
+        }
+
+        return;
+    }
+
+    // 3) (OPTIONAL) ĐỂ USER TỰ /LINK BẰNG LỆNH TEXT
+    // Cú pháp: !link  -> bot sẽ lấy ID & username hiện tại của người dùng
+    if (cmd === '!link') {
+        const User = require('./models/User');
+        try {
+            const existing = await User.findOne({ discordId: message.author.id });
+            if (existing) {
+                return message.reply('Bạn đã liên kết Discord với bot trước đó rồi.');
+            }
+
+            await User.create({
+                discordId: message.author.id,
+                discordUsername: message.author.tag,
+            });
+
+            return message.reply('Đã liên kết acc Discord của bạn với bot. Nếu server có vấn đề, bot sẽ DM cho bạn.');
+        } catch (err) {
+            console.error('Lỗi lệnh !link:', err);
+            return message.reply('Đã xảy ra lỗi khi liên kết, vui lòng thử lại sau.');
+        }
     }
 });
 
