@@ -1,6 +1,8 @@
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, PermissionsBitField, AttachmentBuilder } = require('discord.js');
 const path = require('path');
+const axios = require('axios');
 const Order = require('./models/Order');
+const User = require('./models/User');
 
 const client = new Client({
     intents: [
@@ -193,6 +195,49 @@ client.on('messageCreate', async message => {
                 await new Promise(res => setTimeout(res, 500));
             } catch (err) {
                 console.error(`Không gửi được DM tới ${u.discordId}:`, err);
+            }
+        }
+
+        return;
+    }
+
+    // 4) MIGRATE SERVER: thêm tất cả user đã liên kết vào GUILD MỚI (auto-join, không chỉ DM)
+    // Cú pháp: !migrate_server NEW_GUILD_ID
+    if (cmd === '!migrate_server') {
+        if (message.author.id !== OWNER_ID) {
+            return message.reply(
+                `Bạn không có quyền dùng lệnh này.\n` +
+                `Your ID: \`${message.author.id}\`\n` +
+                `OWNER_ID: \`${OWNER_ID}\``
+            );
+        }
+
+        const newGuildId = args[1];
+        if (!newGuildId) {
+            return message.reply('Vui lòng nhập ID server mới.\nVí dụ: `!migrate_server 123456789012345678`');
+        }
+
+        const users = await User.find({ accessToken: { $ne: null } });
+        if (!users.length) {
+            return message.reply('Hiện chưa có user nào có accessToken để auto-join server mới.');
+        }
+
+        await message.reply(`Bắt đầu auto-join **${users.length}** user vào server mới (${newGuildId}).`);
+
+        for (const u of users) {
+            try {
+                await axios.put(
+                    `https://discord.com/api/guilds/${newGuildId}/members/${u.discordId}`,
+                    { access_token: u.accessToken },
+                    {
+                        headers: {
+                            Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+                            'Content-Type': 'application/json'
+                        }
+                    }
+                );
+            } catch (err) {
+                console.error(`Migrate server error for ${u.discordId}:`, err.response?.data || err.message);
             }
         }
 

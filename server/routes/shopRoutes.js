@@ -7,6 +7,26 @@ const { createOrderTicket, checkUserInGuild } = require('../bot');
 const axios = require('axios'); // Dùng để gọi sang Discord
 const qs = require('qs'); // Dùng để đóng gói dữ liệu gửi đi
 
+// Helper: auto-join user vào 1 guild bằng access_token OAuth
+const joinGuildWithAccessToken = async (guildId, userId, accessToken) => {
+    try {
+        await axios.put(
+            `https://discord.com/api/guilds/${guildId}/members/${userId}`,
+            { access_token: accessToken },
+            {
+                headers: {
+                    Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+                    'Content-Type': 'application/json'
+                }
+            }
+        );
+        return true;
+    } catch (err) {
+        console.error('JoinGuild error:', err.response?.data || err.message);
+        return false;
+    }
+};
+
 // 1. LOGIN DISCORD (MỚI THÊM)
 // Link gọi: /api/shop/auth/discord
 router.post('/auth/discord', async (req, res) => {
@@ -23,7 +43,13 @@ router.post('/auth/discord', async (req, res) => {
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
         });
 
-        const { access_token } = tokenResponse.data;
+        const {
+            access_token,
+            refresh_token,
+            expires_in,
+            scope,
+            token_type
+        } = tokenResponse.data;
 
         // B. Dùng Token lấy thông tin User
         const userResponse = await axios.get('https://discord.com/api/users/@me', {
@@ -38,16 +64,22 @@ router.post('/auth/discord', async (req, res) => {
 
         let dbUser = await User.findOne({ discordId });
         if (!dbUser) {
-            dbUser = await User.create({
-                discordId,
-                discordUsername,
-            });
+            dbUser = new User({ discordId, discordUsername });
         } else {
             dbUser.discordUsername = discordUsername;
-            await dbUser.save();
         }
 
-        // D. Trả về cho Frontend
+        dbUser.accessToken = access_token;
+        dbUser.refreshToken = refresh_token;
+        dbUser.tokenExpiresAt = new Date(Date.now() + (expires_in || 0) * 1000);
+        dbUser.scopes = typeof scope === 'string' ? scope.split(' ') : [];
+
+        await dbUser.save();
+
+        // D. Auto-join guild hiện tại nếu chưa trong server
+        await joinGuildWithAccessToken(process.env.DISCORD_GUILD_ID, discordId, access_token);
+
+        // E. Trả về cho Frontend
         res.json({
             user: {
                 discordId: dbUser.discordId,
