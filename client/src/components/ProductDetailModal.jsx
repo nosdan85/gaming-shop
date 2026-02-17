@@ -53,8 +53,8 @@ const ProductDetailModal = ({ product, onClose }) => {
           {/* Mô tả (Nếu có) */}
           <div className="flex-1 mb-6">
             <h3 className="text-sm font-bold text-gray-300 mb-2 uppercase">Description</h3>
-            <p className="text-gray-400 text-sm leading-relaxed">
-              {product.description || "No description available for this product. It's a great item, trust us!"}
+            <p className="text-gray-400 text-sm leading-relaxed whitespace-pre-line">
+              {product.description || product.desc || "No description available for this product. It's a great item, trust us!"}
             </p>
           </div>
 

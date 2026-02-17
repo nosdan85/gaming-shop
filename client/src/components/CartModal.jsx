@@ -127,7 +127,7 @@ const CartModal = () => {
               )}
            </div>
 
-           {/* 2. PHẦN HƯỚNG DẪN THANH TOÁN (Ở GIỮA - LẤP ĐẦY KHOẢNG TRỐNG) */}
+           {/* 2. PHẦN HƯỚNG DẪN THANH TOÁN (How to pay) */}
            <div className="flex-1 overflow-y-auto mb-4 pr-1">
               <h3 className="text-gray-400 text-xs uppercase font-bold mb-3 tracking-wider">How to pay</h3>
               <div className="space-y-3">
@@ -136,8 +136,8 @@ const CartModal = () => {
                           <ClipboardDocumentListIcon className="w-4 h-4" />
                       </div>
                       <div>
-                          <p className="text-white text-sm font-medium">1. Create Order</p>
-                          <p className="text-gray-500 text-xs">Click Checkout to create an order.</p>
+                          <p className="text-white text-sm font-medium">1. Link Discord</p>
+                          <p className="text-gray-500 text-xs">Press &quot;Link Discord&quot; and login with your account.</p>
                       </div>
                   </div>
                   <div className="flex gap-3">
@@ -145,8 +145,8 @@ const CartModal = () => {
                           <TicketIcon className="w-4 h-4" />
                       </div>
                       <div>
-                          <p className="text-white text-sm font-medium">2. Get Ticket</p>
-                          <p className="text-gray-500 text-xs">A ticket will open in our Discord.</p>
+                          <p className="text-white text-sm font-medium">2. Create an Order</p>
+                          <p className="text-gray-500 text-xs">Add items to bag and click &quot;Check Out&quot;.</p>
                       </div>
                   </div>
                   <div className="flex gap-3">
@@ -154,8 +154,17 @@ const CartModal = () => {
                           <CurrencyDollarIcon className="w-4 h-4" />
                       </div>
                       <div>
-                          <p className="text-white text-sm font-medium">3. Payment</p>
-                          <p className="text-gray-500 text-xs">Choose payment method in ticket.</p>
+                          <p className="text-white text-sm font-medium">3. Ticket</p>
+                          <p className="text-gray-500 text-xs">A Discord ticket will open automatically.</p>
+                      </div>
+                  </div>
+                  <div className="flex gap-3">
+                      <div className="w-8 h-8 rounded-full bg-[#2c2c2e] flex items-center justify-center flex-shrink-0 text-green-400">
+                          <CurrencyDollarIcon className="w-4 h-4" />
+                      </div>
+                      <div>
+                          <p className="text-white text-sm font-medium">4. Payment</p>
+                          <p className="text-gray-500 text-xs">Choose payment method and pay inside the ticket.</p>
                       </div>
                   </div>
               </div>

@@ -29,8 +29,8 @@ const Home = ({ searchTerm }) => {
     <div className="min-h-screen bg-black pt-6 pb-32">
       
       {/* 1. THANH THÔNG BÁO SERVER MỚI (Cầu nối Emergency) */}
-      <div className="max-w-7xl mx-auto px-4 mb-10">
-        <div className="bg-[#1c1c1e] border border-[#2c2c2e] rounded-xl p-4 flex items-center justify-between shadow-lg">
+      <div className="max-w-7xl mx-auto px-4 mb-4 md:mb-10">
+        <div className="bg-[#1c1c1e] border border-[#2c2c2e] rounded-none md:rounded-xl p-3 md:p-4 flex items-center justify-between shadow-lg sticky top-16 z-40 md:static">
             <div className="flex items-center gap-3">
                 <span className="relative flex h-3 w-3">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
