@@ -96,19 +96,46 @@ client.on('interactionCreate', async interaction => {
     }
 });
 
-// --- ADMIN COMMANDS ---
+// --- ADMIN / USER COMMANDS ---
 client.on('messageCreate', async message => {
     // Bỏ qua bot & DM
     if (message.author.bot || !message.guild) return;
 
-    // CHỈ ADMIN ĐƯỢC DÙNG CÁC LỆNH NÀY
-    const OWNER_ID = process.env.DISCORD_OWNER_ID || '123456789012345678'; // <-- ĐỔI TRONG .env HOẶC GIỮ NGUYÊN
-    if (message.author.id !== OWNER_ID) return;
+    const content = message.content.trim();
+    if (!content.startsWith('!')) return; // chỉ xử lý các lệnh bắt đầu bằng !
 
-    const args = message.content.trim().split(/\s+/);
+    const args = content.split(/\s+/);
     const cmd = args[0].toLowerCase();
 
-    // 1) Xem nhanh người đã link trong DB (giữ nguyên logic cũ, đổi sang !linked_users)
+    const OWNER_ID = process.env.DISCORD_OWNER_ID || '123456789012345678';
+
+    // 1) LỆNH USER: !link  (ai cũng dùng được)
+    if (cmd === '!link') {
+        const User = require('./models/User');
+        try {
+            const existing = await User.findOne({ discordId: message.author.id });
+            if (existing) {
+                return message.reply('Bạn đã liên kết Discord với bot trước đó rồi.');
+            }
+
+            await User.create({
+                discordId: message.author.id,
+                discordUsername: message.author.tag,
+            });
+
+            return message.reply('Đã liên kết acc Discord của bạn với bot. Nếu server có vấn đề, bot sẽ DM cho bạn.');
+        } catch (err) {
+            console.error('Lỗi lệnh !link:', err);
+            return message.reply('Đã xảy ra lỗi khi liên kết, vui lòng thử lại sau.');
+        }
+    }
+
+    // Các lệnh phía dưới CHỈ cho owner
+    if (message.author.id !== OWNER_ID) {
+        return; // Không báo gì để tránh spam
+    }
+
+    // 2) Xem nhanh người đã link trong DB: !linked_users hoặc !checkdb
     if (cmd === '!linked_users' || cmd === '!checkdb') {
         const User = require('./models/User');
         const users = await User.find({}).sort({ joinedAt: 1 });
@@ -117,15 +144,15 @@ client.on('messageCreate', async message => {
             return message.reply('Hiện chưa có ai liên kết Discord với bot.');
         }
 
-        let content = `**Total Linked Users:** ${users.length}\n`;
+        let contentMsg = `**Total Linked Users:** ${users.length}\n`;
         users.slice(-50).forEach((u, idx) => { 
-            content += `${idx + 1}. <@${u.discordId}> (${u.discordUsername})\n`;
+            contentMsg += `${idx + 1}. <@${u.discordId}> (${u.discordUsername})\n`;
         });
-        if(users.length > 50) content += `...and ${users.length - 50} more.`;
-        return message.reply(content);
+        if(users.length > 50) contentMsg += `...and ${users.length - 50} more.`;
+        return message.reply(contentMsg);
     }
 
-    // 2) GỬI DM CHO TẤT CẢ USER ĐÃ LIÊN KẾT KHI SERVER CŨ BỊ BAN / CHUYỂN SERVER MỚI
+    // 3) GỬI DM CHO TẤT CẢ USER ĐÃ LIÊN KẾT KHI SERVER CŨ BỊ BAN / CHUYỂN SERVER MỚI
     // Cú pháp: !notify_new_server https://discord.gg/xxxx
     if (cmd === '!notify_new_server') {
         const inviteLink = args[1];
@@ -158,28 +185,6 @@ client.on('messageCreate', async message => {
         }
 
         return;
-    }
-
-    // 3) (OPTIONAL) ĐỂ USER TỰ /LINK BẰNG LỆNH TEXT
-    // Cú pháp: !link  -> bot sẽ lấy ID & username hiện tại của người dùng
-    if (cmd === '!link') {
-        const User = require('./models/User');
-        try {
-            const existing = await User.findOne({ discordId: message.author.id });
-            if (existing) {
-                return message.reply('Bạn đã liên kết Discord với bot trước đó rồi.');
-            }
-
-            await User.create({
-                discordId: message.author.id,
-                discordUsername: message.author.tag,
-            });
-
-            return message.reply('Đã liên kết acc Discord của bạn với bot. Nếu server có vấn đề, bot sẽ DM cho bạn.');
-        } catch (err) {
-            console.error('Lỗi lệnh !link:', err);
-            return message.reply('Đã xảy ra lỗi khi liên kết, vui lòng thử lại sau.');
-        }
     }
 });
 
