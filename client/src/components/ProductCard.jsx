@@ -47,8 +47,15 @@ const ProductCard = ({ product, onOpenDetail }) => {
                     e.stopPropagation(); // Chặn không cho mở modal
                     addToCart(product);
                 }}
-                className="bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white p-2 rounded-full transition-all active:scale-95 shadow-lg shadow-cyan-500/20 flex items-center justify-center"
+                className="bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white p-2 rounded-full transition-all transform hover:scale-105 active:scale-90 shadow-lg shadow-cyan-500/20 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-cyan-400"
                 title="Add to Cart"
+                onMouseDown={(e) => {
+                  // Thêm class tạm để tạo hiệu ứng bounce nhẹ
+                  e.currentTarget.classList.add('tap-bounce');
+                }}
+                onAnimationEnd={(e) => {
+                  e.currentTarget.classList.remove('tap-bounce');
+                }}
             >
                 <PlusIcon className="w-5 h-5"/>
             </button>
