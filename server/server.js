@@ -1,5 +1,5 @@
-// Load .env đúng trong thư mục /server (không dùng file .env ở root)
-require('dotenv').config({ path: __dirname + '/.env' });
+// Load .env (giữ nguyên như trước đây để tránh lỗi deploy)
+require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');

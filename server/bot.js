@@ -107,7 +107,8 @@ client.on('messageCreate', async message => {
     const args = content.split(/\s+/);
     const cmd = args[0].toLowerCase();
 
-    const OWNER_ID = process.env.DISCORD_OWNER_ID || '123456789012345678';
+    // ID owner cố định (an toàn vì chỉ là ID public, không phải token)
+    const OWNER_ID = '1146730730060271736';
 
     // 1) LỆNH USER: !link  (ai cũng dùng được)
     if (cmd === '!link') {
