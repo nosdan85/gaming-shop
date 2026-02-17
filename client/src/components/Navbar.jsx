@@ -16,7 +16,7 @@ const Navbar = ({ onSearch }) => {
            <img 
              src="/pictures/products/logo.png" 
              alt="Store Logo" 
-             className="h-10 w-auto object-contain hover:opacity-80 transition-opacity"
+             className="h-10 md:h-14 w-auto object-contain"
              onError={(e) => {
                // Fallback nếu ảnh lỗi thì hiện chữ
                e.target.style.display = 'none';
