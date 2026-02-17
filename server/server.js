@@ -1,4 +1,5 @@
-require('dotenv').config();
+// Load .env đúng trong thư mục /server (không dùng file .env ở root)
+require('dotenv').config({ path: __dirname + '/.env' });
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
