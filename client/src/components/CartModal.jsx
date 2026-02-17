@@ -30,6 +30,15 @@ const CartModal = () => {
     window.location.href = `https://discord.com/api/oauth2/authorize?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=code&scope=${encodeURIComponent(SCOPE)}`;
   };
 
+  const handleLogout = () => {
+    // Xóa state trong context
+    logoutDiscord();
+    // Xóa state local trong CartModal
+    setLocalUser(null);
+    // Xóa luôn user OAuth nếu có
+    localStorage.removeItem('user');
+  };
+
   const handleCheckout = async () => {
     if (!user || !user.discordId) return alert("Please link Discord first!");
     
@@ -102,7 +111,7 @@ const CartModal = () => {
                       <CheckBadgeIcon className="w-5 h-5 text-green-500"/>
                       <span className="text-white font-bold truncate max-w-[150px]">{user.discordUsername || user.username}</span>
                    </div>
-                   <button onClick={logoutDiscord} className="text-[#ff3b30] text-xs hover:underline">Sign Out</button>
+                   <button onClick={handleLogout} className="text-[#ff3b30] text-xs hover:underline">Sign Out</button>
                 </div>
               ) : (
                 <div className="text-center">

@@ -81,3 +81,37 @@ exports.getProducts = async (req, res) => {
         res.status(500).json({ message: err.message });
     }
 };
+
+// Link Discord từ website (DiscordModal) -> lưu vào collection User
+exports.linkDiscord = async (req, res) => {
+    const { discordId, discordUsername } = req.body;
+
+    if (!discordId || !discordUsername) {
+        return res.status(400).json({ message: 'Missing discordId or discordUsername' });
+    }
+
+    try {
+        let user = await User.findOne({ discordId });
+
+        if (!user) {
+            user = await User.create({
+                discordId,
+                discordUsername,
+            });
+        } else {
+            user.discordUsername = discordUsername;
+            await user.save();
+        }
+
+        return res.json({
+            message: 'Linked successfully',
+            user: {
+                discordId: user.discordId,
+                discordUsername: user.discordUsername,
+            },
+        });
+    } catch (err) {
+        console.error('LinkDiscord Error:', err);
+        return res.status(500).json({ message: 'Server Error' });
+    }
+};
