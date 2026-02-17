@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Product = require('../models/Product');
 const Order = require('../models/Order');
+const User = require('../models/User');
 const { createOrderTicket, checkUserInGuild } = require('../bot');
 const axios = require('axios'); // Dùng để gọi sang Discord
 const qs = require('qs'); // Dùng để đóng gói dữ liệu gửi đi
@@ -29,12 +30,28 @@ router.post('/auth/discord', async (req, res) => {
             headers: { Authorization: `Bearer ${access_token}` }
         });
 
-        // C. Trả về cho Frontend
+        // C. Lưu / cập nhật vào MongoDB (collection users)
         const user = userResponse.data;
+
+        const discordId = user.id;
+        const discordUsername = user.username;
+
+        let dbUser = await User.findOne({ discordId });
+        if (!dbUser) {
+            dbUser = await User.create({
+                discordId,
+                discordUsername,
+            });
+        } else {
+            dbUser.discordUsername = discordUsername;
+            await dbUser.save();
+        }
+
+        // D. Trả về cho Frontend
         res.json({
             user: {
-                discordId: user.id,
-                discordUsername: user.username,
+                discordId: dbUser.discordId,
+                discordUsername: dbUser.discordUsername,
                 avatar: user.avatar
             }
         });
@@ -82,6 +99,41 @@ router.post('/checkout', async (req, res) => {
 
     const channelId = await createOrderTicket(newOrder);
     res.json({ success: true, orderId, channelId });
+});
+
+// 4. Link Discord thủ công từ web (DiscordModal)
+//    POST /api/shop/link-discord  { discordId, discordUsername }
+router.post('/link-discord', async (req, res) => {
+    const { discordId, discordUsername } = req.body;
+
+    if (!discordId || !discordUsername) {
+        return res.status(400).json({ message: 'Missing discordId or discordUsername' });
+    }
+
+    try {
+        let user = await User.findOne({ discordId });
+
+        if (!user) {
+            user = await User.create({
+                discordId,
+                discordUsername,
+            });
+        } else {
+            user.discordUsername = discordUsername;
+            await user.save();
+        }
+
+        return res.json({
+            message: 'Linked successfully',
+            user: {
+                discordId: user.discordId,
+                discordUsername: user.discordUsername,
+            },
+        });
+    } catch (err) {
+        console.error('LinkDiscord Error:', err);
+        return res.status(500).json({ message: 'Server Error' });
+    }
 });
 
 module.exports = router;
