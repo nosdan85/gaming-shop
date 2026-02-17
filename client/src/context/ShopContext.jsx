@@ -3,7 +3,16 @@ import { createContext, useState, useEffect } from 'react';
 export const ShopContext = createContext();
 
 export const ShopProvider = ({ children }) => {
-  const [cart, setCart] = useState([]);
+  // Cart: khởi tạo từ localStorage để F5 / redirect không mất giỏ
+  const [cart, setCart] = useState(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const saved = localStorage.getItem('cart');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   const [user, setUser] = useState(null);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [notification, setNotification] = useState(null); // Thông báo nhỏ
@@ -13,6 +22,13 @@ export const ShopProvider = ({ children }) => {
     const savedUser = localStorage.getItem('discordUser');
     if (savedUser) setUser(JSON.parse(savedUser));
   }, []);
+
+  // Lưu cart xuống localStorage mỗi khi thay đổi
+  useEffect(() => {
+    try {
+      localStorage.setItem('cart', JSON.stringify(cart));
+    } catch {}
+  }, [cart]);
 
   // Hàm thêm vào giỏ
   const addToCart = (product) => {

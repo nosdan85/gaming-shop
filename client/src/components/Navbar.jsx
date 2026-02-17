@@ -1,5 +1,5 @@
 import { useContext, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { ShopContext } from '../context/ShopContext';
 import { ShoppingBagIcon, Bars3Icon, XMarkIcon } from '@heroicons/react/24/outline';
 
@@ -8,6 +8,7 @@ import { ShoppingBagIcon, Bars3Icon, XMarkIcon } from '@heroicons/react/24/outli
 const Navbar = () => {
   const { cart, isCartOpen, setIsCartOpen } = useContext(ShopContext);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const location = useLocation();
 
   const totalItems = cart.reduce((acc, item) => acc + item.quantity, 0);
 
@@ -28,11 +29,24 @@ const Navbar = () => {
             />
           </Link>
 
-          {/* Desktop Menu (Giữ nguyên các link của bạn) */}
+          {/* Desktop Menu: bỏ Home/Shop/About, thêm Discord Review + Trustpilot với hiệu ứng active */}
           <div className="hidden md:flex space-x-8">
-            <Link to="/" className="text-gray-300 hover:text-white transition-colors font-medium">Home</Link>
-            <Link to="/shop" className="text-gray-300 hover:text-white transition-colors font-medium">Shop</Link>
-            <Link to="/about" className="text-gray-300 hover:text-white transition-colors font-medium">About</Link>
+            <a 
+              href="https://discord.com/channels/1398984938111369256/1399046293162299402" 
+              target="_blank" 
+              rel="noreferrer"
+              className="text-gray-300 hover:text-white transition-colors font-medium"
+            >
+              Discord Review
+            </a>
+            <a 
+              href="https://www.trustpilot.com/review/your-domain-here.com" 
+              target="_blank" 
+              rel="noreferrer"
+              className="text-gray-300 hover:text-white transition-colors font-medium"
+            >
+              Trustpilot
+            </a>
           </div>
           
           {/* Mobile Menu Button & Cart */}
@@ -61,13 +75,28 @@ const Navbar = () => {
         </div>
       </div>
       
-      {/* Mobile Menu Dropdown */}
+          {/* Mobile Menu Dropdown */}
       {isMenuOpen && (
         <div className="md:hidden bg-[#09090b] border-t border-white/10">
           <div className="px-4 pt-2 pb-4 space-y-1">
-            <Link to="/" onClick={() => setIsMenuOpen(false)} className="block px-3 py-2 text-base font-medium text-white hover:bg-white/5 rounded-md">Home</Link>
-            <Link to="/shop" onClick={() => setIsMenuOpen(false)} className="block px-3 py-2 text-base font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-md">Shop</Link>
-            <Link to="/about" onClick={() => setIsMenuOpen(false)} className="block px-3 py-2 text-base font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-md">About</Link>
+            <a 
+              href="https://discord.com/channels/1398984938111369256/1399046293162299402"
+              target="_blank"
+              rel="noreferrer"
+              onClick={() => setIsMenuOpen(false)}
+              className="block px-3 py-2 text-base font-medium text-white hover:bg-white/5 rounded-md"
+            >
+              Discord Review
+            </a>
+            <a 
+              href="https://www.trustpilot.com/review/your-domain-here.com"
+              target="_blank"
+              rel="noreferrer"
+              onClick={() => setIsMenuOpen(false)}
+              className="block px-3 py-2 text-base font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-md"
+            >
+              Trustpilot
+            </a>
           </div>
         </div>
       )}

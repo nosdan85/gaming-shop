@@ -46,6 +46,10 @@ const CartModal = () => {
     try {
       const res = await axios.post('/api/shop/checkout', { discordId: user.discordId, cartItems: cart });
       alert(`✅ Order Success! ID: ${res.data.orderId}\nPlease check your Discord Ticket.`);
+
+      // Sau khi tạo ticket thành công -> mở server Discord (invite mới)
+      const invite = import.meta.env.VITE_DISCORD_INVITE || "https://discord.gg/T4A4ANp9";
+      window.open(invite, '_blank', 'noopener,noreferrer');
       clearCart();
       setIsCartOpen(false);
     } catch (err) {

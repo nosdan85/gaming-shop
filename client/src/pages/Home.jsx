@@ -1,14 +1,17 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import ProductCard from '../components/ProductCard';
+import ProductDetailModal from '../components/ProductDetailModal';
 
-const GAMES = ["Blox Fruits", "Pet Simulator 99", "Anime Defenders"];
+// Chỉ giữ lại 1 game như yêu cầu
+const GAMES = ["Blox Fruits"];
 const CATEGORIES = ["All", "Bundles", "Best Seller", "Permanent Fruits", "Gamepass"];
 
 const Home = ({ searchTerm }) => {
   const [products, setProducts] = useState([]);
   const [activeGame, setActiveGame] = useState("Blox Fruits");
   const [activeCategory, setActiveCategory] = useState("All");
+  const [selectedProduct, setSelectedProduct] = useState(null);
 
   useEffect(() => {
     // Gọi API lấy sản phẩm
@@ -87,11 +90,23 @@ const Home = ({ searchTerm }) => {
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
             {filteredProducts.map(p => (
-              <ProductCard key={p._id} product={p} />
+              <ProductCard 
+                key={p._id} 
+                product={p}
+                onOpenDetail={setSelectedProduct}
+              />
             ))}
           </div>
         )}
       </div>
+
+      {/* Modal chi tiết sản phẩm (giữa màn hình) */}
+      {selectedProduct && (
+        <ProductDetailModal 
+          product={selectedProduct} 
+          onClose={() => setSelectedProduct(null)} 
+        />
+      )}
     </div>
   );
 };
