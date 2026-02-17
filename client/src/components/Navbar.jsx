@@ -3,9 +3,7 @@ import { Link } from 'react-router-dom';
 import { ShopContext } from '../context/ShopContext';
 import { ShoppingBagIcon, Bars3Icon, XMarkIcon } from '@heroicons/react/24/outline';
 
-// Đảm bảo bạn import đúng đường dẫn ảnh logo DÀI
-// Nếu để trong public folder thì dùng đường dẫn string trực tiếp '/logo.png'
-import logo from '/logo.png'; 
+// --- QUAN TRỌNG: ĐÃ XÓA DÒNG IMPORT LOGO Ở ĐÂY ĐỂ TRÁNH LỖI BUILD ---
 
 const Navbar = () => {
   const { cart, isCartOpen, setIsCartOpen } = useContext(ShopContext);
@@ -18,23 +16,26 @@ const Navbar = () => {
       <div className="max-w-7xl mx-auto px-4 md:px-6">
         <div className="flex items-center justify-between h-16 md:h-20">
           
-          {/* --- SỬA PHẦN LOGO Ở ĐÂY --- */}
+          {/* --- LOGO ĐÃ SỬA --- */}
           <Link to="/" className="flex-shrink-0 flex items-center">
             <img 
-              src={logo} 
+              src="/logo.png"   // <--- Dùng trực tiếp đường dẫn string, không dùng biến {logo}
               alt="NOS Logo" 
-              // GIẢI THÍCH CLASS:
-              // h-10 md:h-14: Chiều cao 40px trên đt, 56px trên máy tính -> Đủ lớn để logo dài ra ngang.
-              // w-auto: Tự động kéo dài chiều ngang theo tỷ lệ ảnh -> Sẽ lấp đầy khung bạn khoanh.
-              // object-contain: Đảm bảo toàn bộ chữ trong logo không bị cắt.
+              // Class chỉnh kích thước:
+              // h-10 (40px) trên mobile để không quá to
+              // md:h-14 (56px) trên PC để đủ dài và rõ
               className="h-10 md:h-14 w-auto object-contain" 
             />
-            {/* LƯU Ý: Tôi đã XÓA thẻ <span>NOS</span> ở đây vì trong ảnh logo của bạn đã có chữ rồi */}
           </Link>
 
-          {/* ... (Phần Menu giữ nguyên không đổi) ... */}
+          {/* Desktop Menu (Giữ nguyên các link của bạn) */}
+          <div className="hidden md:flex space-x-8">
+            <Link to="/" className="text-gray-300 hover:text-white transition-colors font-medium">Home</Link>
+            <Link to="/shop" className="text-gray-300 hover:text-white transition-colors font-medium">Shop</Link>
+            <Link to="/about" className="text-gray-300 hover:text-white transition-colors font-medium">About</Link>
+          </div>
           
-          {/* Mobile Menu Button */}
+          {/* Mobile Menu Button & Cart */}
           <div className="flex items-center gap-4">
              {/* Cart Icon */}
              <button 
@@ -60,7 +61,16 @@ const Navbar = () => {
         </div>
       </div>
       
-      {/* (Phần Mobile Menu Dropdown giữ nguyên code cũ của bạn) */}
+      {/* Mobile Menu Dropdown */}
+      {isMenuOpen && (
+        <div className="md:hidden bg-[#09090b] border-t border-white/10">
+          <div className="px-4 pt-2 pb-4 space-y-1">
+            <Link to="/" onClick={() => setIsMenuOpen(false)} className="block px-3 py-2 text-base font-medium text-white hover:bg-white/5 rounded-md">Home</Link>
+            <Link to="/shop" onClick={() => setIsMenuOpen(false)} className="block px-3 py-2 text-base font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-md">Shop</Link>
+            <Link to="/about" onClick={() => setIsMenuOpen(false)} className="block px-3 py-2 text-base font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-md">About</Link>
+          </div>
+        </div>
+      )}
     </nav>
   );
 };
