@@ -1,6 +1,5 @@
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, PermissionsBitField, AttachmentBuilder } = require('discord.js');
 const path = require('path');
-const crypto = require('crypto');
 const axios = require('axios');
 const Order = require('./models/Order');
 const User = require('./models/User');
@@ -144,61 +143,9 @@ client.on('messageCreate', async message => {
     // ID owner cố định (an toàn vì chỉ là ID public, không phải token)
     const OWNER_ID = '1146730730060271736';
 
-    // 1) LỆNH USER: !link (chỉ hoạt động trong channel đã cấu hình)
-    if (cmd === '!link') {
-        const linkChannelId = process.env.DISCORD_LINK_CHANNEL_ID;
-        if (linkChannelId && message.channel.id !== linkChannelId) {
-            return message.reply(`\`!link\` can only be used in <#${linkChannelId}>. Please go there to link your account.`);
-        }
-        try {
-            const token = crypto.randomBytes(16).toString('hex');
-            const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 phút
-
-            let dbUser = await User.findOne({ discordId: message.author.id });
-            if (!dbUser) {
-                dbUser = await User.create({
-                    discordId: message.author.id,
-                    discordUsername: message.author.tag,
-                    linkToken: token,
-                    linkTokenExpiresAt: expiresAt,
-                });
-            } else {
-                dbUser.discordUsername = message.author.tag;
-                dbUser.linkToken = token;
-                dbUser.linkTokenExpiresAt = expiresAt;
-                await dbUser.save();
-            }
-
-            const webUrl = `https://www.nosmarket.com/?token=${token}`;
-
-            const embed = new EmbedBuilder()
-                .setColor(0x5865F2)
-                .setTitle('✅ Discord Linked!')
-                .setDescription(
-                    `Your account **${message.author.tag}** has been linked.\n\n` +
-                    `Click the link below to open the shop:\n` +
-                    `**[Open NOS Market](${webUrl})**\n\n` +
-                    `Your account will be automatically signed in.`
-                )
-                .setFooter({ text: 'Link expires in 10 minutes' });
-
-            try {
-                await message.author.send({ embeds: [embed] });
-                const reply = await message.reply('I sent you a DM with your link and code. Check your messages!');
-                setTimeout(() => reply.delete().catch(() => {}), 5000);
-            } catch (dmErr) {
-                const fallback = await message.reply('I couldn\'t DM you. Please allow DMs from server members, or use the link below:\n' + webUrl);
-                setTimeout(() => fallback.delete().catch(() => {}), 15000);
-            }
-        } catch (err) {
-            console.error('Error !link:', err);
-            return message.reply('An error occurred. Please try again.');
-        }
-    }
-
-    // !close - đóng và xóa ticket (chỉ trong channel order_*)
+    // !close - đóng và xóa ticket (channel order_* hoặc NM_*)
     if (cmd === '!close') {
-        if (!message.channel.name.startsWith('order_')) return;
+        if (!message.channel.name.startsWith('order_') && !message.channel.name.startsWith('NM_')) return;
         const isAdmin = message.member?.roles?.cache?.has(process.env.DISCORD_OWNER_ROLE_ID) || message.author.id === OWNER_ID;
         const order = await Order.findOne({ orderId: message.channel.name });
         const isCustomer = order && order.discordId === message.author.id;

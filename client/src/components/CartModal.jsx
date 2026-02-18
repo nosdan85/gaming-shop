@@ -11,8 +11,6 @@ const getInviteCode = (url) => {
 };
 
 const GUILD_ID = import.meta.env.VITE_DISCORD_GUILD_ID || '1398984938111369256';
-const LINK_CHANNEL_ID = import.meta.env.VITE_DISCORD_LINK_CHANNEL_ID || '1399046293162299402';
-const linkChannelUrl = `https://discord.com/channels/${GUILD_ID}/${LINK_CHANNEL_ID}`;
 
 const CartModal = () => {
   const { cart, removeFromCart, isCartOpen, setIsCartOpen, user: contextUser, loginDiscord, logoutDiscord, clearCart } = useContext(ShopContext);
@@ -23,6 +21,10 @@ const CartModal = () => {
   const [localUser, setLocalUser] = useState(null);
   const [showOpenDiscordModal, setShowOpenDiscordModal] = useState(false);
   const [orderSuccessInvite, setOrderSuccessInvite] = useState("");
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentOrder, setPaymentOrder] = useState(null);
+  const [ltcData, setLtcData] = useState(null);
+  const [paymentLoading, setPaymentLoading] = useState(false);
   const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
   useEffect(() => {
       const stored = localStorage.getItem('user');
@@ -36,12 +38,24 @@ const CartModal = () => {
   const user = contextUser || localUser;
   const total = cart.reduce((acc, item) => acc + item.price * item.quantity, 0).toFixed(2);
 
-  const handleDiscordLogin = () => {
+  const getOAuthUrl = () => {
     const CLIENT_ID = import.meta.env.VITE_DISCORD_CLIENT_ID || "1439615003572572250";
     const REDIRECT_URI = `${window.location.origin}/auth/discord/callback`;
     const SCOPE = "identify guilds.join"; 
-    const oauthUrl = `https://discord.com/api/oauth2/authorize?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=code&scope=${encodeURIComponent(SCOPE)}`;
-    window.location.href = oauthUrl;
+    return `https://discord.com/api/oauth2/authorize?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=code&scope=${encodeURIComponent(SCOPE)}`;
+  };
+
+  const handleLinkWeb = () => {
+    window.location.href = getOAuthUrl();
+  };
+
+  const handleLinkApp = () => {
+    const oauthUrl = getOAuthUrl();
+    if (isMobile) {
+      window.location.href = oauthUrl;
+    } else {
+      window.open(oauthUrl, '_blank');
+    }
   };
 
   const handleLogout = () => {
@@ -58,21 +72,18 @@ const CartModal = () => {
     
     setIsProcessing(true);
     try {
+      const totalAmount = cart.reduce((a, i) => a + i.price * i.quantity, 0);
       const res = await axios.post('/api/shop/checkout', { discordId: user.discordId, cartItems: cart });
       clearCart();
       setIsCartOpen(false);
       const guildId = import.meta.env.VITE_DISCORD_GUILD_ID || '1398984938111369256';
       const channelId = res.data.channelId;
-      if (channelId) {
-        const ticketUrl = `https://discord.com/channels/${guildId}/${channelId}`;
-        window.location.href = ticketUrl;
-      } else {
-        const invite = res.data.invite_link || import.meta.env.VITE_DISCORD_INVITE || "https://discord.gg/T4A4ANp9";
-        setOrderSuccessInvite(invite);
-        setShowOpenDiscordModal(true);
-      }
+      const orderId = res.data.orderId;
+      
+      setPaymentOrder({ orderId, totalAmount, channelId, guildId });
+      setShowPaymentModal(true);
     } catch (err) {
-      if (err.response && err.response.data.error_code === "USER_NOT_IN_GUILD") {
+      if (err.response?.data?.error_code === "USER_NOT_IN_GUILD") {
           setInviteLink(err.response.data.invite_link);
           setShowJoinModal(true);
       } else {
@@ -83,7 +94,79 @@ const CartModal = () => {
     }
   };
 
-  if (!isCartOpen && !showOpenDiscordModal) return null;
+  const handlePayPal = async () => {
+    if (!paymentOrder) return;
+    setPaymentLoading(true);
+    try {
+      const res = await axios.post('/api/shop/create-payment', { orderId: paymentOrder.orderId, totalAmount: paymentOrder.totalAmount, method: 'paypal' });
+      if (res.data.approvalLink) window.location.href = res.data.approvalLink;
+      else alert('PayPal not configured. Please pay in Discord ticket.');
+    } catch (err) {
+      alert(err.response?.data?.error || 'PayPal not available');
+    } finally {
+      setPaymentLoading(false);
+    }
+  };
+
+  const handleLTC = async () => {
+    if (!paymentOrder) return;
+    setPaymentLoading(true);
+    try {
+      const res = await axios.post('/api/shop/create-payment', { orderId: paymentOrder.orderId, totalAmount: paymentOrder.totalAmount, method: 'ltc' });
+      if (res.data.payAddress) setLtcData(res.data);
+      else alert('LTC not configured. Please pay in Discord ticket.');
+    } catch (err) {
+      alert(err.response?.data?.error || 'LTC not available');
+    } finally {
+      setPaymentLoading(false);
+    }
+  };
+
+  if (!isCartOpen && !showOpenDiscordModal && !showPaymentModal) return null;
+
+  if (showPaymentModal && paymentOrder) {
+    const ticketUrl = paymentOrder.channelId ? `https://discord.com/channels/${paymentOrder.guildId}/${paymentOrder.channelId}` : null;
+    return (
+      <div className="fixed inset-0 z-[80] bg-black/90 flex items-center justify-center p-4 overflow-y-auto">
+        <div className="bg-[#1c1c1e] rounded-2xl p-6 max-w-md w-full border border-[#2c2c2e] my-8">
+          <h2 className="text-xl font-bold text-white mb-1">Order {paymentOrder.orderId}</h2>
+          <p className="text-gray-400 text-sm mb-4">Total: ${paymentOrder.totalAmount.toFixed(2)}</p>
+          
+          <div className="space-y-3 mb-4">
+            <button onClick={handlePayPal} disabled={paymentLoading} className="w-full py-3 bg-[#0070BA] hover:bg-[#005ea6] disabled:opacity-50 text-white font-bold rounded-xl flex items-center justify-center gap-2">
+              Pay with PayPal
+            </button>
+            <button onClick={handleLTC} disabled={paymentLoading} className="w-full py-3 bg-[#BFBBBB] hover:bg-[#a8a5a5] disabled:opacity-50 text-white font-bold rounded-xl">
+              Pay with LTC (Litecoin)
+            </button>
+          </div>
+
+          {ltcData && (
+            <div className="bg-[#0a0a0c] rounded-xl p-4 mb-4 border border-[#2c2c2e]">
+              <p className="text-gray-400 text-xs mb-1">Send exactly:</p>
+              <p className="text-white font-mono font-bold text-lg">{ltcData.payAmount} {ltcData.payCurrency?.toUpperCase()}</p>
+              <p className="text-gray-400 text-xs mt-2 mb-1">To address:</p>
+              <p className="text-white font-mono text-xs break-all bg-[#1a1a1c] p-2 rounded">{ltcData.payAddress}</p>
+            </div>
+          )}
+
+          {ticketUrl && (
+            <>
+              <a href={ticketUrl} target="_blank" rel="noreferrer" className="block w-full py-3 text-center bg-[#5865F2] hover:bg-[#4752C4] text-white font-bold rounded-xl transition mb-2">
+                Open Discord Ticket
+              </a>
+              {isMobile && (
+                <p className="text-gray-500 text-xs text-center">Ticket will open in a new tab</p>
+              )}
+            </>
+          )}
+          <button onClick={() => { setShowPaymentModal(false); setPaymentOrder(null); setLtcData(null); }} className="w-full mt-2 text-gray-500 hover:text-white text-sm">
+            Close
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (showOpenDiscordModal && orderSuccessInvite && !isCartOpen) {
     const code = getInviteCode(orderSuccessInvite);
@@ -172,25 +255,12 @@ const CartModal = () => {
               ) : (
                 <div className="text-center space-y-3">
                    <p className="text-gray-400 text-xs">Login to process order</p>
-                   <button onClick={handleDiscordLogin} className="w-full bg-[#5865F2] hover:bg-[#4752C4] text-white py-2.5 rounded-xl font-bold text-sm transition flex items-center justify-center gap-2">
-                     <UserCircleIcon className="w-5 h-5"/> Link Discord
+                   <button onClick={handleLinkWeb} className="w-full bg-[#5865F2] hover:bg-[#4752C4] text-white py-2.5 rounded-xl font-bold text-sm transition flex items-center justify-center gap-2">
+                     <UserCircleIcon className="w-5 h-5"/> Link via Discord Web
                    </button>
-                   {!isMobile && (
-                     <>
-                       <div className="flex items-center gap-2">
-                         <div className="flex-1 h-px bg-[#2c2c2e]"/>
-                         <span className="text-gray-500 text-[10px]">or</span>
-                         <div className="flex-1 h-px bg-[#2c2c2e]"/>
-                       </div>
-                       <div className="rounded-xl bg-[#1a1a1c] border border-[#2c2c2e] p-3 text-left">
-                         <p className="text-gray-300 text-xs font-medium mb-1">Link via Discord App</p>
-                         <p className="text-gray-500 text-[11px] leading-relaxed mb-2">Go to our Discord, type <code className="bg-white/10 px-1 rounded">!link</code> in the link channel. Click the link the bot sends in your DMs.</p>
-                         <a href={linkChannelUrl} target="_blank" rel="noreferrer" className="block w-full py-2 rounded-lg bg-[#2c2c2e] hover:bg-[#3f3f46] text-white font-medium text-xs transition text-center">
-                           Open Discord to Link
-                         </a>
-                       </div>
-                     </>
-                   )}
+                   <button onClick={handleLinkApp} className="w-full bg-[#2c2c2e] hover:bg-[#3f3f46] text-white py-2.5 rounded-xl font-bold text-xs transition flex items-center justify-center gap-2">
+                     Link via Discord App
+                   </button>
                 </div>
               )}
            </div>
