@@ -50,9 +50,9 @@ const Home = () => {
   }, []);
 
   let filteredProducts = products.filter(p => {
-    const matchCategory = activeCategory === "All" || p.category === activeCategory;
     const matchSearch = !searchTerm.trim() || p.name.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchCategory && matchSearch;
+    const matchCategory = !searchTerm.trim() ? (activeCategory === "All" || p.category === activeCategory) : true;
+    return matchSearch && matchCategory;
   });
 
   if (sortBy === 'low-high') {

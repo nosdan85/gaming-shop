@@ -123,6 +123,7 @@ const CartModal = () => {
                    <button onClick={handleDiscordLogin} className="w-full bg-[#5865F2] hover:bg-[#4752C4] text-white py-2 rounded-xl font-bold text-sm transition flex items-center justify-center gap-2">
                      <UserCircleIcon className="w-5 h-5"/> Link Discord
                    </button>
+                   <p className="text-gray-500 text-[10px] mt-2">Or use <code className="bg-white/10 px-1 rounded">!link</code> in our Discord app</p>
                 </div>
               )}
            </div>

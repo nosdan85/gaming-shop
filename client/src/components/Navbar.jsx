@@ -32,7 +32,7 @@ const Navbar = () => {
           {/* Desktop Menu: bỏ Home/Shop/About, thêm Discord Review + Trustpilot với hiệu ứng active */}
           <div className="hidden md:flex space-x-8">
             <a 
-              href="https://discord.com/channels/1398984938111369256/1399046293162299402" 
+              href="discord://-/channels/1398984938111369256/1399046293162299402" 
               target="_blank" 
               rel="noreferrer"
               className="text-gray-300 hover:text-white transition-colors font-medium"
@@ -80,7 +80,7 @@ const Navbar = () => {
         <div className="md:hidden bg-[#09090b] border-t border-white/10">
           <div className="px-4 pt-2 pb-4 space-y-1">
             <a 
-              href="https://discord.com/channels/1398984938111369256/1399046293162299402"
+              href="discord://-/channels/1398984938111369256/1399046293162299402"
               target="_blank"
               rel="noreferrer"
               onClick={() => setIsMenuOpen(false)}
