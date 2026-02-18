@@ -180,7 +180,23 @@ router.post('/create-payment', async (req, res) => {
     }
 });
 
-// 5. PayPal capture - khi user thanh toán xong PayPal redirect về đây
+// 5. PayPal capture via JS SDK (AJAX, no redirect)
+router.post('/paypal/capture-ajax', async (req, res) => {
+    const { paypalOrderId, orderId } = req.body;
+    if (!paypalOrderId) return res.status(400).json({ error: 'Missing paypalOrderId' });
+    try {
+        const ok = await capturePayPalOrder(paypalOrderId);
+        if (ok && orderId) {
+            await Order.findOneAndUpdate({ orderId }, { status: 'Completed' });
+        }
+        res.json({ success: ok });
+    } catch (e) {
+        console.error('PayPal capture-ajax error:', e);
+        res.status(500).json({ error: 'Capture failed' });
+    }
+});
+
+// 5b. PayPal capture - redirect flow fallback
 router.get('/paypal/capture', async (req, res) => {
     const token = req.query.token;
     const orderId = req.query.orderId;

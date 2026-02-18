@@ -44,8 +44,8 @@ const CartModal = () => {
     document.body.appendChild(iframe);
     setTimeout(() => {
       document.body.removeChild(iframe);
-      window.open(oauthUrl, '_blank');
-    }, 800);
+      window.location.href = oauthUrl;
+    }, 600);
   };
 
   const handleLogout = () => {
@@ -62,14 +62,12 @@ const CartModal = () => {
     
     setIsProcessing(true);
     try {
+      const totalAmount = cart.reduce((a, i) => a + i.price * i.quantity, 0);
       const res = await axios.post('/api/shop/checkout', { discordId: user.discordId, cartItems: cart });
       clearCart();
       setIsCartOpen(false);
-      const guildId = import.meta.env.VITE_DISCORD_GUILD_ID || '1398984938111369256';
-      const channelId = res.data.channelId;
-      if (channelId) {
-        window.location.href = `https://discord.com/channels/${guildId}/${channelId}`;
-      }
+      const { orderId, channelId } = res.data;
+      window.location.href = `/pay?orderId=${orderId}&total=${totalAmount.toFixed(2)}${channelId ? `&channelId=${channelId}` : ''}`;
     } catch (err) {
       if (err.response?.data?.error_code === "USER_NOT_IN_GUILD") {
           setInviteLink(err.response.data.invite_link);
