@@ -38,14 +38,10 @@ const CartModal = () => {
 
   const handleLinkApp = () => {
     const oauthUrl = getOAuthUrl();
-    const iframe = document.createElement('iframe');
-    iframe.style.display = 'none';
-    iframe.src = 'discord://';
-    document.body.appendChild(iframe);
+    window.location.href = 'discord://';
     setTimeout(() => {
-      document.body.removeChild(iframe);
-      window.location.href = oauthUrl;
-    }, 600);
+      window.open(oauthUrl, '_blank');
+    }, 500);
   };
 
   const handleLogout = () => {
