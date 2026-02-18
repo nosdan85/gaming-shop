@@ -3,24 +3,15 @@ import { ShopContext } from '../context/ShopContext';
 import { XMarkIcon, CheckBadgeIcon, UserCircleIcon, CurrencyDollarIcon, TicketIcon, ClipboardDocumentListIcon } from '@heroicons/react/24/outline';
 import axios from 'axios';
 
-// Rút invite code từ URL dạng https://discord.gg/CODE hoặc discord.gg/CODE
-const getInviteCode = (url) => {
-  if (!url || typeof url !== 'string') return null;
-  const m = url.match(/discord\.gg\/([a-zA-Z0-9]+)/i) || url.match(/invite\/([a-zA-Z0-9]+)/i);
-  return m ? m[1] : null;
-};
-
 const GUILD_ID = import.meta.env.VITE_DISCORD_GUILD_ID || '1398984938111369256';
 
 const CartModal = () => {
-  const { cart, removeFromCart, isCartOpen, setIsCartOpen, user: contextUser, loginDiscord, logoutDiscord, clearCart } = useContext(ShopContext);
+  const { cart, removeFromCart, isCartOpen, setIsCartOpen, user: contextUser, logoutDiscord, clearCart } = useContext(ShopContext);
   
   const [isProcessing, setIsProcessing] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [inviteLink, setInviteLink] = useState("");
   const [localUser, setLocalUser] = useState(null);
-  const [showOpenDiscordModal, setShowOpenDiscordModal] = useState(false);
-  const [orderSuccessInvite, setOrderSuccessInvite] = useState("");
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentOrder, setPaymentOrder] = useState(null);
   const [ltcData, setLtcData] = useState(null);
@@ -51,11 +42,8 @@ const CartModal = () => {
 
   const handleLinkApp = () => {
     const oauthUrl = getOAuthUrl();
-    if (isMobile) {
-      window.location.href = oauthUrl;
-    } else {
-      window.open(oauthUrl, '_blank');
-    }
+    window.location.href = 'discord://';
+    setTimeout(() => window.open(oauthUrl, '_blank'), 500);
   };
 
   const handleLogout = () => {
@@ -122,7 +110,7 @@ const CartModal = () => {
     }
   };
 
-  if (!isCartOpen && !showOpenDiscordModal && !showPaymentModal) return null;
+  if (!isCartOpen && !showPaymentModal) return null;
 
   if (showPaymentModal && paymentOrder) {
     const ticketUrl = paymentOrder.channelId ? `https://discord.com/channels/${paymentOrder.guildId}/${paymentOrder.channelId}` : null;
@@ -163,39 +151,6 @@ const CartModal = () => {
           <button onClick={() => { setShowPaymentModal(false); setPaymentOrder(null); setLtcData(null); }} className="w-full mt-2 text-gray-500 hover:text-white text-sm">
             Close
           </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (showOpenDiscordModal && orderSuccessInvite && !isCartOpen) {
-    const code = getInviteCode(orderSuccessInvite);
-    const discordAppUrl = code ? `discord://invite/${code}` : null;
-    const webUrl = orderSuccessInvite.startsWith('http') ? orderSuccessInvite : `https://discord.gg/${code || ''}`;
-    return (
-      <div className="fixed inset-0 z-[80] bg-black/90 flex items-center justify-center p-6">
-        <div className="bg-[#1c1c1e] rounded-2xl p-8 max-w-sm text-center w-full border border-[#2c2c2e]">
-          <h2 className="text-2xl font-bold text-white mb-2">Order successful</h2>
-          <p className="text-gray-400 mb-6 text-sm">Check your Discord ticket. Open our server:</p>
-          {discordAppUrl && (
-            <a
-              href={discordAppUrl}
-              className="block w-full py-3 bg-[#5865F2] text-white font-bold rounded-xl mb-3 hover:bg-[#4752C4] transition"
-              onClick={() => setShowOpenDiscordModal(false)}
-            >
-              Open in Discord App
-            </a>
-          )}
-          <a
-            href={webUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="block w-full py-3 bg-[#2c2c2e] hover:bg-[#3f3f46] text-white font-bold rounded-xl mb-3 transition"
-            onClick={() => setShowOpenDiscordModal(false)}
-          >
-            Open in Browser
-          </a>
-          <button onClick={() => setShowOpenDiscordModal(false)} className="text-gray-500 hover:text-white text-sm transition">Close</button>
         </div>
       </div>
     );
@@ -255,12 +210,20 @@ const CartModal = () => {
               ) : (
                 <div className="text-center space-y-3">
                    <p className="text-gray-400 text-xs">Login to process order</p>
-                   <button onClick={handleLinkWeb} className="w-full bg-[#5865F2] hover:bg-[#4752C4] text-white py-2.5 rounded-xl font-bold text-sm transition flex items-center justify-center gap-2">
-                     <UserCircleIcon className="w-5 h-5"/> Link via Discord Web
-                   </button>
-                   <button onClick={handleLinkApp} className="w-full bg-[#2c2c2e] hover:bg-[#3f3f46] text-white py-2.5 rounded-xl font-bold text-xs transition flex items-center justify-center gap-2">
-                     Link via Discord App
-                   </button>
+                   {isMobile ? (
+                     <button onClick={handleLinkWeb} className="w-full bg-[#5865F2] hover:bg-[#4752C4] text-white py-2.5 rounded-xl font-bold text-sm transition flex items-center justify-center gap-2">
+                       <UserCircleIcon className="w-5 h-5"/> Link Discord
+                     </button>
+                   ) : (
+                     <>
+                       <button onClick={handleLinkWeb} className="w-full bg-[#5865F2] hover:bg-[#4752C4] text-white py-2.5 rounded-xl font-bold text-sm transition flex items-center justify-center gap-2">
+                         <UserCircleIcon className="w-5 h-5"/> Link via Discord Web
+                       </button>
+                       <button onClick={handleLinkApp} className="w-full bg-[#2c2c2e] hover:bg-[#3f3f46] text-white py-2.5 rounded-xl font-bold text-xs transition flex items-center justify-center gap-2">
+                         Link via Discord App
+                       </button>
+                     </>
+                   )}
                 </div>
               )}
            </div>

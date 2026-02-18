@@ -1,5 +1,4 @@
 import { createContext, useState, useEffect } from 'react';
-import axios from 'axios';
 
 export const ShopContext = createContext();
 
@@ -18,32 +17,14 @@ export const ShopProvider = ({ children }) => {
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [notification, setNotification] = useState(null); // Thông báo nhỏ
 
-  // Load user từ localStorage hoặc từ ?token= trong URL (từ !link trong Discord app)
   useEffect(() => {
-    const loadUser = () => {
-      const u = localStorage.getItem('discordUser') || localStorage.getItem('user');
-      if (u) setUser(JSON.parse(u));
-    };
-    loadUser();
-
-    const params = new URLSearchParams(window.location.search);
-    const token = params.get('token');
-    if (token) {
-      window.history.replaceState({}, '', window.location.pathname);
-      axios.get(`/api/shop/verify-token/${token}`)
-        .then(res => {
-          const userData = res.data;
-          setUser(userData);
-          localStorage.setItem('discordUser', JSON.stringify(userData));
-          localStorage.setItem('user', JSON.stringify(userData));
-        })
-        .catch(() => { /* token expired or invalid */ });
-    }
+    const u = localStorage.getItem('discordUser') || localStorage.getItem('user');
+    if (u) setUser(JSON.parse(u));
 
     const onStorage = (e) => {
       if (e.key === 'user' || e.key === 'discordUser') {
-        const u = localStorage.getItem('discordUser') || localStorage.getItem('user');
-        if (u) setUser(JSON.parse(u));
+        const stored = localStorage.getItem('discordUser') || localStorage.getItem('user');
+        if (stored) setUser(JSON.parse(stored));
       }
     };
     window.addEventListener('storage', onStorage);

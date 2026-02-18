@@ -134,7 +134,7 @@ router.post('/checkout', async (req, res) => {
             { $inc: { seq: 1 } },
             { new: true, upsert: true }
         );
-        const orderId = `NM_${counter.seq}`;
+        const orderId = `nm_${counter.seq}`;
 
         const newOrder = new Order({
             orderId,
@@ -154,7 +154,7 @@ router.post('/checkout', async (req, res) => {
 });
 
 // 4. Tạo PayPal order cho web (trả về link thanh toán)
-const { createPayPalOrder, createLTCInvoice } = require('../services/paymentService');
+const { createPayPalOrder, createLTCInvoice, capturePayPalOrder } = require('../services/paymentService');
 router.post('/create-payment', async (req, res) => {
     try {
         const { orderId, totalAmount, method } = req.body;
@@ -180,31 +180,7 @@ router.post('/create-payment', async (req, res) => {
     }
 });
 
-// 5. Verify link token (không dùng nữa - giữ cho tương thích)
-router.get('/verify-token/:token', async (req, res) => {
-    try {
-        const user = await User.findOne({
-            linkToken: req.params.token,
-            linkTokenExpiresAt: { $gt: new Date() }
-        });
-        if (!user) return res.status(404).json({ error: 'Token invalid or expired' });
-
-        user.linkToken = null;
-        user.linkTokenExpiresAt = null;
-        await user.save();
-
-        res.json({
-            discordId: user.discordId,
-            discordUsername: user.discordUsername,
-        });
-    } catch (err) {
-        console.error('Verify token error:', err);
-        res.status(500).json({ error: 'Server error' });
-    }
-});
-
-// PayPal capture - khi user thanh toán xong PayPal redirect về đây
-const { capturePayPalOrder } = require('../services/paymentService');
+// 5. PayPal capture - khi user thanh toán xong PayPal redirect về đây
 router.get('/paypal/capture', async (req, res) => {
     const token = req.query.token;
     const orderId = req.query.orderId;

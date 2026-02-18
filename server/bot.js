@@ -145,7 +145,7 @@ client.on('messageCreate', async message => {
 
     // !close - đóng và xóa ticket (channel order_* hoặc NM_*)
     if (cmd === '!close') {
-        if (!message.channel.name.startsWith('order_') && !message.channel.name.startsWith('NM_')) return;
+        if (!message.channel.name.startsWith('order_') && !message.channel.name.startsWith('nm_')) return;
         const isAdmin = message.member?.roles?.cache?.has(process.env.DISCORD_OWNER_ROLE_ID) || message.author.id === OWNER_ID;
         const order = await Order.findOne({ orderId: message.channel.name });
         const isCustomer = order && order.discordId === message.author.id;
@@ -274,7 +274,7 @@ client.on('messageCreate', async message => {
 // --- AUTO VOUCH (EMBED CHUẨN MẪU) ---
 client.on('messageCreate', async message => {
     if (message.author.bot || !message.guild) return;
-    if (!message.channel.name.startsWith('order_')) return;
+    if (!message.channel.name.startsWith('order_') && !message.channel.name.startsWith('nm_')) return;
     if (message.attachments.size === 0) return;
     
     if (!message.member.roles.cache.has(process.env.DISCORD_OWNER_ROLE_ID)) return;
