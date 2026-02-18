@@ -36,7 +36,15 @@ const CartModal = () => {
     const CLIENT_ID = import.meta.env.VITE_DISCORD_CLIENT_ID || "1439615003572572250";
     const REDIRECT_URI = `${window.location.origin}/auth/discord/callback`;
     const SCOPE = "identify guilds.join"; 
-    window.location.href = `https://discord.com/api/oauth2/authorize?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=code&scope=${encodeURIComponent(SCOPE)}`;
+    const oauthUrl = `https://discord.com/api/oauth2/authorize?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=code&scope=${encodeURIComponent(SCOPE)}`;
+    const isAndroid = /Android/i.test(navigator.userAgent);
+    if (isAndroid) {
+      const fallback = encodeURIComponent(oauthUrl);
+      const intentUrl = `intent://discord.com/api/oauth2/authorize?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=code&scope=${encodeURIComponent(SCOPE)}#Intent;scheme=https;package=com.discord;S.browser_fallback_url=${fallback};end`;
+      window.location.href = intentUrl;
+    } else {
+      window.location.href = oauthUrl;
+    }
   };
 
   const handleLogout = () => {
