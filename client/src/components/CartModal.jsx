@@ -12,10 +12,6 @@ const CartModal = () => {
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [inviteLink, setInviteLink] = useState("");
   const [localUser, setLocalUser] = useState(null);
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [paymentOrder, setPaymentOrder] = useState(null);
-  const [ltcData, setLtcData] = useState(null);
-  const [paymentLoading, setPaymentLoading] = useState(false);
   const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
   useEffect(() => {
       const stored = localStorage.getItem('user');
@@ -42,8 +38,14 @@ const CartModal = () => {
 
   const handleLinkApp = () => {
     const oauthUrl = getOAuthUrl();
-    window.location.href = 'discord://';
-    setTimeout(() => window.open(oauthUrl, '_blank'), 500);
+    const iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    iframe.src = 'discord://';
+    document.body.appendChild(iframe);
+    setTimeout(() => {
+      document.body.removeChild(iframe);
+      window.open(oauthUrl, '_blank');
+    }, 800);
   };
 
   const handleLogout = () => {
@@ -60,16 +62,14 @@ const CartModal = () => {
     
     setIsProcessing(true);
     try {
-      const totalAmount = cart.reduce((a, i) => a + i.price * i.quantity, 0);
       const res = await axios.post('/api/shop/checkout', { discordId: user.discordId, cartItems: cart });
       clearCart();
       setIsCartOpen(false);
       const guildId = import.meta.env.VITE_DISCORD_GUILD_ID || '1398984938111369256';
       const channelId = res.data.channelId;
-      const orderId = res.data.orderId;
-      
-      setPaymentOrder({ orderId, totalAmount, channelId, guildId });
-      setShowPaymentModal(true);
+      if (channelId) {
+        window.location.href = `https://discord.com/channels/${guildId}/${channelId}`;
+      }
     } catch (err) {
       if (err.response?.data?.error_code === "USER_NOT_IN_GUILD") {
           setInviteLink(err.response.data.invite_link);
@@ -82,79 +82,7 @@ const CartModal = () => {
     }
   };
 
-  const handlePayPal = async () => {
-    if (!paymentOrder) return;
-    setPaymentLoading(true);
-    try {
-      const res = await axios.post('/api/shop/create-payment', { orderId: paymentOrder.orderId, totalAmount: paymentOrder.totalAmount, method: 'paypal' });
-      if (res.data.approvalLink) window.location.href = res.data.approvalLink;
-      else alert('PayPal not configured. Please pay in Discord ticket.');
-    } catch (err) {
-      alert(err.response?.data?.error || 'PayPal not available');
-    } finally {
-      setPaymentLoading(false);
-    }
-  };
-
-  const handleLTC = async () => {
-    if (!paymentOrder) return;
-    setPaymentLoading(true);
-    try {
-      const res = await axios.post('/api/shop/create-payment', { orderId: paymentOrder.orderId, totalAmount: paymentOrder.totalAmount, method: 'ltc' });
-      if (res.data.payAddress) setLtcData(res.data);
-      else alert('LTC not configured. Please pay in Discord ticket.');
-    } catch (err) {
-      alert(err.response?.data?.error || 'LTC not available');
-    } finally {
-      setPaymentLoading(false);
-    }
-  };
-
-  if (!isCartOpen && !showPaymentModal) return null;
-
-  if (showPaymentModal && paymentOrder) {
-    const ticketUrl = paymentOrder.channelId ? `https://discord.com/channels/${paymentOrder.guildId}/${paymentOrder.channelId}` : null;
-    return (
-      <div className="fixed inset-0 z-[80] bg-black/90 flex items-center justify-center p-4 overflow-y-auto">
-        <div className="bg-[#1c1c1e] rounded-2xl p-6 max-w-md w-full border border-[#2c2c2e] my-8">
-          <h2 className="text-xl font-bold text-white mb-1">Order {paymentOrder.orderId}</h2>
-          <p className="text-gray-400 text-sm mb-4">Total: ${paymentOrder.totalAmount.toFixed(2)}</p>
-          
-          <div className="space-y-3 mb-4">
-            <button onClick={handlePayPal} disabled={paymentLoading} className="w-full py-3 bg-[#0070BA] hover:bg-[#005ea6] disabled:opacity-50 text-white font-bold rounded-xl flex items-center justify-center gap-2">
-              Pay with PayPal
-            </button>
-            <button onClick={handleLTC} disabled={paymentLoading} className="w-full py-3 bg-[#BFBBBB] hover:bg-[#a8a5a5] disabled:opacity-50 text-white font-bold rounded-xl">
-              Pay with LTC (Litecoin)
-            </button>
-          </div>
-
-          {ltcData && (
-            <div className="bg-[#0a0a0c] rounded-xl p-4 mb-4 border border-[#2c2c2e]">
-              <p className="text-gray-400 text-xs mb-1">Send exactly:</p>
-              <p className="text-white font-mono font-bold text-lg">{ltcData.payAmount} {ltcData.payCurrency?.toUpperCase()}</p>
-              <p className="text-gray-400 text-xs mt-2 mb-1">To address:</p>
-              <p className="text-white font-mono text-xs break-all bg-[#1a1a1c] p-2 rounded">{ltcData.payAddress}</p>
-            </div>
-          )}
-
-          {ticketUrl && (
-            <>
-              <a href={ticketUrl} target="_blank" rel="noreferrer" className="block w-full py-3 text-center bg-[#5865F2] hover:bg-[#4752C4] text-white font-bold rounded-xl transition mb-2">
-                Open Discord Ticket
-              </a>
-              {isMobile && (
-                <p className="text-gray-500 text-xs text-center">Ticket will open in a new tab</p>
-              )}
-            </>
-          )}
-          <button onClick={() => { setShowPaymentModal(false); setPaymentOrder(null); setLtcData(null); }} className="w-full mt-2 text-gray-500 hover:text-white text-sm">
-            Close
-          </button>
-        </div>
-      </div>
-    );
-  }
+  if (!isCartOpen) return null;
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-0 md:p-4">
