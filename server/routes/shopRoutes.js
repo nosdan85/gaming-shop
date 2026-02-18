@@ -133,7 +133,31 @@ router.post('/checkout', async (req, res) => {
     res.json({ success: true, orderId, channelId });
 });
 
-// 4. Link Discord thủ công từ web (DiscordModal)
+// 4. Tạo link code cho mobile (user bấm "Link Discord" trên mobile → nhận mã 6 ký tự)
+const linkCodes = new Map(); // code -> { createdAt, discordId?, discordUsername? }
+
+router.post('/generate-link-code', (req, res) => {
+    const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+    linkCodes.set(code, { createdAt: Date.now() });
+    // Xóa code sau 5 phút
+    setTimeout(() => linkCodes.delete(code), 5 * 60 * 1000);
+    res.json({ code });
+});
+
+router.get('/check-link-code/:code', (req, res) => {
+    const entry = linkCodes.get(req.params.code);
+    if (!entry) return res.json({ status: 'expired' });
+    if (entry.discordId) {
+        linkCodes.delete(req.params.code);
+        return res.json({ status: 'linked', discordId: entry.discordId, discordUsername: entry.discordUsername });
+    }
+    return res.json({ status: 'pending' });
+});
+
+// Export linkCodes để bot.js dùng
+router.linkCodes = linkCodes;
+
+// 5. Link Discord thủ công từ web (DiscordModal)
 //    POST /api/shop/link-discord  { discordId, discordUsername }
 router.post('/link-discord', async (req, res) => {
     const { discordId, discordUsername } = req.body;

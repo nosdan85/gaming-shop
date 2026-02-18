@@ -112,10 +112,45 @@ client.on('messageCreate', async message => {
     // ID owner cố định (an toàn vì chỉ là ID public, không phải token)
     const OWNER_ID = '1146730730060271736';
 
-    // 1) LỆNH USER: !link  (ai cũng dùng được)
+    // 1) LỆNH USER: !link hoặc !link CODE (ai cũng dùng được)
     if (cmd === '!link') {
         const User = require('./models/User');
+        const linkCode = args[1]; // CODE nếu có
+
         try {
+            // Nếu có link code từ web → link qua code
+            if (linkCode) {
+                let linkCodes;
+                try {
+                    linkCodes = require('./routes/shopRoutes').linkCodes;
+                } catch (e) { linkCodes = null; }
+
+                if (!linkCodes || !linkCodes.has(linkCode.toUpperCase())) {
+                    return message.reply('Code không hợp lệ hoặc đã hết hạn. Hãy tạo code mới trên web.');
+                }
+
+                const entry = linkCodes.get(linkCode.toUpperCase());
+
+                // Lưu vào DB
+                let dbUser = await User.findOne({ discordId: message.author.id });
+                if (!dbUser) {
+                    dbUser = await User.create({
+                        discordId: message.author.id,
+                        discordUsername: message.author.tag,
+                    });
+                } else {
+                    dbUser.discordUsername = message.author.tag;
+                    await dbUser.save();
+                }
+
+                // Đánh dấu code đã link → web sẽ polling thấy
+                entry.discordId = message.author.id;
+                entry.discordUsername = message.author.tag;
+
+                return message.reply(`Đã link thành công! Quay lại trang web để tiếp tục mua hàng.`);
+            }
+
+            // Không có code → link thường (cho DM notification)
             const existing = await User.findOne({ discordId: message.author.id });
             if (existing) {
                 return message.reply('Bạn đã liên kết Discord với bot trước đó rồi.');
