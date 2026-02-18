@@ -1,14 +1,16 @@
 import { useContext, useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { ShopContext } from '../context/ShopContext';
 import { ShoppingBagIcon, Bars3Icon, XMarkIcon } from '@heroicons/react/24/outline';
 
-// --- QUAN TRỌNG: ĐÃ XÓA DÒNG IMPORT LOGO Ở ĐÂY ĐỂ TRÁNH LỖI BUILD ---
+// --- Discord Review: dùng env VITE_DISCORD_GUILD_ID + VITE_DISCORD_VOUCH_CHANNEL_ID ---
+const GUILD_ID = import.meta.env.VITE_DISCORD_GUILD_ID || '1398984938111369256';
+const VOUCH_CHANNEL_ID = import.meta.env.VITE_DISCORD_VOUCH_CHANNEL_ID || '1399046293162299402';
+const DISCORD_REVIEW_URL = `https://discord.com/channels/${GUILD_ID}/${VOUCH_CHANNEL_ID}`;
 
 const Navbar = () => {
   const { cart, isCartOpen, setIsCartOpen } = useContext(ShopContext);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const location = useLocation();
 
   const totalItems = cart.reduce((acc, item) => acc + item.quantity, 0);
 
@@ -32,7 +34,7 @@ const Navbar = () => {
           {/* Desktop Menu: bỏ Home/Shop/About, thêm Discord Review + Trustpilot với hiệu ứng active */}
           <div className="hidden md:flex space-x-8">
             <a 
-              href="discord://-/channels/1398984938111369256/1399046293162299402" 
+              href={DISCORD_REVIEW_URL} 
               target="_blank" 
               rel="noreferrer"
               className="text-gray-300 hover:text-white transition-colors font-medium"
@@ -80,7 +82,7 @@ const Navbar = () => {
         <div className="md:hidden bg-[#09090b] border-t border-white/10">
           <div className="px-4 pt-2 pb-4 space-y-1">
             <a 
-              href="discord://-/channels/1398984938111369256/1399046293162299402"
+              href={DISCORD_REVIEW_URL}
               target="_blank"
               rel="noreferrer"
               onClick={() => setIsMenuOpen(false)}
