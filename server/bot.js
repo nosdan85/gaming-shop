@@ -145,13 +145,21 @@ client.on('messageCreate', async message => {
                 .setTitle('✅ Discord Linked!')
                 .setDescription(
                     `Your account **${message.author.tag}** has been linked.\n\n` +
-                    `Click the link below to open the shop:\n` +
+                    `**Option 1:** Click the link to sign in:\n` +
                     `**[Open NOS Market](${webUrl})**\n\n` +
-                    `Your account will be automatically signed in.`
+                    `**Option 2:** Go back to the website and paste this code in the "Paste your code" field:\n` +
+                    `\`\`\`${token}\`\`\``
                 )
-                .setFooter({ text: 'Link expires in 10 minutes' });
+                .setFooter({ text: 'Code expires in 10 minutes' });
 
-            return message.reply({ embeds: [embed] });
+            try {
+                await message.author.send({ embeds: [embed] });
+                const reply = await message.reply('I sent you a DM with your link and code. Check your messages!');
+                setTimeout(() => reply.delete().catch(() => {}), 5000);
+            } catch (dmErr) {
+                const fallback = await message.reply('I couldn\'t DM you. Please allow DMs from server members, or use the link below:\n' + webUrl);
+                setTimeout(() => fallback.delete().catch(() => {}), 15000);
+            }
         } catch (err) {
             console.error('Error !link:', err);
             return message.reply('An error occurred. Please try again.');
