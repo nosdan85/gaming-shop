@@ -70,12 +70,16 @@ const createOrderTicket = async (order) => {
 };
 
 // --- BUTTON HANDLER ---
+const { createPayPalOrder, createLTCInvoice } = require('./services/paymentService');
+
 client.on('interactionCreate', async interaction => {
     if (!interaction.isButton()) return;
     const [action, method, ...rest] = interaction.customId.split('_');
     const orderId = rest.join('_');
 
     if (action === 'pay') {
+        const order = await Order.findOne({ orderId });
+        const totalAmount = order?.totalAmount || 0;
         const methods = {
             'paypal': { name: 'PayPal', img: 'paypal.png' },
             'ltc': { name: 'Litecoin', img: 'ltc.png' },
@@ -85,16 +89,43 @@ client.on('interactionCreate', async interaction => {
         const selected = methods[method];
         if (!selected) return;
 
-        const imagePath = path.join(__dirname, `../client/public/pictures/payments/${selected.img}`);
-        const file = new AttachmentBuilder(imagePath);
-        
-        const embed = new EmbedBuilder()
-            .setColor(0x000000)
-            .setTitle(`Pay via ${selected.name}`)
-            .setDescription(`Scan QR or use details below.\n**Upload screenshot proof here.**`)
-            .setImage(`attachment://${selected.img}`);
+        let embed, files = [];
+        if (method === 'paypal') {
+            const base = process.env.WEBHOOK_BASE_URL || 'https://gaming-shop-backend.onrender.com';
+            const returnUrl = `${base}/api/shop/paypal/capture`; // PayPal redirects user here after payment
+            const paypal = await createPayPalOrder(orderId, totalAmount, returnUrl);
+            if (paypal?.approvalLink) {
+                await Order.findOneAndUpdate({ orderId }, { paypalOrderId: paypal.orderId });
+                embed = new EmbedBuilder()
+                    .setColor(0x0070BA)
+                    .setTitle('Pay via PayPal')
+                    .setDescription(`**Amount:** $${totalAmount}\n\n**[Click here to pay with PayPal](${paypal.approvalLink})**\n\nPayment will be confirmed automatically.`);
+            }
+        } else if (method === 'ltc') {
+            const ltc = await createLTCInvoice(orderId, totalAmount);
+            if (ltc?.payAddress) {
+                embed = new EmbedBuilder()
+                    .setColor(0xBFBBBB)
+                    .setTitle('Pay via Litecoin (LTC)')
+                    .setDescription(
+                        `**Amount:** ${ltc.payAmount} LTC\n` +
+                        `**Address:** \`${ltc.payAddress}\`\n\n` +
+                        `Send exactly the amount above. Payment confirms automatically.`
+                    );
+            }
+        }
 
-        await interaction.reply({ embeds: [embed], files: [file] });
+        if (!embed) {
+            const imagePath = path.join(__dirname, `../client/public/pictures/payments/${selected.img}`);
+            files = [new AttachmentBuilder(imagePath)];
+            embed = new EmbedBuilder()
+                .setColor(0x000000)
+                .setTitle(`Pay via ${selected.name}`)
+                .setDescription(`Scan QR or use details below.\n**Upload screenshot proof here.**`)
+                .setImage(`attachment://${selected.img}`);
+        }
+
+        await interaction.reply({ embeds: [embed], files });
         await Order.findOneAndUpdate({ orderId }, { status: 'Waiting Payment', paymentMethod: method });
     }
 });
@@ -145,12 +176,11 @@ client.on('messageCreate', async message => {
                 .setTitle('✅ Discord Linked!')
                 .setDescription(
                     `Your account **${message.author.tag}** has been linked.\n\n` +
-                    `**Option 1:** Click the link to sign in:\n` +
+                    `Click the link below to open the shop:\n` +
                     `**[Open NOS Market](${webUrl})**\n\n` +
-                    `**Option 2:** Go back to the website and paste this code in the "Paste your code" field:\n` +
-                    `\`\`\`${token}\`\`\``
+                    `Your account will be automatically signed in.`
                 )
-                .setFooter({ text: 'Code expires in 10 minutes' });
+                .setFooter({ text: 'Link expires in 10 minutes' });
 
             try {
                 await message.author.send({ embeds: [embed] });
@@ -164,6 +194,22 @@ client.on('messageCreate', async message => {
             console.error('Error !link:', err);
             return message.reply('An error occurred. Please try again.');
         }
+    }
+
+    // !close - đóng và xóa ticket (chỉ trong channel order_*)
+    if (cmd === '!close') {
+        if (!message.channel.name.startsWith('order_')) return;
+        const isAdmin = message.member?.roles?.cache?.has(process.env.DISCORD_OWNER_ROLE_ID) || message.author.id === OWNER_ID;
+        const order = await Order.findOne({ orderId: message.channel.name });
+        const isCustomer = order && order.discordId === message.author.id;
+        if (!isAdmin && !isCustomer) return message.reply('Only the customer or staff can close this ticket.');
+        try {
+            await message.channel.delete();
+        } catch (err) {
+            console.error('Close ticket error:', err);
+            message.reply('Failed to close ticket.');
+        }
+        return;
     }
 
     // 2) Xem nhanh người đã link trong DB: !linked_users hoặc !checkdb

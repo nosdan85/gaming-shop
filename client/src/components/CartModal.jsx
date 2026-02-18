@@ -23,9 +23,7 @@ const CartModal = () => {
   const [localUser, setLocalUser] = useState(null);
   const [showOpenDiscordModal, setShowOpenDiscordModal] = useState(false);
   const [orderSuccessInvite, setOrderSuccessInvite] = useState("");
-  const [pasteCode, setPasteCode] = useState("");
-  const [pasteCodeLoading, setPasteCodeLoading] = useState(false);
-  const [pasteCodeError, setPasteCodeError] = useState("");
+  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
   useEffect(() => {
       const stored = localStorage.getItem('user');
       if (stored) {
@@ -37,32 +35,6 @@ const CartModal = () => {
 
   const user = contextUser || localUser;
   const total = cart.reduce((acc, item) => acc + item.price * item.quantity, 0).toFixed(2);
-
-  const handlePasteCode = async () => {
-    let token = pasteCode.trim();
-    if (token.includes('token=')) {
-      try {
-        token = new URLSearchParams(new URL(token).search).get('token') || token;
-      } catch { token = pasteCode.trim(); }
-    }
-    if (!token || token.length < 10) {
-      setPasteCodeError('Invalid code');
-      return;
-    }
-    setPasteCodeError("");
-    setPasteCodeLoading(true);
-    try {
-      const res = await axios.get(`/api/shop/verify-token/${token}`);
-      const userData = res.data;
-      loginDiscord(userData);
-      setLocalUser(userData);
-      setPasteCode("");
-    } catch (err) {
-      setPasteCodeError(err.response?.status === 404 ? 'Code expired or invalid' : 'Error');
-    } finally {
-      setPasteCodeLoading(false);
-    }
-  };
 
   const handleDiscordLogin = () => {
     const CLIENT_ID = import.meta.env.VITE_DISCORD_CLIENT_ID || "1439615003572572250";
@@ -87,11 +59,18 @@ const CartModal = () => {
     setIsProcessing(true);
     try {
       const res = await axios.post('/api/shop/checkout', { discordId: user.discordId, cartItems: cart });
-      const invite = import.meta.env.VITE_DISCORD_INVITE || "https://discord.gg/T4A4ANp9";
       clearCart();
       setIsCartOpen(false);
-      setOrderSuccessInvite(invite);
-      setShowOpenDiscordModal(true);
+      const guildId = import.meta.env.VITE_DISCORD_GUILD_ID || '1398984938111369256';
+      const channelId = res.data.channelId;
+      if (channelId) {
+        const ticketUrl = `https://discord.com/channels/${guildId}/${channelId}`;
+        window.location.href = ticketUrl;
+      } else {
+        const invite = res.data.invite_link || import.meta.env.VITE_DISCORD_INVITE || "https://discord.gg/T4A4ANp9";
+        setOrderSuccessInvite(invite);
+        setShowOpenDiscordModal(true);
+      }
     } catch (err) {
       if (err.response && err.response.data.error_code === "USER_NOT_IN_GUILD") {
           setInviteLink(err.response.data.invite_link);
@@ -196,34 +175,22 @@ const CartModal = () => {
                    <button onClick={handleDiscordLogin} className="w-full bg-[#5865F2] hover:bg-[#4752C4] text-white py-2.5 rounded-xl font-bold text-sm transition flex items-center justify-center gap-2">
                      <UserCircleIcon className="w-5 h-5"/> Link Discord
                    </button>
-                   <div className="rounded-xl bg-[#1a1a1c] border border-[#2c2c2e] p-3 text-left space-y-3">
-                     <p className="text-gray-300 text-xs font-medium">Using a phone?</p>
-                     <p className="text-gray-500 text-[11px] leading-relaxed">Tap the button below to open our Discord channel. Type <code className="bg-white/10 px-1 rounded text-[10px]">!link</code> — the bot will DM you a code.</p>
-                     <a
-                       href={linkChannelUrl}
-                       target="_blank"
-                       rel="noreferrer"
-                       className="block w-full py-2 rounded-lg bg-[#2c2c2e] hover:bg-[#3f3f46] text-white font-medium text-xs transition text-center"
-                     >
-                       Open Discord to Link Account
-                     </a>
-                     <div>
-                       <p className="text-gray-400 text-[10px] mb-1.5">Already ran !link? Paste your code here:</p>
-                       <div className="flex gap-2">
-                         <input
-                           type="text"
-                           value={pasteCode}
-                           onChange={e => { setPasteCode(e.target.value); setPasteCodeError(""); }}
-                           placeholder="Paste code from Discord DM"
-                           className="flex-1 bg-[#2c2c2e] border border-[#3f3f46] rounded-lg px-3 py-2 text-white text-xs placeholder-gray-500 focus:outline-none focus:border-[#5865F2]"
-                         />
-                         <button onClick={handlePasteCode} disabled={pasteCodeLoading || !pasteCode.trim()} className="px-3 py-2 bg-[#5865F2] hover:bg-[#4752C4] disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-medium rounded-lg transition">
-                           {pasteCodeLoading ? '...' : 'Apply'}
-                         </button>
+                   {!isMobile && (
+                     <>
+                       <div className="flex items-center gap-2">
+                         <div className="flex-1 h-px bg-[#2c2c2e]"/>
+                         <span className="text-gray-500 text-[10px]">or</span>
+                         <div className="flex-1 h-px bg-[#2c2c2e]"/>
                        </div>
-                       {pasteCodeError && <p className="text-red-400 text-[10px] mt-1">{pasteCodeError}</p>}
-                     </div>
-                   </div>
+                       <div className="rounded-xl bg-[#1a1a1c] border border-[#2c2c2e] p-3 text-left">
+                         <p className="text-gray-300 text-xs font-medium mb-1">Link via Discord App</p>
+                         <p className="text-gray-500 text-[11px] leading-relaxed mb-2">Go to our Discord, type <code className="bg-white/10 px-1 rounded">!link</code> in the link channel. Click the link the bot sends in your DMs.</p>
+                         <a href={linkChannelUrl} target="_blank" rel="noreferrer" className="block w-full py-2 rounded-lg bg-[#2c2c2e] hover:bg-[#3f3f46] text-white font-medium text-xs transition text-center">
+                           Open Discord to Link
+                         </a>
+                       </div>
+                     </>
+                   )}
                 </div>
               )}
            </div>

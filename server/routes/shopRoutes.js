@@ -119,11 +119,12 @@ router.post('/checkout', async (req, res) => {
 
     const totalAmount = cartItems.reduce((acc, item) => acc + item.price * item.quantity, 0);
     const orderId = `order_${Date.now()}`;
+    const items = cartItems.map(i => ({ product: i._id, name: i.name, quantity: i.quantity, price: i.price }));
 
     const newOrder = new Order({
         orderId,
         discordId,
-        items: cartItems,
+        items,
         totalAmount,
         status: 'Pending'
     });
@@ -156,7 +157,35 @@ router.get('/verify-token/:token', async (req, res) => {
     }
 });
 
-// 5. Link Discord thủ công từ web (DiscordModal)
+// 5a. PayPal capture - khi user thanh toán xong PayPal redirect về đây
+const { capturePayPalOrder } = require('../services/paymentService');
+router.get('/paypal/capture', async (req, res) => {
+    const token = req.query.token;
+    if (!token) return res.redirect(process.env.CLIENT_URL || 'https://www.nosmarket.com');
+    try {
+        const ok = await capturePayPalOrder(token);
+        if (ok) {
+            await Order.findOneAndUpdate({ paypalOrderId: token }, { status: 'Completed' });
+        }
+    } catch (e) {}
+    res.redirect(process.env.CLIENT_URL || 'https://www.nosmarket.com');
+});
+
+// 5b. Webhook NOWPayments (LTC/crypto) - cập nhật đơn khi thanh toán thành công
+router.post('/webhook/nowpayments', async (req, res) => {
+    try {
+        const { payment_status, order_id } = req.body;
+        if (payment_status === 'finished' && order_id) {
+            await Order.findOneAndUpdate({ orderId: order_id }, { status: 'Completed' });
+        }
+        res.json({ received: true });
+    } catch (err) {
+        console.error('NOWPayments webhook:', err);
+        res.status(500).json({ error: 'Webhook error' });
+    }
+});
+
+// 6. Link Discord thủ công từ web (DiscordModal)
 //    POST /api/shop/link-discord  { discordId, discordUsername }
 router.post('/link-discord', async (req, res) => {
     const { discordId, discordUsername } = req.body;

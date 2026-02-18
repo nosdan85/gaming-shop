@@ -12,6 +12,7 @@ const orderSchema = new mongoose.Schema({
     totalAmount: { type: Number, required: true },
     status: { type: String, enum: ['Pending', 'Waiting Payment', 'Completed', 'Cancelled'], default: 'Pending' },
     paymentMethod: { type: String, default: null },
+    paypalOrderId: { type: String },
     createdAt: { type: Date, default: Date.now }
 });
 
