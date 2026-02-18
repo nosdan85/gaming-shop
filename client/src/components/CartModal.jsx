@@ -38,10 +38,9 @@ const CartModal = () => {
 
   const handleLinkApp = () => {
     const oauthUrl = getOAuthUrl();
-    window.location.href = 'discord://';
-    setTimeout(() => {
-      window.open(oauthUrl, '_blank');
-    }, 500);
+    // Replace https:// with discord:// so the Discord desktop app handles the OAuth dialog internally
+    const discordAppUrl = oauthUrl.replace('https://discord.com/', 'discord://-/');
+    window.location.href = discordAppUrl;
   };
 
   const handleLogout = () => {
