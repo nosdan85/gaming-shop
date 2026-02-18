@@ -133,29 +133,28 @@ router.post('/checkout', async (req, res) => {
     res.json({ success: true, orderId, channelId });
 });
 
-// 4. Tạo link code cho mobile (user bấm "Link Discord" trên mobile → nhận mã 6 ký tự)
-const linkCodes = new Map(); // code -> { createdAt, discordId?, discordUsername? }
+// 4. Verify link token (từ !link trong Discord app)
+router.get('/verify-token/:token', async (req, res) => {
+    try {
+        const user = await User.findOne({
+            linkToken: req.params.token,
+            linkTokenExpiresAt: { $gt: new Date() }
+        });
+        if (!user) return res.status(404).json({ error: 'Token invalid or expired' });
 
-router.post('/generate-link-code', (req, res) => {
-    const code = Math.random().toString(36).substring(2, 8).toUpperCase();
-    linkCodes.set(code, { createdAt: Date.now() });
-    // Xóa code sau 5 phút
-    setTimeout(() => linkCodes.delete(code), 5 * 60 * 1000);
-    res.json({ code });
-});
+        user.linkToken = null;
+        user.linkTokenExpiresAt = null;
+        await user.save();
 
-router.get('/check-link-code/:code', (req, res) => {
-    const entry = linkCodes.get(req.params.code);
-    if (!entry) return res.json({ status: 'expired' });
-    if (entry.discordId) {
-        linkCodes.delete(req.params.code);
-        return res.json({ status: 'linked', discordId: entry.discordId, discordUsername: entry.discordUsername });
+        res.json({
+            discordId: user.discordId,
+            discordUsername: user.discordUsername,
+        });
+    } catch (err) {
+        console.error('Verify token error:', err);
+        res.status(500).json({ error: 'Server error' });
     }
-    return res.json({ status: 'pending' });
 });
-
-// Export linkCodes để bot.js dùng
-router.linkCodes = linkCodes;
 
 // 5. Link Discord thủ công từ web (DiscordModal)
 //    POST /api/shop/link-discord  { discordId, discordUsername }

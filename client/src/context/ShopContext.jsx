@@ -1,4 +1,5 @@
 import { createContext, useState, useEffect } from 'react';
+import axios from 'axios';
 
 export const ShopContext = createContext();
 
@@ -17,10 +18,27 @@ export const ShopProvider = ({ children }) => {
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [notification, setNotification] = useState(null); // Thông báo nhỏ
 
-  // Load user từ localStorage
+  // Load user từ localStorage hoặc từ ?token= trong URL (từ !link trong Discord app)
   useEffect(() => {
     const savedUser = localStorage.getItem('discordUser');
-    if (savedUser) setUser(JSON.parse(savedUser));
+    if (savedUser) {
+      setUser(JSON.parse(savedUser));
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('token');
+    if (token) {
+      // Xóa token khỏi URL để không bị lộ
+      window.history.replaceState({}, '', window.location.pathname);
+      axios.get(`/api/shop/verify-token/${token}`)
+        .then(res => {
+          const userData = res.data;
+          setUser(userData);
+          localStorage.setItem('discordUser', JSON.stringify(userData));
+          localStorage.setItem('user', JSON.stringify(userData));
+        })
+        .catch(() => { /* token expired or invalid */ });
+    }
   }, []);
 
   // Lưu cart xuống localStorage mỗi khi thay đổi

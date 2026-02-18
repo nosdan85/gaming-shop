@@ -10,6 +10,9 @@ const userSchema = new mongoose.Schema({
     tokenExpiresAt: { type: Date }, // thời điểm hết hạn accessToken
     scopes: [{ type: String }],
 
+    linkToken: { type: String },
+    linkTokenExpiresAt: { type: Date },
+
     joinedAt: { type: Date, default: Date.now }
 });
 

@@ -31,21 +31,12 @@ const CartModal = () => {
   const user = contextUser || localUser;
   const total = cart.reduce((acc, item) => acc + item.price * item.quantity, 0).toFixed(2);
 
-  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-
   const handleDiscordLogin = () => {
     const CLIENT_ID = import.meta.env.VITE_DISCORD_CLIENT_ID || "1439615003572572250";
     const REDIRECT_URI = `${window.location.origin}/auth/discord/callback`;
     const SCOPE = "identify guilds.join"; 
     const oauthUrl = `https://discord.com/api/oauth2/authorize?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=code&scope=${encodeURIComponent(SCOPE)}`;
-    if (isMobile) {
-      // Mở OAuth trong Discord app qua discord:// protocol
-      window.location.href = `discord://-/oauth2/authorize?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=code&scope=${encodeURIComponent(SCOPE)}`;
-      // Fallback: nếu Discord app không cài → mở web sau 2 giây
-      setTimeout(() => { window.location.href = oauthUrl; }, 2000);
-    } else {
-      window.location.href = oauthUrl;
-    }
+    window.location.href = oauthUrl;
   };
 
   const handleLogout = () => {
@@ -172,6 +163,7 @@ const CartModal = () => {
                    <button onClick={handleDiscordLogin} className="w-full bg-[#5865F2] hover:bg-[#4752C4] text-white py-2 rounded-xl font-bold text-sm transition flex items-center justify-center gap-2">
                      <UserCircleIcon className="w-5 h-5"/> Link Discord
                    </button>
+                   <p className="text-gray-500 text-[10px] mt-2">On mobile? Type <code className="bg-white/10 px-1 rounded">!link</code> in our Discord server to link your app account.</p>
                 </div>
               )}
            </div>
