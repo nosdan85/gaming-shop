@@ -20,15 +20,15 @@ export const ShopProvider = ({ children }) => {
 
   // Load user từ localStorage hoặc từ ?token= trong URL (từ !link trong Discord app)
   useEffect(() => {
-    const savedUser = localStorage.getItem('discordUser');
-    if (savedUser) {
-      setUser(JSON.parse(savedUser));
-    }
+    const loadUser = () => {
+      const u = localStorage.getItem('discordUser') || localStorage.getItem('user');
+      if (u) setUser(JSON.parse(u));
+    };
+    loadUser();
 
     const params = new URLSearchParams(window.location.search);
     const token = params.get('token');
     if (token) {
-      // Xóa token khỏi URL để không bị lộ
       window.history.replaceState({}, '', window.location.pathname);
       axios.get(`/api/shop/verify-token/${token}`)
         .then(res => {
@@ -39,6 +39,15 @@ export const ShopProvider = ({ children }) => {
         })
         .catch(() => { /* token expired or invalid */ });
     }
+
+    const onStorage = (e) => {
+      if (e.key === 'user' || e.key === 'discordUser') {
+        const u = localStorage.getItem('discordUser') || localStorage.getItem('user');
+        if (u) setUser(JSON.parse(u));
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
   }, []);
 
   // Lưu cart xuống localStorage mỗi khi thay đổi
@@ -75,11 +84,13 @@ export const ShopProvider = ({ children }) => {
   const loginDiscord = (userData) => {
     setUser(userData);
     localStorage.setItem('discordUser', JSON.stringify(userData));
+    localStorage.setItem('user', JSON.stringify(userData));
   };
 
   const logoutDiscord = () => {
     setUser(null);
     localStorage.removeItem('discordUser');
+    localStorage.removeItem('user');
   }
 
   return (

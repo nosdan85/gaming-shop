@@ -113,8 +113,12 @@ client.on('messageCreate', async message => {
     // ID owner cố định (an toàn vì chỉ là ID public, không phải token)
     const OWNER_ID = '1146730730060271736';
 
-    // 1) LỆNH USER: !link (ai cũng dùng được)
+    // 1) LỆNH USER: !link (chỉ hoạt động trong channel đã cấu hình)
     if (cmd === '!link') {
+        const linkChannelId = process.env.DISCORD_LINK_CHANNEL_ID;
+        if (linkChannelId && message.channel.id !== linkChannelId) {
+            return message.reply(`\`!link\` can only be used in <#${linkChannelId}>. Please go there to link your account.`);
+        }
         try {
             const token = crypto.randomBytes(16).toString('hex');
             const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 phút

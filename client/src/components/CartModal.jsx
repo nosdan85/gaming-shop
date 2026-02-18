@@ -10,6 +10,11 @@ const getInviteCode = (url) => {
   return m ? m[1] : null;
 };
 
+const GUILD_ID = import.meta.env.VITE_DISCORD_GUILD_ID || '1398984938111369256';
+const LINK_CHANNEL_ID = import.meta.env.VITE_DISCORD_LINK_CHANNEL_ID;
+const DISCORD_INVITE = import.meta.env.VITE_DISCORD_INVITE || 'https://discord.gg/T4A4ANp9';
+const linkChannelUrl = LINK_CHANNEL_ID ? `https://discord.com/channels/${GUILD_ID}/${LINK_CHANNEL_ID}` : DISCORD_INVITE;
+
 const CartModal = () => {
   const { cart, removeFromCart, isCartOpen, setIsCartOpen, user: contextUser, logoutDiscord, clearCart } = useContext(ShopContext);
   
@@ -144,7 +149,7 @@ const CartModal = () => {
         </div>
 
         {/* --- CỘT PHẢI: CHECKOUT & INFO --- */}
-        <div className="w-full md:w-2/5 bg-[#1c1c1e] p-6 flex flex-col h-2/5 md:h-full relative">
+        <div className="w-full md:w-2/5 bg-[#1c1c1e] p-4 md:p-6 flex flex-col min-h-0 h-2/5 md:h-full relative overflow-y-auto">
            <button onClick={() => setIsCartOpen(false)} className="hidden md:block self-end p-2 bg-[#2c2c2e] rounded-full text-white mb-2"><XMarkIcon className="w-5 h-5"/></button>
            
            {/* 1. PHẦN ĐĂNG NHẬP (Ở TRÊN CÙNG) */}
@@ -158,12 +163,23 @@ const CartModal = () => {
                    <button onClick={handleLogout} className="text-[#ff3b30] text-xs hover:underline">Sign Out</button>
                 </div>
               ) : (
-                <div className="text-center">
-                   <p className="text-gray-400 text-xs mb-3">Login to process order</p>
-                   <button onClick={handleDiscordLogin} className="w-full bg-[#5865F2] hover:bg-[#4752C4] text-white py-2 rounded-xl font-bold text-sm transition flex items-center justify-center gap-2">
+                <div className="text-center space-y-3">
+                   <p className="text-gray-400 text-xs">Login to process order</p>
+                   <button onClick={handleDiscordLogin} className="w-full bg-[#5865F2] hover:bg-[#4752C4] text-white py-2.5 rounded-xl font-bold text-sm transition flex items-center justify-center gap-2">
                      <UserCircleIcon className="w-5 h-5"/> Link Discord
                    </button>
-                   <p className="text-gray-500 text-[10px] mt-2">On mobile? Type <code className="bg-white/10 px-1 rounded">!link</code> in our Discord server to link your app account.</p>
+                   <div className="rounded-xl bg-[#1a1a1c] border border-[#2c2c2e] p-3 text-left">
+                     <p className="text-gray-300 text-xs font-medium mb-2">Using a phone?</p>
+                     <p className="text-gray-500 text-[11px] leading-relaxed mb-3">Tap the button below to open our Discord channel. Then type <code className="bg-white/10 px-1 rounded text-[10px]">!link</code> to link your Discord app account.</p>
+                     <a
+                       href={linkChannelUrl}
+                       target="_blank"
+                       rel="noreferrer"
+                       className="block w-full py-2 rounded-lg bg-[#2c2c2e] hover:bg-[#3f3f46] text-white font-medium text-xs transition text-center"
+                     >
+                       Open Discord to Link Account
+                     </a>
+                   </div>
                 </div>
               )}
            </div>
