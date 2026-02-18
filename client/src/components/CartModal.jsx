@@ -37,14 +37,7 @@ const CartModal = () => {
     const REDIRECT_URI = `${window.location.origin}/auth/discord/callback`;
     const SCOPE = "identify guilds.join"; 
     const oauthUrl = `https://discord.com/api/oauth2/authorize?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=code&scope=${encodeURIComponent(SCOPE)}`;
-    const isAndroid = /Android/i.test(navigator.userAgent);
-    if (isAndroid) {
-      const fallback = encodeURIComponent(oauthUrl);
-      const intentUrl = `intent://discord.com/api/oauth2/authorize?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=code&scope=${encodeURIComponent(SCOPE)}#Intent;scheme=https;package=com.discord;S.browser_fallback_url=${fallback};end`;
-      window.location.href = intentUrl;
-    } else {
-      window.location.href = oauthUrl;
-    }
+    window.location.href = oauthUrl;
   };
 
   const handleLogout = () => {
@@ -171,7 +164,7 @@ const CartModal = () => {
                    <button onClick={handleDiscordLogin} className="w-full bg-[#5865F2] hover:bg-[#4752C4] text-white py-2 rounded-xl font-bold text-sm transition flex items-center justify-center gap-2">
                      <UserCircleIcon className="w-5 h-5"/> Link Discord
                    </button>
-                   <p className="text-gray-500 text-[10px] mt-2">On mobile? Use <code className="bg-white/10 px-1 rounded">!link</code> in our Discord app to link your main account.</p>
+                   <p className="text-gray-500 text-[10px] mt-2">Mobile: Mở trang từ link trong Discord để login qua app, hoặc dùng <code className="bg-white/10 px-1 rounded">!link</code> trong server.</p>
                 </div>
               )}
            </div>
