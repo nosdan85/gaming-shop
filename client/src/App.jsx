@@ -17,8 +17,6 @@ if (apiUrl) {
 // --------------------------------
 
 function App() {
-  const [searchTerm, setSearchTerm] = useState("");
-
   return (
     <AuthProvider>
       <ShopProvider>
@@ -28,8 +26,8 @@ function App() {
            <Routes>
              <Route path="/" element={
                <>
-                 <Navbar onSearch={setSearchTerm}/>
-                 <Home searchTerm={searchTerm}/>
+                 <Navbar />
+                 <Home />
                </>
              } />
 

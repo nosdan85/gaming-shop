@@ -2,20 +2,28 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import ProductCard from '../components/ProductCard';
 import ProductDetailModal from '../components/ProductDetailModal';
+import { MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 
 // Chỉ giữ lại 1 game như yêu cầu
 const GAMES = ["Blox Fruits"];
 const CATEGORIES = ["All", "Bundles", "Best Seller", "Permanent Fruits", "Gamepass"];
+const SORT_OPTIONS = [
+  { id: 'none', label: 'Default' },
+  { id: 'low-high', label: 'Price: Low → High' },
+  { id: 'high-low', label: 'Price: High → Low' },
+];
 
 const CACHE_KEY = 'productsCache';
 const CACHE_TTL_MS = 30 * 60 * 1000; // 30 phút
 
-const Home = ({ searchTerm }) => {
+const Home = () => {
   const [products, setProducts] = useState([]);
   const [activeGame, setActiveGame] = useState("Blox Fruits");
   const [activeCategory, setActiveCategory] = useState("All");
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [sortBy, setSortBy] = useState('none');
 
   useEffect(() => {
     // Hiện cache ngay nếu còn hiệu lực -> load nhanh khi vào lại
@@ -41,12 +49,17 @@ const Home = ({ searchTerm }) => {
       .finally(() => setLoading(false));
   }, []);
 
-  const filteredProducts = products.filter(p => {
-    // Logic lọc: category + search (Game tạm thời chưa lọc vì DB chưa có field này)
+  let filteredProducts = products.filter(p => {
     const matchCategory = activeCategory === "All" || p.category === activeCategory;
-    const matchSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchSearch = !searchTerm.trim() || p.name.toLowerCase().includes(searchTerm.toLowerCase());
     return matchCategory && matchSearch;
   });
+
+  if (sortBy === 'low-high') {
+    filteredProducts = [...filteredProducts].sort((a, b) => (a.price || 0) - (b.price || 0));
+  } else if (sortBy === 'high-low') {
+    filteredProducts = [...filteredProducts].sort((a, b) => (b.price || 0) - (a.price || 0));
+  }
 
   return (
     <div className="min-h-screen bg-black pt-20 md:pt-24 pb-32">
@@ -71,13 +84,21 @@ const Home = ({ searchTerm }) => {
       </div>
 
       <div className="max-w-7xl mx-auto px-4">
-        {/* Headline */}
-        <div className="text-center mb-12">
-           <h1 className="text-4xl md:text-6xl font-bold text-white mb-2 tracking-tight">Store.</h1>
-           <p className="text-lg text-[#86868b]">The best way to buy the items you love.</p>
+        {/* Thanh tìm kiếm - thế chỗ Store / tagline */}
+        <div className="mb-8 md:mb-10">
+          <div className="relative max-w-xl mx-auto">
+            <MagnifyingGlassIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--color-accent)]" />
+            <input
+              type="text"
+              placeholder="Search products..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-12 pr-4 py-3 md:py-4 bg-[var(--color-bg-secondary)] border border-[var(--color-accent)]/30 rounded-2xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] focus:border-transparent transition-all shadow-lg shadow-cyan-500/5"
+            />
+          </div>
         </div>
 
-        {/* 2. CHỌN GAME (Mới) */}
+        {/* 2. CHỌN GAME */}
         <div className="flex justify-center gap-6 mb-8 overflow-x-auto pb-4 scrollbar-hide">
             {GAMES.map(game => (
                 <button 
@@ -94,8 +115,8 @@ const Home = ({ searchTerm }) => {
             ))}
         </div>
 
-        {/* 3. CHỌN DANH MỤC */}
-        <div className="flex flex-wrap justify-center gap-3 mb-12">
+        {/* 3. CHỌN DANH MỤC + SẮP XẾP GIÁ */}
+        <div className="flex flex-wrap justify-center items-center gap-3 mb-12">
           {CATEGORIES.map(cat => (
             <button 
               key={cat}
@@ -105,6 +126,16 @@ const Home = ({ searchTerm }) => {
               {cat}
             </button>
           ))}
+          <span className="text-gray-500 text-sm mx-1">|</span>
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            className="bg-[var(--color-bg-secondary)] border border-white/10 rounded-full px-4 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] cursor-pointer"
+          >
+            {SORT_OPTIONS.map(opt => (
+              <option key={opt.id} value={opt.id} className="bg-[#1c1c1e]">{opt.label}</option>
+            ))}
+          </select>
         </div>
 
         {/* 4. LƯỚI SẢN PHẨM (2 Cột Mobile / 4 Cột PC) */}

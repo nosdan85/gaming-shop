@@ -32,7 +32,7 @@ const ProductCard = ({ product, onOpenDetail }) => {
                 src={`/pictures/products/${product.image}`} 
                 alt={product.name}
                 // Ảnh to hơn một chút và có hiệu ứng drop-shadow màu accent
-                className="w-28 h-28 md:w-40 md:h-40 object-contain transition-transform duration-500 group-hover:scale-110 drop-shadow-[0_5px_15px_rgba(0,0,0,0.5)] group-hover:drop-shadow-[0_8px_20px_rgba(14,165,233,0.4)]"
+                className="w-28 h-28 md:w-40 md:h-40 object-contain transition-transform duration-500 group-hover:scale-110 drop-shadow-[0_5px_15px_rgba(0,0,0,0.5)] group-hover:drop-shadow-[0_8px_24px_rgba(6,182,212,0.35)]"
                 onError={(e) => e.target.src = 'https://via.placeholder.com/150'}
             />
         </div>

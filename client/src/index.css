@@ -2,20 +2,22 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ĐỊNH NGHĨA MÀU SẮC CHỦ ĐẠO */
+/* ĐỊNH NGHĨA MÀU SẮC - tối ưu contrast & nổi bật hơn, vẫn đơn giản */
 :root {
-  --color-bg-main: #09090b; /* Nền đen sâu */
-  --color-bg-secondary: #1c1c1e; /* Nền các khối card */
-  --color-text-primary: #ffffff; /* Chữ trắng */
-  --color-text-secondary: #9ca3af; /* Chữ xám */
-  --color-accent: #0EA5E9; /* Xanh Cyan từ logo */
-  --color-accent-hover: #0284c7; /* Xanh đậm hơn khi hover */
+  --color-bg-main: #0a0a0f; /* Nền đen nhẹ xanh - tạo chiều sâu */
+  --color-bg-secondary: #14141a; /* Card tối nhưng ấm hơn đen thuần */
+  --color-bg-elevated: #1a1a22; /* Phần nổi bật (input, button active) */
+  --color-text-primary: #fafafa; /* Chữ trắng ấm */
+  --color-text-secondary: #a1a1aa; /* Xám dịu, dễ đọc */
+  --color-accent: #06b6d4; /* Cyan rực hơn - dễ nhận biết */
+  --color-accent-hover: #0891b2; /* Hover đậm hơn */
+  --color-accent-glow: rgba(6, 182, 212, 0.15); /* Glow nhẹ */
 }
 
 body {
-  background-color: var(--color-bg-main);
+  background: linear-gradient(180deg, #0a0a0f 0%, #07070a 100%);
   color: var(--color-text-primary);
-  font-family: 'Inter', sans-serif; /* Gợi ý font chữ hiện đại */
+  font-family: 'Inter', 'SF Pro Display', system-ui, sans-serif;
 }
 
 /* Class tiện ích cho màu accent */
@@ -31,8 +33,8 @@ body {
 }
 
 .tab-apple.active {
-  @apply text-white bg-[var(--color-bg-secondary)] shadow-lg shadow-cyan-500/10;
-  @apply border border-[var(--color-accent)];
+  @apply text-white bg-[var(--color-bg-elevated)];
+  box-shadow: 0 0 0 1px var(--color-accent), 0 4px 14px var(--color-accent-glow);
 }
 
 .tab-apple.inactive {
