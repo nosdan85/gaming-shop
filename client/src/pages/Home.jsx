@@ -7,15 +7,38 @@ import ProductDetailModal from '../components/ProductDetailModal';
 const GAMES = ["Blox Fruits"];
 const CATEGORIES = ["All", "Bundles", "Best Seller", "Permanent Fruits", "Gamepass"];
 
+const CACHE_KEY = 'productsCache';
+const CACHE_TTL_MS = 30 * 60 * 1000; // 30 phút
+
 const Home = ({ searchTerm }) => {
   const [products, setProducts] = useState([]);
   const [activeGame, setActiveGame] = useState("Blox Fruits");
   const [activeCategory, setActiveCategory] = useState("All");
   const [selectedProduct, setSelectedProduct] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Gọi API lấy sản phẩm
-    axios.get('/api/shop/products').then(res => setProducts(res.data));
+    // Hiện cache ngay nếu còn hiệu lực -> load nhanh khi vào lại
+    try {
+      const raw = localStorage.getItem(CACHE_KEY);
+      if (raw) {
+        const { data, ts } = JSON.parse(raw);
+        if (data?.length && Date.now() - ts < CACHE_TTL_MS) {
+          setProducts(data);
+        }
+      }
+    } catch (_) {}
+
+    setLoading(true);
+    axios.get('/api/shop/products')
+      .then(res => {
+        setProducts(res.data);
+        try {
+          localStorage.setItem(CACHE_KEY, JSON.stringify({ data: res.data, ts: Date.now() }));
+        } catch (_) {}
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
 
   const filteredProducts = products.filter(p => {
@@ -26,11 +49,11 @@ const Home = ({ searchTerm }) => {
   });
 
   return (
-    <div className="min-h-screen bg-black pt-6 pb-32">
+    <div className="min-h-screen bg-black pt-20 md:pt-24 pb-32">
       
-      {/* 1. THANH THÔNG BÁO SERVER MỚI (Cầu nối Emergency) */}
+      {/* 1. THANH THÔNG BÁO SERVER MỚI - luôn hiện dưới navbar, mobile: sticky ngay dưới navbar */}
       <div className="max-w-7xl mx-auto px-4 mb-4 md:mb-10">
-        <div className="bg-[#1c1c1e] border border-[#2c2c2e] rounded-none md:rounded-xl p-3 md:p-4 flex items-center justify-between shadow-lg sticky top-16 z-40 md:static">
+        <div className="bg-[#1c1c1e] border border-[#2c2c2e] rounded-lg md:rounded-xl p-3 md:p-4 flex items-center justify-between shadow-lg sticky top-16 z-[45] md:top-20 md:z-[45]">
             <div className="flex items-center gap-3">
                 <span className="relative flex h-3 w-3">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
@@ -85,7 +108,9 @@ const Home = ({ searchTerm }) => {
         </div>
 
         {/* 4. LƯỚI SẢN PHẨM (2 Cột Mobile / 4 Cột PC) */}
-        {filteredProducts.length === 0 ? (
+        {loading && filteredProducts.length === 0 ? (
+           <div className="text-center py-20 text-[#86868b]">Loading products...</div>
+        ) : filteredProducts.length === 0 ? (
            <div className="text-center py-20 text-[#86868b]">No products found.</div>
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
