@@ -28,8 +28,14 @@ const CartModal = () => {
   const getOAuthUrl = () => {
     const CLIENT_ID = import.meta.env.VITE_DISCORD_CLIENT_ID || "1439615003572572250";
     const REDIRECT_URI = `${window.location.origin}/auth/discord/callback`;
-    const SCOPE = "identify guilds.join"; 
-    return `https://discord.com/api/oauth2/authorize?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=code&scope=${encodeURIComponent(SCOPE)}`;
+    const params = new URLSearchParams({
+      client_id: CLIENT_ID,
+      redirect_uri: REDIRECT_URI,
+      response_type: "code",
+      scope: "identify guilds.join",
+      prompt: "consent"
+    });
+    return `https://discord.com/oauth2/authorize?${params.toString()}`;
   };
 
   const handleLinkWeb = () => {
