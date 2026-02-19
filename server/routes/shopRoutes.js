@@ -271,29 +271,32 @@ router.post('/link-discord', async (req, res) => {
     }
 });
 
-// 6b. Tạo ticket khi khách chọn CashApp/Robux/PayPal F&F
+// 6b. Lấy PayPal email (cho F&F, không tạo ticket)
+router.get('/paypal-email', (req, res) => {
+    const email = process.env.PAYPAL_EMAIL || '';
+    res.json({ email });
+});
+
+// 6c. Tạo ticket CHỈ khi chọn CashApp/Robux
 router.post('/create-ticket', async (req, res) => {
     try {
-        const { orderId, method } = req.body;
+        const { orderId } = req.body;
         if (!orderId) return res.status(400).json({ error: 'Missing orderId' });
         const order = await Order.findOne({ orderId });
         if (!order) return res.status(404).json({ error: 'Order not found' });
-        if (method) await Order.findOneAndUpdate({ orderId }, { paymentMethod: method });
         if (order.channelId) {
-            const paypalEmail = method === 'paypal_ff' ? (process.env.PAYPAL_EMAIL || '') : null;
-            return res.json({ channelId: order.channelId, paypalEmail });
+            return res.json({ channelId: order.channelId });
         }
         const channelId = await createOrderTicket(order);
-        if (channelId) await Order.findOneAndUpdate({ orderId }, { channelId, ...(method && { paymentMethod: method }) });
-        const paypalEmail = method === 'paypal_ff' ? (process.env.PAYPAL_EMAIL || '') : null;
-        res.json({ channelId: channelId || null, paypalEmail });
+        if (channelId) await Order.findOneAndUpdate({ orderId }, { channelId });
+        res.json({ channelId: channelId || null });
     } catch (err) {
         console.error('Create ticket error:', err);
         res.status(500).json({ error: 'Server error' });
     }
 });
 
-// 6c. Check owner role (chỉ admin mới thấy trang Admin)
+// 6d. Check owner role (chỉ admin mới thấy trang Admin)
 router.get('/check-owner', async (req, res) => {
     try {
         const discordId = req.query.discordId;
