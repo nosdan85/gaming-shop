@@ -374,4 +374,5 @@ client.on('messageCreate', async message => {
 });
 
 client.on('ready', () => console.log(`🤖 Bot Online: ${client.user.tag}`));
+client.on('error', err => console.error('🤖 Bot error:', err.message));
 module.exports = { client, createOrderTicket, createPayPalFFTicket, checkUserInGuild, checkUserHasOwnerRole };

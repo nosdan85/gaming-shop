@@ -21,8 +21,18 @@ mongoose.connect(process.env.MONGO_URI)
     .then(() => console.log("✅ MongoDB Connected"))
     .catch(err => console.log("❌ DB Error:", err));
 
-// Login Bot Discord
-client.login(process.env.DISCORD_BOT_TOKEN);
+// Health check for Render (phải trả 200 để deploy success)
+app.get('/', (req, res) => res.status(200).json({ status: 'ok', service: 'gaming-shop' }));
+
+// Login Bot Discord (không block server; lỗi bot không làm crash app)
+if (process.env.DISCORD_BOT_TOKEN) {
+  client.login(process.env.DISCORD_BOT_TOKEN).catch(err => {
+    console.error('❌ Bot login failed:', err.message);
+  });
+  client.on('error', err => console.error('🤖 Bot error:', err.message));
+} else {
+  console.warn('⚠️ DISCORD_BOT_TOKEN missing — bot disabled');
+}
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
