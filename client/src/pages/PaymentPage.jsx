@@ -27,7 +27,7 @@ const PaymentPage = () => {
     );
   }
 
-  const ticketUrl = channelId ? `discord://discord.com/channels/${GUILD_ID}/${channelId}` : null;
+  const ticketUrl = channelId ? `https://discord.com/channels/${GUILD_ID}/${channelId}` : null;
   const totalNum = parseFloat(total);
 
   const handlePayPal = async () => {
@@ -67,7 +67,7 @@ const PaymentPage = () => {
           <h2 className="text-2xl font-bold text-white mb-2">Payment Received!</h2>
           <p className="text-gray-400 mb-6">Order {orderId} has been paid.</p>
           {ticketUrl && (
-            <a href={ticketUrl} className="block w-full py-3 min-h-[44px] text-center bg-[#5865F2] hover:bg-[#4752C4] text-white font-bold rounded-xl transition touch-manipulation">
+            <a href={ticketUrl} target="_blank" rel="noopener noreferrer" className="block w-full py-3 min-h-[44px] text-center bg-[#5865F2] hover:bg-[#4752C4] text-white font-bold rounded-xl transition touch-manipulation">
               Open Discord Ticket
             </a>
           )}
@@ -117,7 +117,7 @@ const PaymentPage = () => {
         )}
 
         {ticketUrl && (
-          <a href={ticketUrl} className="block w-full py-3 mt-6 text-center bg-[#5865F2] hover:bg-[#4752C4] text-white font-bold rounded-xl transition">
+          <a href={ticketUrl} target="_blank" rel="noopener noreferrer" className="block w-full py-3 mt-6 min-h-[44px] text-center bg-[#5865F2] hover:bg-[#4752C4] text-white font-bold rounded-xl transition touch-manipulation">
             Open Discord Ticket
           </a>
         )}

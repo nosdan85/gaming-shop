@@ -31,7 +31,7 @@ const Navbar = () => {
             />
           </Link>
 
-          {/* Desktop Menu: bỏ Home/Shop/About, thêm Discord Review + Trustpilot với hiệu ứng active */}
+          {/* Desktop Menu: bỏ Home/Shop/About, thêm Discord Review + Trustpilot + Admin */}
           <div className="hidden md:flex space-x-8">
             <a 
               href={DISCORD_REVIEW_URL} 
@@ -49,6 +49,9 @@ const Navbar = () => {
             >
               Trustpilot
             </a>
+            <Link to="/admin" className="text-gray-300 hover:text-white transition-colors font-medium">
+              Admin
+            </Link>
           </div>
           
           {/* Mobile Menu Button & Cart */}
@@ -99,6 +102,13 @@ const Navbar = () => {
             >
               Trustpilot
             </a>
+            <Link 
+              to="/admin" 
+              onClick={() => setIsMenuOpen(false)}
+              className="block px-3 py-2 text-base font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-md"
+            >
+              Admin
+            </Link>
           </div>
         </div>
       )}
