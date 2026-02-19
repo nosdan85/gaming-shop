@@ -166,7 +166,7 @@ router.post('/create-payment', async (req, res) => {
             const returnUrl = `${base}/api/shop/paypal/capture?orderId=${encodeURIComponent(orderId)}`;
             const paypal = await createPayPalOrder(orderId, amount, returnUrl);
             if (!paypal?.approvalLink) return res.status(500).json({ error: 'PayPal not configured' });
-            return res.json({ type: 'paypal', approvalLink: paypal.approvalLink });
+            return res.json({ type: 'paypal', approvalLink: paypal.approvalLink, paypalOrderId: paypal.orderId });
         }
         if (method === 'ltc') {
             const ltc = await createLTCInvoice(orderId, amount);
