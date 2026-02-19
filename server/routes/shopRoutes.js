@@ -165,7 +165,7 @@ router.post('/create-payment', async (req, res) => {
         const amount = parseFloat(totalAmount);
 
         if (method === 'paypal') {
-            const base = process.env.WEBHOOK_BASE_URL || 'https://gaming-shop-backend.onrender.com';
+            const base = process.env.WEBHOOK_BASE_URL || process.env.CLIENT_URL || '';
             const returnUrl = `${base}/api/shop/paypal/capture?orderId=${encodeURIComponent(orderId)}`;
             const paypal = await createPayPalOrder(orderId, amount, returnUrl);
             if (!paypal?.approvalLink) return res.status(500).json({ error: 'PayPal not configured' });
@@ -203,8 +203,8 @@ router.post('/paypal/capture-ajax', async (req, res) => {
 router.get('/paypal/capture', async (req, res) => {
     const token = req.query.token;
     const orderId = req.query.orderId;
-    const clientUrl = process.env.CLIENT_URL || 'https://www.nosmarket.com';
-    if (!token) return res.redirect(clientUrl);
+    const clientUrl = process.env.CLIENT_URL || '';
+    if (!token) return res.redirect(clientUrl || '/');
     try {
         const ok = await capturePayPalOrder(token);
         if (ok && orderId) {

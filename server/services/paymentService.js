@@ -4,11 +4,11 @@
  */
 const axios = require('axios');
 
-const BASE_URL = process.env.CLIENT_URL || process.env.VITE_API_URL?.replace('gaming-shop-backend', 'nosmarket') || 'https://www.nosmarket.com';
+const BASE_URL = process.env.CLIENT_URL || '';
 
-// --- PayPal ---
-const PAYPAL_CLIENT_ID = process.env.PAYPAL_CLIENT_ID || 'AVPlx8eDkocDaO0abVXu79lnxaeGUYdiECWoGhNhS4PAPPpugoCUpkBd8apSRez0R3yVp_9npfJ4tofe';
-const PAYPAL_CLIENT_SECRET = process.env.PAYPAL_CLIENT_SECRET || 'EL6rp2wzdOAV0NqY5_KgaliDeYJH3u1HE9PhCI9v9rVFsTr4qSxWDXmYNfVsd2GGs8DDqO2QaNMa2AWR';
+// --- PayPal (set PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET trong env của Render/Vercel) ---
+const PAYPAL_CLIENT_ID = process.env.PAYPAL_CLIENT_ID || '';
+const PAYPAL_CLIENT_SECRET = process.env.PAYPAL_CLIENT_SECRET || '';
 
 async function createPayPalOrder(orderId, totalAmount, returnUrl, cancelUrl) {
     const clientId = PAYPAL_CLIENT_ID;
@@ -33,7 +33,7 @@ async function createPayPalOrder(orderId, totalAmount, returnUrl, cancelUrl) {
                     reference_id: orderId,
                 }],
                 application_context: {
-                    return_url: returnUrl || `${process.env.WEBHOOK_BASE_URL || 'https://gaming-shop-backend.onrender.com'}/api/shop/paypal/capture`,
+                    return_url: returnUrl || `${process.env.WEBHOOK_BASE_URL || process.env.CLIENT_URL || ''}/api/shop/paypal/capture`,
                     cancel_url: cancelUrl || BASE_URL,
                 },
             },
@@ -61,7 +61,7 @@ async function createLTCInvoice(orderId, totalAmountUSD) {
                 price_currency: 'usd',
                 pay_currency: 'ltc',
                 order_id: orderId,
-                ipn_callback_url: `${process.env.WEBHOOK_BASE_URL || 'https://gaming-shop-backend.onrender.com'}/api/shop/webhook/nowpayments`,
+                ipn_callback_url: `${process.env.WEBHOOK_BASE_URL || process.env.CLIENT_URL || ''}/api/shop/webhook/nowpayments`,
             },
             { headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json' } }
         );

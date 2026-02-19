@@ -3,7 +3,7 @@ import { ShopContext } from '../context/ShopContext';
 import { XMarkIcon, CheckBadgeIcon, UserCircleIcon, CurrencyDollarIcon, TicketIcon, ClipboardDocumentListIcon } from '@heroicons/react/24/outline';
 import axios from 'axios';
 
-const GUILD_ID = import.meta.env.VITE_DISCORD_GUILD_ID || '1398984938111369256';
+const GUILD_ID = import.meta.env.VITE_DISCORD_GUILD_ID || '';
 
 const CartModal = () => {
   const { cart, removeFromCart, isCartOpen, setIsCartOpen, user: contextUser, logoutDiscord, clearCart } = useContext(ShopContext);
@@ -26,7 +26,7 @@ const CartModal = () => {
   const total = cart.reduce((acc, item) => acc + item.price * item.quantity, 0).toFixed(2);
 
   const getOAuthUrl = () => {
-    const CLIENT_ID = import.meta.env.VITE_DISCORD_CLIENT_ID || "1439615003572572250";
+    const CLIENT_ID = import.meta.env.VITE_DISCORD_CLIENT_ID || '';
     const REDIRECT_URI = `${window.location.origin}/auth/discord/callback`;
     const params = new URLSearchParams({
       client_id: CLIENT_ID,

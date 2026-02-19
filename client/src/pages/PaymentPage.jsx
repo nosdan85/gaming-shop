@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 
-const GUILD_ID = import.meta.env.VITE_DISCORD_GUILD_ID || '1398984938111369256';
+const GUILD_ID = import.meta.env.VITE_DISCORD_GUILD_ID || '';
 
 const PaymentPage = () => {
   const [params] = useSearchParams();
@@ -61,13 +61,15 @@ const PaymentPage = () => {
   };
 
   const handleTicketPayment = async (method) => {
-    setTicketLoading(method);
+    setTicketLoading(method ?? 'ticket');
     try {
-      const res = await axios.post('/api/shop/create-ticket', { orderId, method });
-      if (res.data.channelId) {
-        setTicketData(res);
+      const body = method ? { orderId, method } : { orderId };
+      const res = await axios.post('/api/shop/create-ticket', body);
+      const data = res.data;
+        if (data.channelId) {
+        setTicketData(data);
         if (method !== 'paypal_ff') {
-          window.open(`https://discord.com/channels/${GUILD_ID}/${res.data.channelId}`, '_blank');
+          window.open(`https://discord.com/channels/${GUILD_ID}/${data.channelId}`, '_blank');
         }
       } else {
         alert('Could not create ticket. Try again.');
@@ -119,41 +121,27 @@ const PaymentPage = () => {
         >
           {ticketLoading === 'paypal_ff' ? 'Loading...' : 'Pay with PayPal (Friends & Family)'}
         </button>
-        <p className="text-gray-500 text-xs mb-4">Manual: Send as F&F to avoid fees. Upload screenshot in ticket.</p>
+        <p className="text-gray-500 text-xs mb-4">Send as F&F to avoid fees. Upload screenshot in ticket when done.</p>
 
         <button
-          onClick={() => handleTicketPayment('cashapp')}
+          onClick={() => handleTicketPayment()}
           disabled={ticketLoading !== null}
-          className="w-full py-3 min-h-[44px] bg-[#00D632] hover:bg-[#00b329] active:scale-[0.98] disabled:opacity-50 text-black font-bold rounded-xl transition mb-2 touch-manipulation"
+          className="w-full py-3 min-h-[44px] bg-[#00D632] hover:bg-[#00b329] active:scale-[0.98] disabled:opacity-50 text-black font-bold rounded-xl transition mb-4 touch-manipulation"
         >
-          {ticketLoading === 'cashapp' ? 'Loading...' : 'Pay with CashApp'}
+          {ticketLoading === 'ticket' ? 'Loading...' : 'Pay with CashApp or Robux'}
         </button>
 
-        <button
-          onClick={() => handleTicketPayment('robux')}
-          disabled={ticketLoading !== null}
-          className="w-full py-3 min-h-[44px] bg-[#E2231A] hover:bg-[#c41e16] active:scale-[0.98] disabled:opacity-50 text-white font-bold rounded-xl transition mb-4 touch-manipulation"
-        >
-          {ticketLoading === 'robux' ? 'Loading...' : 'Pay with Robux'}
-        </button>
-
-        {ticketData?.paypalEmail && (
+        {ticketData?.paypalEmail != null && (
           <div className="bg-[#0a0a0c] rounded-xl p-4 border border-[#2c2c2e] mb-4">
             <p className="text-gray-400 text-xs mb-1">Send ${totalNum.toFixed(2)} as Friends & Family to:</p>
             <p className="text-white font-mono font-bold break-all">{ticketData.paypalEmail}</p>
             <p className="text-gray-500 text-xs mt-2">Upload screenshot in your ticket when done.</p>
             {ticketUrl && (
               <a href={ticketUrl} target="_blank" rel="noopener noreferrer" className="block mt-3 py-2 text-center bg-[#5865F2] hover:bg-[#4752C4] text-white font-bold rounded-xl transition">
-                Open Ticket
+                Go to ticket
               </a>
             )}
           </div>
-        )}
-
-        {(ticketData?.channelId && !ticketData?.paypalEmail) && (
-          <a href={ticketUrl} target="_blank" rel="noopener noreferrer" className="block w-full py-3 min-h-[44px] text-center bg-[#5865F2] hover:bg-[#4752C4] text-white font-bold rounded-xl transition touch-manipulation mb-4">
-            Pay with CashApp or Robux
-          </a>
         )}
 
         <div className="flex items-center gap-3 my-6">

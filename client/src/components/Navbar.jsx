@@ -4,8 +4,8 @@ import { ShopContext } from '../context/ShopContext';
 import { ShoppingBagIcon, Bars3Icon, XMarkIcon } from '@heroicons/react/24/outline';
 import axios from 'axios';
 
-const GUILD_ID = import.meta.env.VITE_DISCORD_GUILD_ID || '1398984938111369256';
-const VOUCH_CHANNEL_ID = import.meta.env.VITE_DISCORD_VOUCH_CHANNEL_ID || '1399154220434853969';
+const GUILD_ID = import.meta.env.VITE_DISCORD_GUILD_ID || '';
+const VOUCH_CHANNEL_ID = import.meta.env.VITE_DISCORD_VOUCH_CHANNEL_ID || '';
 const DISCORD_REVIEW_URL = `https://discord.com/channels/${GUILD_ID}/${VOUCH_CHANNEL_ID}`;
 
 const Navbar = () => {

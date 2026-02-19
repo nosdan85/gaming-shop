@@ -9,12 +9,9 @@ import { AuthProvider } from './context/AuthContext';
 import CartModal from './components/CartModal';
 import axios from 'axios'; // <-- 1. Import Axios
 
-// API base URL - dùng env hoặc fallback khi chạy trên nosmarket.com
-const apiUrl = import.meta.env.VITE_API_URL || 
-  (window.location.hostname === 'www.nosmarket.com' ? 'https://gaming-shop-backend.onrender.com' : '');
-if (apiUrl) {
-  axios.defaults.baseURL = apiUrl;
-}
+// API base URL - set VITE_API_URL trong env của Vercel/Netlify khi build
+const apiUrl = import.meta.env.VITE_API_URL || '';
+if (apiUrl) axios.defaults.baseURL = apiUrl;
 
 function App() {
   return (

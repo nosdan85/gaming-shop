@@ -24,9 +24,7 @@ const AuthCallback = () => {
             try {
                 setStatus("Verifying with Server..."); // Tiếng Anh
                 
-                const apiUrl = import.meta.env.VITE_API_URL || "https://gaming-shop-gg64.onrender.com"; 
-                
-                const response = await axios.post(`${apiUrl}/api/shop/auth/discord`, { code });
+                const response = await axios.post('/api/shop/auth/discord', { code });
                 
                 if (response.data.user) {
                     setStatus("Success! Redirecting..."); // Tiếng Anh
