@@ -9,13 +9,13 @@ export const AuthProvider = ({ children }) => {
         return savedUser ? JSON.parse(savedUser) : null;
     });
 
-    // 2. Hàm đăng nhập (Lưu vào bộ nhớ)
+    // 2. Login - save to storage
     const loginDiscord = (userData) => {
         setUser(userData);
         localStorage.setItem('user', JSON.stringify(userData));
     };
 
-    // 3. Hàm đăng xuất (Xóa bộ nhớ)
+    // 3. Logout - clear storage
     const logout = () => {
         setUser(null);
         localStorage.removeItem('user');

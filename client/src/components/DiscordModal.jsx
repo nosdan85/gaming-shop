@@ -13,11 +13,11 @@ const DiscordModal = ({ isOpen, onClose }) => {
     if(!discordId || !discordUsername) return alert("Please fill all fields");
     setLoading(true);
     try {
-      // Gọi API Link
       const res = await axios.post('/api/shop/link-discord', {
         discordId,
         discordUsername
       });
+      localStorage.setItem('discordLinkMethod', 'web'); // Manual link defaults to web
       loginDiscord(res.data.user);
       onClose();
     } catch (err) {

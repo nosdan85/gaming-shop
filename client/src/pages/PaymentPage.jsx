@@ -68,7 +68,11 @@ const PaymentPage = () => {
       const data = res.data;
       if (data.channelId) {
         setTicketData({ channelId: data.channelId });
-        window.open(`https://discord.com/channels/${GUILD_ID}/${data.channelId}`, '_blank');
+        const linkMethod = localStorage.getItem('discordLinkMethod') || 'web';
+        const ticketUrl = linkMethod === 'app'
+          ? `discord://discord.com/channels/${GUILD_ID}/${data.channelId}`
+          : `https://discord.com/channels/${GUILD_ID}/${data.channelId}`;
+        window.open(ticketUrl, '_blank');
       } else {
         alert('Could not create ticket. Try again.');
       }
@@ -139,8 +143,9 @@ const PaymentPage = () => {
         {paypalFFEmail !== null && (
           <div className="bg-[#0a0a0c] rounded-xl p-4 border border-[#2c2c2e] mb-4">
             <p className="text-gray-400 text-xs mb-1">Send ${totalNum.toFixed(2)} as Friends & Family to:</p>
-            <p className="text-white font-mono font-bold break-all">{paypalFFEmail || '(PAYPAL_EMAIL chưa cấu hình)'}</p>
-            <p className="text-gray-500 text-xs mt-2">Gửi xong thì liên hệ qua Discord để xác nhận.</p>
+            <p className="text-white font-mono font-bold break-all">{paypalFFEmail || '(PAYPAL_EMAIL not configured)'}</p>
+            <p className="text-gray-500 text-xs mt-2">Contact us via Discord after sending to confirm.</p>
+            <p className="text-gray-600 text-[10px] mt-2 italic">Note: F&F has no API for auto-confirmation. Use &quot;Pay with PayPal or Card&quot; for automatic payment detection.</p>
           </div>
         )}
 

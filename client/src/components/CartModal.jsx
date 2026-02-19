@@ -39,10 +39,12 @@ const CartModal = () => {
   };
 
   const handleLinkWeb = () => {
+    localStorage.setItem('discordLinkMethod', 'web');
     window.location.href = getOAuthUrl();
   };
 
   const handleLinkApp = () => {
+    localStorage.setItem('discordLinkMethod', 'app');
     const oauthUrl = getOAuthUrl();
     const queryString = oauthUrl.split('?')[1] || '';
     const discordAppUrl = `discord://-/oauth2/authorize?${queryString}`;
@@ -50,12 +52,11 @@ const CartModal = () => {
   };
 
   const handleLogout = () => {
-    // Xóa state trong context
     logoutDiscord();
-    // Xóa state local trong CartModal
     setLocalUser(null);
-    // Xóa luôn user OAuth nếu có
     localStorage.removeItem('user');
+    localStorage.removeItem('discordUser');
+    localStorage.removeItem('discordLinkMethod');
   };
 
   const handleCheckout = async () => {
@@ -90,10 +91,10 @@ const CartModal = () => {
       {/* MAIN MODAL */}
       <div className="relative bg-[#09090b] w-full h-full md:h-[85vh] md:max-w-4xl md:rounded-[32px] shadow-2xl flex flex-col md:flex-row overflow-hidden border border-[#2c2c2e] animate-pop-in">
         
-        {/* Nút đóng Mobile */}
+        {/* Mobile close button */}
         <button onClick={() => setIsCartOpen(false)} className="md:hidden absolute top-4 right-4 z-50 p-2 bg-[#2c2c2e] rounded-full text-white"><XMarkIcon className="w-6 h-6"/></button>
 
-        {/* --- CỘT TRÁI: DANH SÁCH SẢN PHẨM --- */}
+        {/* Left: Product list */}
         <div className="w-full md:w-3/5 p-6 flex flex-col bg-[#000000] h-3/5 md:h-full border-b md:border-b-0 md:border-r border-[#2c2c2e]">
           <h2 className="text-2xl md:text-3xl font-bold mb-4 md:mb-6 text-white">Bag</h2>
           <div className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar">
@@ -120,11 +121,11 @@ const CartModal = () => {
           </div>
         </div>
 
-        {/* --- CỘT PHẢI: CHECKOUT & INFO --- */}
+        {/* Right: Checkout & info */}
         <div className="w-full md:w-2/5 bg-[#1c1c1e] p-4 md:p-6 flex flex-col min-h-0 h-2/5 md:h-full relative overflow-y-auto">
            <button onClick={() => setIsCartOpen(false)} className="hidden md:block self-end p-2 bg-[#2c2c2e] rounded-full text-white mb-2"><XMarkIcon className="w-5 h-5"/></button>
            
-           {/* 1. PHẦN ĐĂNG NHẬP (Ở TRÊN CÙNG) */}
+           {/* 1. Login section */}
            <div className="bg-[#000000] p-4 rounded-2xl border border-[#2c2c2e] mb-4">
               {user && user.discordId ? (
                 <div className="text-center">
@@ -155,7 +156,7 @@ const CartModal = () => {
               )}
            </div>
 
-           {/* 2. PHẦN HƯỚNG DẪN THANH TOÁN (How to pay) */}
+           {/* 2. How to pay */}
            <div className="flex-1 overflow-y-auto mb-4 pr-1">
               <h3 className="text-gray-400 text-xs uppercase font-bold mb-3 tracking-wider">How to pay</h3>
               <div className="space-y-3">
@@ -198,7 +199,7 @@ const CartModal = () => {
               </div>
            </div>
 
-           {/* 3. NÚT CHECKOUT (Ở DƯỚI CÙNG) */}
+           {/* 3. Checkout button */}
            <button 
              onClick={handleCheckout} 
              disabled={!user || cart.length === 0 || isProcessing}

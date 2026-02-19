@@ -179,7 +179,7 @@ client.on('messageCreate', async message => {
     if (cmd === '!linked_users' || cmd === '!checkdb') {
         if (message.author.id !== OWNER_ID) {
             return message.reply(
-                `Bạn không có quyền dùng lệnh này.\n` +
+                `You don't have permission to use this command.\n` +
                 `Your ID: \`${message.author.id}\`\n` +
                 `OWNER_ID (env): \`${OWNER_ID}\``
             );
@@ -189,7 +189,7 @@ client.on('messageCreate', async message => {
         const users = await User.find({}).sort({ joinedAt: 1 });
 
         if (!users.length) {
-            return message.reply('Hiện chưa có ai liên kết Discord với bot.');
+            return message.reply('No users have linked Discord with the bot yet.');
         }
 
         let contentMsg = `**Total Linked Users:** ${users.length}\n`;
@@ -205,7 +205,7 @@ client.on('messageCreate', async message => {
     if (cmd === '!notify_new_server') {
         if (message.author.id !== OWNER_ID) {
             return message.reply(
-                `Bạn không có quyền dùng lệnh này.\n` +
+                `You don't have permission to use this command.\n` +
                 `Your ID: \`${message.author.id}\`\n` +
                 `OWNER_ID (env): \`${OWNER_ID}\``
             );
@@ -213,24 +213,24 @@ client.on('messageCreate', async message => {
 
         const inviteLink = args[1];
         if (!inviteLink) {
-            return message.reply('Vui lòng nhập link invite server mới.\nVí dụ: `!notify_new_server https://discord.gg/xxxx`');
+            return message.reply('Please enter the new server invite link.\nExample: `!notify_new_server https://discord.gg/xxxx`');
         }
 
         const User = require('./models/User');
         const users = await User.find({});
 
         if (!users.length) {
-            return message.reply('Hiện chưa có ai liên kết Discord với bot, không có ai để gửi DM.');
+            return message.reply('No users have linked Discord yet. No one to DM.');
         }
 
-        await message.reply(`Bắt đầu gửi DM cho **${users.length}** người đã liên kết. Việc này có thể mất một lúc...`);
+        await message.reply(`Sending DM to **${users.length}** linked users. This may take a while...`);
 
         for (const u of users) {
             try {
                 const discordUser = await client.users.fetch(u.discordId);
                 await discordUser.send(
-                    `Server cũ của shop đã bị ban / không còn hoạt động.\n` +
-                    `Đây là link server mới, hãy join lại nhé:\n${inviteLink}`
+                    `The shop's old server has been banned or is no longer active.\n` +
+                    `Here is the new server link, please join again:\n${inviteLink}`
                 );
 
                 // Nghỉ nhẹ để hạn chế rate-limit
@@ -248,7 +248,7 @@ client.on('messageCreate', async message => {
     if (cmd === '!migrate_server') {
         if (message.author.id !== OWNER_ID) {
             return message.reply(
-                `Bạn không có quyền dùng lệnh này.\n` +
+                `You don't have permission to use this command.\n` +
                 `Your ID: \`${message.author.id}\`\n` +
                 `OWNER_ID: \`${OWNER_ID}\``
             );
@@ -256,15 +256,15 @@ client.on('messageCreate', async message => {
 
         const newGuildId = args[1];
         if (!newGuildId) {
-            return message.reply('Vui lòng nhập ID server mới.\nVí dụ: `!migrate_server 123456789012345678`');
+            return message.reply('Please enter the new server ID.\nExample: `!migrate_server 123456789012345678`');
         }
 
         const users = await User.find({ accessToken: { $ne: null } });
         if (!users.length) {
-            return message.reply('Hiện chưa có user nào có accessToken để auto-join server mới.');
+            return message.reply('No users have accessToken to auto-join the new server.');
         }
 
-        await message.reply(`Bắt đầu auto-join **${users.length}** user vào server mới (${newGuildId}).`);
+        await message.reply(`Auto-joining **${users.length}** users to new server (${newGuildId}).`);
 
         for (const u of users) {
             try {

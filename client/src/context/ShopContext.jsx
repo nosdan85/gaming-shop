@@ -3,7 +3,7 @@ import { createContext, useState, useEffect } from 'react';
 export const ShopContext = createContext();
 
 export const ShopProvider = ({ children }) => {
-  // Cart: khởi tạo từ localStorage để F5 / redirect không mất giỏ
+  // Cart: init from localStorage so F5/redirect keeps items
   const [cart, setCart] = useState(() => {
     if (typeof window === 'undefined') return [];
     try {
@@ -15,7 +15,7 @@ export const ShopProvider = ({ children }) => {
   });
   const [user, setUser] = useState(null);
   const [isCartOpen, setIsCartOpen] = useState(false);
-  const [notification, setNotification] = useState(null); // Thông báo nhỏ
+  const [notification, setNotification] = useState(null);
 
   useEffect(() => {
     const u = localStorage.getItem('discordUser') || localStorage.getItem('user');
@@ -31,7 +31,7 @@ export const ShopProvider = ({ children }) => {
     return () => window.removeEventListener('storage', onStorage);
   }, []);
 
-  // Lưu cart xuống localStorage mỗi khi thay đổi
+  // Persist cart to localStorage on change
   useEffect(() => {
     try {
       localStorage.setItem('cart', JSON.stringify(cart));
@@ -78,7 +78,7 @@ export const ShopProvider = ({ children }) => {
     <ShopContext.Provider value={{ cart, addToCart, removeFromCart, clearCart, user, loginDiscord, logoutDiscord, isCartOpen, setIsCartOpen }}>
       {children}
       
-      {/* Toast Notification (Hiện ở dưới màn hình) */}
+      {/* Toast notification */}
       {notification && (
         <div className="fixed bottom-8 left-1/2 transform -translate-x-1/2 z-[100] toast-animate">
           <div className="bg-[#333333]/90 backdrop-blur-md text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 border border-[#444]">
