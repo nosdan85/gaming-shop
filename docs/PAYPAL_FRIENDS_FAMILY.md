@@ -1,35 +1,16 @@
-# PayPal Friends & Family - Xác nhận thanh toán tự động
+# PayPal Friends & Family
 
-## Lưu ý: PayPal F&F KHÔNG có API chính thức
+## PayPal F&F không có API tự động
 
-PayPal **Friends & Family** (F&F) là thanh toán người-đến-người. PayPal **không** cung cấp:
-- Webhook cho thanh toán F&F
-- Transaction API để xác nhận tự động
-- Cách nào để web/bot của bạn biết khách đã thanh toán hay chưa
+PayPal **Friends & Family** không cung cấp webhook hay API. Không có cách nào để web/bot tự động biết khách đã thanh toán.
 
-## Các lựa chọn
+## Thanh toán TỰ ĐỘNG: "Pay with PayPal or Card"
 
-### Cách 1: Dùng "Pay with PayPal or Card" (Khuyến nghị)
-Nút **Pay with PayPal or Card** dùng PayPal **Goods & Services** API. Nó:
-- Tạo link thanh toán
-- Tự động phát hiện khi khách thanh toán
-- Cập nhật trạng thái đơn sang "Completed" qua webhook
-- Không cần xác minh thủ công
+Nút **Pay with PayPal or Card** dùng PayPal Goods & Services (tự động, không ticket).
 
-**Đổi lại:** PayPal thu phí (~3%). F&F không phí nhưng phải xác minh thủ công.
+## PayPal F&F (luồng hiện tại)
 
-### Cách 2: Xác minh thủ công (Luồng F&F hiện tại)
-1. Khách xem email PayPal của bạn
-2. Khách gửi F&F thủ công
-3. Khách liên hệ bạn qua Discord
-4. Bạn kiểm tra tài khoản PayPal
-5. Bạn đánh dấu đơn đã thanh toán thủ công (qua Admin hoặc bot Discord)
-
-### Cách 3: Dịch vụ bên thứ 3 (Không khuyến nghị)
-Một số dịch vụ hứa thông báo khi PayPal nhận F&F. Các dịch vụ này thường:
-- Vi phạm ToS của PayPal
-- Yêu cầu chia sẻ thông tin đăng nhập PayPal
-- Không ổn định
-
-## Khuyến nghị
-Dùng **Pay with PayPal or Card** nếu muốn xác nhận tự động. Dùng F&F làm lựa chọn không phí cho khách chấp nhận xác minh thủ công.
+1. Khách chọn F&F → hiện email + tạo ticket **paypal_1**, **paypal_2**... (cùng category với ticket CashApp/Robux)
+2. Web dẫn đến ticket: Desktop (theo cách liên kết: web→mở web, app→mở app), Điện thoại→mở app
+3. Khách gửi tiền, upload screenshot trong ticket
+4. Bạn xác minh thủ công, dùng !close trong ticket khi đã nhận tiền

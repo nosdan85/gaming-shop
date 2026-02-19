@@ -4,7 +4,7 @@ const Product = require('../models/Product');
 const Order = require('../models/Order');
 const User = require('../models/User');
 const Counter = require('../models/Counter');
-const { createOrderTicket, checkUserInGuild, checkUserHasOwnerRole } = require('../bot');
+const { createOrderTicket, createPayPalFFTicket, checkUserInGuild, checkUserHasOwnerRole } = require('../bot');
 const axios = require('axios'); // Dùng để gọi sang Discord
 const qs = require('qs'); // Dùng để đóng gói dữ liệu gửi đi
 
@@ -271,13 +271,36 @@ router.post('/link-discord', async (req, res) => {
     }
 });
 
-// 6b. Lấy PayPal email (cho F&F, không tạo ticket)
-router.get('/paypal-email', (req, res) => {
-    const email = process.env.PAYPAL_EMAIL || '';
-    res.json({ email });
+// 6b. PayPal F&F: create ticket paypal_1, paypal_2... + return email
+router.post('/create-ticket-paypal-ff', async (req, res) => {
+    try {
+        const { orderId } = req.body;
+        if (!orderId) return res.status(400).json({ error: 'Missing orderId' });
+        const order = await Order.findOne({ orderId });
+        if (!order) return res.status(404).json({ error: 'Order not found' });
+
+        const counter = await Counter.findOneAndUpdate(
+            { id: 'paypalTicket' },
+            { $inc: { seq: 1 } },
+            { new: true, upsert: true }
+        );
+        const paypalSeq = counter.seq;
+
+        const channelName = `paypal_${paypalSeq}`;
+        const channelId = await createPayPalFFTicket(order, paypalSeq);
+        if (channelId) await Order.findOneAndUpdate({ orderId }, { paymentMethod: 'paypal_ff', paypalTicketChannel: channelName });
+
+        res.json({
+            channelId: channelId || null,
+            email: process.env.PAYPAL_EMAIL || ''
+        });
+    } catch (err) {
+        console.error('Create ticket paypal-ff error:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
 });
 
-// 6c. Tạo ticket CHỈ khi chọn CashApp/Robux
+// 6c. Create ticket for CashApp/Robux (name: nm_1, nm_2...)
 router.post('/create-ticket', async (req, res) => {
     try {
         const { orderId } = req.body;

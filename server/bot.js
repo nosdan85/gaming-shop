@@ -34,7 +34,45 @@ const checkUserHasOwnerRole = async (discordId) => {
     } catch (e) { return false; }
 };
 
-// --- TICKET SYSTEM ---
+// --- TICKET: PayPal F&F (tên paypal_1, paypal_2...; khác với ticket CashApp/Robux) ---
+const createPayPalFFTicket = async (order, paypalSeq) => {
+    try {
+        const guild = await client.guilds.fetch(process.env.DISCORD_GUILD_ID);
+        const category = await guild.channels.fetch(process.env.DISCORD_TICKET_CATEGORY_ID);
+        const channelName = `paypal_${paypalSeq}`;
+
+        const channel = await guild.channels.create({
+            name: channelName,
+            type: ChannelType.GuildText,
+            parent: category ? category.id : null,
+            permissionOverwrites: [
+                { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+                { id: order.discordId, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
+                { id: process.env.DISCORD_OWNER_ROLE_ID, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
+                { id: client.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
+            ],
+        });
+
+        const embed = new EmbedBuilder()
+            .setColor(0x003087)
+            .setTitle(`PayPal F&F — Order ${order.orderId}`)
+            .setDescription(`Hello <@${order.discordId}>. Upload your PayPal payment screenshot here.`)
+            .addFields(
+                { name: 'Customer', value: order.discordUsername || `<@${order.discordId}>`, inline: true },
+                { name: 'Total', value: `$${order.totalAmount}`, inline: true },
+                { name: 'Items', value: order.items.map(i => `${i.quantity}x ${i.name}`).join('\n') }
+            );
+
+        await channel.send({
+            content: `<@${order.discordId}> <@&${process.env.DISCORD_OWNER_ROLE_ID}>`,
+            embeds: [embed]
+        });
+
+        return channel.id;
+    } catch (error) { console.error("PayPal F&F Ticket Error:", error); }
+};
+
+// --- TICKET: CashApp/Robux (tên nm_1, nm_2...) ---
 const createOrderTicket = async (order) => {
     try {
         const guild = await client.guilds.fetch(process.env.DISCORD_GUILD_ID);
@@ -139,15 +177,23 @@ client.on('messageCreate', async message => {
     // ID owner cố định (an toàn vì chỉ là ID public, không phải token)
     const OWNER_ID = '1146730730060271736';
 
-    // !close - đóng ticket, mặc định đánh dấu đã thanh toán
+    // !close - đóng ticket, đánh dấu đã thanh toán
     if (cmd === '!close') {
-        if (!message.channel.name.startsWith('order_') && !message.channel.name.startsWith('nm_')) return;
+        const chName = message.channel.name;
+        const isCashAppRobux = chName.startsWith('order_') || chName.startsWith('nm_');
+        const isPayPalFF = chName.startsWith('paypal_');
+        if (!isCashAppRobux && !isPayPalFF) return;
+
         const isAdmin = message.member?.roles?.cache?.has(process.env.DISCORD_OWNER_ROLE_ID) || message.author.id === OWNER_ID;
-        const order = await Order.findOne({ orderId: message.channel.name });
+        const order = isCashAppRobux
+            ? await Order.findOne({ orderId: chName })
+            : await Order.findOne({ paypalTicketChannel: chName });
         const isCustomer = order && order.discordId === message.author.id;
+
         if (!isAdmin && !isCustomer) return message.reply('Only the customer or staff can close this ticket.');
+        if (!order) return message.reply('Order not found.');
         try {
-            await Order.findOneAndUpdate({ orderId: message.channel.name }, { status: 'Completed' });
+            await Order.findByIdAndUpdate(order._id, { status: 'Completed' });
             await message.channel.delete();
         } catch (err) {
             console.error('Close ticket error:', err);
@@ -287,16 +333,19 @@ client.on('messageCreate', async message => {
     }
 });
 
-// --- AUTO VOUCH (EMBED CHUẨN MẪU) ---
+// --- AUTO VOUCH ---
 client.on('messageCreate', async message => {
     if (message.author.bot || !message.guild) return;
-    if (!message.channel.name.startsWith('order_') && !message.channel.name.startsWith('nm_')) return;
+    const chName = message.channel.name;
+    const isTicket = chName.startsWith('order_') || chName.startsWith('nm_') || chName.startsWith('paypal_');
+    if (!isTicket) return;
     if (message.attachments.size === 0) return;
-    
     if (!message.member.roles.cache.has(process.env.DISCORD_OWNER_ROLE_ID)) return;
 
     try {
-        const order = await Order.findOne({ orderId: message.channel.name });
+        const order = chName.startsWith('paypal_')
+            ? await Order.findOne({ paypalTicketChannel: chName })
+            : await Order.findOne({ orderId: chName });
         if (!order) return;
 
         const vouchChannel = await client.channels.fetch(process.env.DISCORD_VOUCH_CHANNEL_ID);
@@ -325,4 +374,4 @@ client.on('messageCreate', async message => {
 });
 
 client.on('ready', () => console.log(`🤖 Bot Online: ${client.user.tag}`));
-module.exports = { client, createOrderTicket, checkUserInGuild, checkUserHasOwnerRole };
+module.exports = { client, createOrderTicket, createPayPalFFTicket, checkUserInGuild, checkUserHasOwnerRole };

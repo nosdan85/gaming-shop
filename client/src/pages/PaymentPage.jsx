@@ -83,16 +83,25 @@ const PaymentPage = () => {
     }
   };
 
-  // PayPal F&F: chỉ hiện email, không tạo ticket
-  const [paypalFFEmail, setPaypalFFEmail] = useState(null);
+  // PayPal F&F: show email + create ticket paypal_1, paypal_2... + redirect to ticket
+  const [paypalFFData, setPaypalFFData] = useState(null);
   const [paypalFFLoading, setPaypalFFLoading] = useState(false);
   const handlePayPalFF = async () => {
     setPaypalFFLoading(true);
     try {
-      const res = await axios.get('/api/shop/paypal-email');
-      setPaypalFFEmail(res.data?.email || '');
+      const res = await axios.post('/api/shop/create-ticket-paypal-ff', { orderId });
+      const { channelId, email } = res.data || {};
+      setPaypalFFData({ channelId, email: email || '' });
+      if (channelId) {
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        const useApp = isMobile || (localStorage.getItem('discordLinkMethod') === 'app');
+        const ticketUrl = useApp
+          ? `discord://discord.com/channels/${GUILD_ID}/${channelId}`
+          : `https://discord.com/channels/${GUILD_ID}/${channelId}`;
+        window.open(ticketUrl, '_blank');
+      }
     } catch {
-      setPaypalFFEmail('');
+      setPaypalFFData({ channelId: null, email: '' });
     } finally {
       setPaypalFFLoading(false);
     }
@@ -140,12 +149,11 @@ const PaymentPage = () => {
         </button>
         <p className="text-gray-500 text-xs mb-4">Send as F&F to avoid fees.</p>
 
-        {paypalFFEmail !== null && (
+        {paypalFFData !== null && (
           <div className="bg-[#0a0a0c] rounded-xl p-4 border border-[#2c2c2e] mb-4">
             <p className="text-gray-400 text-xs mb-1">Send ${totalNum.toFixed(2)} as Friends & Family to:</p>
-            <p className="text-white font-mono font-bold break-all">{paypalFFEmail || '(PAYPAL_EMAIL not configured)'}</p>
-            <p className="text-gray-500 text-xs mt-2">Contact us via Discord after sending to confirm.</p>
-            <p className="text-gray-600 text-[10px] mt-2 italic">Note: F&F has no API for auto-confirmation. Use &quot;Pay with PayPal or Card&quot; for automatic payment detection.</p>
+            <p className="text-white font-mono font-bold break-all">{paypalFFData.email || '(PAYPAL_EMAIL not configured)'}</p>
+            <p className="text-gray-500 text-xs mt-2">Opening your ticket — upload payment screenshot there.</p>
           </div>
         )}
 
