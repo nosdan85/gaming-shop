@@ -7,9 +7,12 @@ const axios = require('axios');
 const BASE_URL = process.env.CLIENT_URL || process.env.VITE_API_URL?.replace('gaming-shop-backend', 'nosmarket') || 'https://www.nosmarket.com';
 
 // --- PayPal ---
+const PAYPAL_CLIENT_ID = process.env.PAYPAL_CLIENT_ID || 'AVPlx8eDkocDaO0abVXu79lnxaeGUYdiECWoGhNhS4PAPPpugoCUpkBd8apSRez0R3yVp_9npfJ4tofe';
+const PAYPAL_CLIENT_SECRET = process.env.PAYPAL_CLIENT_SECRET || 'EL6rp2wzdOAV0NqY5_KgaliDeYJH3u1HE9PhCI9v9rVFsTr4qSxWDXmYNfVsd2GGs8DDqO2QaNMa2AWR';
+
 async function createPayPalOrder(orderId, totalAmount, returnUrl, cancelUrl) {
-    const clientId = process.env.PAYPAL_CLIENT_ID;
-    const secret = process.env.PAYPAL_CLIENT_SECRET;
+    const clientId = PAYPAL_CLIENT_ID;
+    const secret = PAYPAL_CLIENT_SECRET;
     if (!clientId || !secret) return null;
 
     try {
@@ -75,8 +78,8 @@ async function createLTCInvoice(orderId, totalAmountUSD) {
 }
 
 async function capturePayPalOrder(paypalOrderId) {
-    const clientId = process.env.PAYPAL_CLIENT_ID;
-    const secret = process.env.PAYPAL_CLIENT_SECRET;
+    const clientId = PAYPAL_CLIENT_ID;
+    const secret = PAYPAL_CLIENT_SECRET;
     if (!clientId || !secret) return false;
     try {
         const auth = Buffer.from(`${clientId}:${secret}`).toString('base64');

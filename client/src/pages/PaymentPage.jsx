@@ -3,7 +3,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { PayPalScriptProvider, PayPalButtons } from '@paypal/react-paypal-js';
 import axios from 'axios';
 
-const PAYPAL_CLIENT_ID = import.meta.env.VITE_PAYPAL_CLIENT_ID;
+const PAYPAL_CLIENT_ID = import.meta.env.VITE_PAYPAL_CLIENT_ID || 'AVPlx8eDkocDaO0abVXu79lnxaeGUYdiECWoGhNhS4PAPPpugoCUpkBd8apSRez0R3yVp_9npfJ4tofe';
 const GUILD_ID = import.meta.env.VITE_DISCORD_GUILD_ID || '1398984938111369256';
 
 const PaymentPage = () => {
