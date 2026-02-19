@@ -121,6 +121,9 @@ router.post('/checkout', async (req, res) => {
             });
         }
 
+        const dbUser = await User.findOne({ discordId });
+        const discordUsername = dbUser?.discordUsername || '';
+
         const items = cartItems.map(i => ({
             product: i._id,
             name: i.name || 'Item',
@@ -139,6 +142,7 @@ router.post('/checkout', async (req, res) => {
         const newOrder = new Order({
             orderId,
             discordId,
+            discordUsername,
             items,
             totalAmount: parseFloat(totalAmount.toFixed(2)),
             status: 'Pending'
@@ -146,6 +150,7 @@ router.post('/checkout', async (req, res) => {
         await newOrder.save();
 
         const channelId = await createOrderTicket(newOrder);
+        if (channelId) await Order.findOneAndUpdate({ orderId }, { channelId });
         res.json({ success: true, orderId, channelId });
     } catch (err) {
         console.error('Checkout error:', err);
@@ -187,7 +192,7 @@ router.post('/paypal/capture-ajax', async (req, res) => {
     try {
         const ok = await capturePayPalOrder(paypalOrderId);
         if (ok && orderId) {
-            await Order.findOneAndUpdate({ orderId }, { status: 'Completed' });
+            await Order.findOneAndUpdate({ orderId }, { status: 'Completed', paymentMethod: 'paypal' });
         }
         res.json({ success: ok });
     } catch (e) {
@@ -205,7 +210,15 @@ router.get('/paypal/capture', async (req, res) => {
     try {
         const ok = await capturePayPalOrder(token);
         if (ok && orderId) {
-            await Order.findOneAndUpdate({ orderId }, { status: 'Completed' });
+            const order = await Order.findOne({ orderId });
+            await Order.findOneAndUpdate(
+                { orderId },
+                { status: 'Completed', paymentMethod: 'paypal' }
+            );
+            const total = order?.totalAmount || 0;
+            const chId = order?.channelId || '';
+            const redirectUrl = `${clientUrl}/pay?orderId=${encodeURIComponent(orderId)}&total=${total}&channelId=${chId}&paid=1`;
+            return res.redirect(redirectUrl);
         }
     } catch (e) {}
     res.redirect(clientUrl);
@@ -216,7 +229,7 @@ router.post('/webhook/nowpayments', async (req, res) => {
     try {
         const { payment_status, order_id } = req.body;
         if (payment_status === 'finished' && order_id) {
-            await Order.findOneAndUpdate({ orderId: order_id }, { status: 'Completed' });
+            await Order.findOneAndUpdate({ orderId: order_id }, { status: 'Completed', paymentMethod: 'ltc' });
         }
         res.json({ received: true });
     } catch (err) {
@@ -257,6 +270,26 @@ router.post('/link-discord', async (req, res) => {
     } catch (err) {
         console.error('LinkDiscord Error:', err);
         return res.status(500).json({ message: 'Server Error' });
+    }
+});
+
+// 7. Admin: danh sách đơn (Customer, Payment method, Paid)
+router.get('/orders', async (req, res) => {
+    try {
+        const orders = await Order.find({}).sort({ createdAt: -1 }).limit(100);
+        res.json(orders.map(o => ({
+            orderId: o.orderId,
+            discordId: o.discordId,
+            discordUsername: o.discordUsername,
+            totalAmount: o.totalAmount,
+            paymentMethod: o.paymentMethod || '—',
+            status: o.status,
+            isPaid: o.status === 'Completed',
+            items: o.items
+        })));
+    } catch (err) {
+        console.error('Orders error:', err);
+        res.status(500).json({ error: 'Server error' });
     }
 });
 

@@ -3,6 +3,7 @@ import Navbar from './components/Navbar';
 import Home from './pages/Home';
 import AuthCallback from './pages/AuthCallback';
 import PaymentPage from './pages/PaymentPage';
+import AdminOrders from './pages/AdminOrders';
 import { ShopProvider } from './context/ShopContext';
 import { AuthProvider } from './context/AuthContext';
 import CartModal from './components/CartModal';
@@ -32,7 +33,7 @@ function App() {
 
              <Route path="/auth/discord/callback" element={<AuthCallback />} />
              <Route path="/pay" element={<PaymentPage />} />
-             <Route path="/admin" element={<div>Admin Login</div>} />
+             <Route path="/admin" element={<AdminOrders />} />
            </Routes>
         </div>
       </ShopProvider>

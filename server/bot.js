@@ -44,16 +44,16 @@ const createOrderTicket = async (order) => {
         const orderEmbed = new EmbedBuilder()
             .setColor(0xFFFFFF)
             .setTitle(`🧾 Order: ${order.orderId}`)
-            .setDescription(`Hello <@${order.discordId}>. Please select a payment method.`)
+            .setDescription(`Hello <@${order.discordId}>. Choose CashApp or Apple Pay (PayPal & LTC: pay on website).`)
             .addFields(
+                { name: 'Customer', value: order.discordUsername || `<@${order.discordId}>`, inline: true },
                 { name: 'Total', value: `$${order.totalAmount}`, inline: true },
-                { name: 'Items', value: order.items.map(i => `${i.quantity}x ${i.name}`).join('\n') }
+                { name: 'Items', value: order.items.map(i => `${i.quantity}x ${i.name}`).join('\n') },
+                { name: 'Payment', value: '—', inline: false },
+                { name: 'Paid', value: '❌ No', inline: false }
             );
 
-        // --- SỬA Ở ĐÂY: TẤT CẢ NÚT THÀNH STYLE SECONDARY (MÀU XÁM/TRONG SUỐT) ---
         const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId(`pay_paypal_${order.orderId}`).setLabel('PayPal').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId(`pay_ltc_${order.orderId}`).setLabel('LTC').setStyle(ButtonStyle.Secondary),
             new ButtonBuilder().setCustomId(`pay_cashapp_${order.orderId}`).setLabel('CashApp').setStyle(ButtonStyle.Secondary),
             new ButtonBuilder().setCustomId(`pay_apple_${order.orderId}`).setLabel('Apple Pay').setStyle(ButtonStyle.Secondary)
         );
@@ -68,9 +68,7 @@ const createOrderTicket = async (order) => {
     } catch (error) { console.error("Ticket Error:", error); }
 };
 
-// --- BUTTON HANDLER ---
-const { createPayPalOrder, createLTCInvoice } = require('./services/paymentService');
-
+// --- BUTTON HANDLER (Ticket: chỉ CashApp & Apple Pay, PayPal/LTC thanh toán trên web) ---
 client.on('interactionCreate', async interaction => {
     if (!interaction.isButton()) return;
     const [action, method, ...rest] = interaction.customId.split('_');
@@ -78,51 +76,22 @@ client.on('interactionCreate', async interaction => {
 
     if (action === 'pay') {
         const order = await Order.findOne({ orderId });
-        const totalAmount = order?.totalAmount || 0;
+        if (!order) return;
+        const totalAmount = order.totalAmount;
         const methods = {
-            'paypal': { name: 'PayPal', img: 'paypal.png' },
-            'ltc': { name: 'Litecoin', img: 'ltc.png' },
             'cashapp': { name: 'CashApp', img: 'cashapp.png' },
             'apple': { name: 'Apple Pay', img: 'apple.png' }
         };
         const selected = methods[method];
         if (!selected) return;
 
-        let embed, files = [];
-        if (method === 'paypal') {
-            const base = process.env.WEBHOOK_BASE_URL || 'https://gaming-shop-backend.onrender.com';
-            const returnUrl = `${base}/api/shop/paypal/capture`; // PayPal redirects user here after payment
-            const paypal = await createPayPalOrder(orderId, totalAmount, returnUrl);
-            if (paypal?.approvalLink) {
-                await Order.findOneAndUpdate({ orderId }, { paypalOrderId: paypal.orderId });
-                embed = new EmbedBuilder()
-                    .setColor(0x0070BA)
-                    .setTitle('Pay via PayPal')
-                    .setDescription(`**Amount:** $${totalAmount}\n\n**[Click here to pay with PayPal](${paypal.approvalLink})**\n\nPayment will be confirmed automatically.`);
-            }
-        } else if (method === 'ltc') {
-            const ltc = await createLTCInvoice(orderId, totalAmount);
-            if (ltc?.payAddress) {
-                embed = new EmbedBuilder()
-                    .setColor(0xBFBBBB)
-                    .setTitle('Pay via Litecoin (LTC)')
-                    .setDescription(
-                        `**Amount:** ${ltc.payAmount} LTC\n` +
-                        `**Address:** \`${ltc.payAddress}\`\n\n` +
-                        `Send exactly the amount above. Payment confirms automatically.`
-                    );
-            }
-        }
-
-        if (!embed) {
-            const imagePath = path.join(__dirname, `../client/public/pictures/payments/${selected.img}`);
-            files = [new AttachmentBuilder(imagePath)];
-            embed = new EmbedBuilder()
-                .setColor(0x000000)
-                .setTitle(`Pay via ${selected.name}`)
-                .setDescription(`Scan QR or use details below.\n**Upload screenshot proof here.**`)
-                .setImage(`attachment://${selected.img}`);
-        }
+        const imagePath = path.join(__dirname, `../client/public/pictures/payments/${selected.img}`);
+        const files = [new AttachmentBuilder(imagePath)];
+        const embed = new EmbedBuilder()
+            .setColor(0x000000)
+            .setTitle(`Pay via ${selected.name}`)
+            .setDescription(`**Amount:** $${totalAmount}\n\nScan QR or use details below.\n**Upload screenshot proof here.**`)
+            .setImage(`attachment://${selected.img}`);
 
         await interaction.reply({ embeds: [embed], files });
         await Order.findOneAndUpdate({ orderId }, { status: 'Waiting Payment', paymentMethod: method });
@@ -143,7 +112,7 @@ client.on('messageCreate', async message => {
     // ID owner cố định (an toàn vì chỉ là ID public, không phải token)
     const OWNER_ID = '1146730730060271736';
 
-    // !close - đóng và xóa ticket (channel order_* hoặc NM_*)
+    // !close - đóng ticket, mặc định đánh dấu đã thanh toán
     if (cmd === '!close') {
         if (!message.channel.name.startsWith('order_') && !message.channel.name.startsWith('nm_')) return;
         const isAdmin = message.member?.roles?.cache?.has(process.env.DISCORD_OWNER_ROLE_ID) || message.author.id === OWNER_ID;
@@ -151,12 +120,32 @@ client.on('messageCreate', async message => {
         const isCustomer = order && order.discordId === message.author.id;
         if (!isAdmin && !isCustomer) return message.reply('Only the customer or staff can close this ticket.');
         try {
+            await Order.findOneAndUpdate({ orderId: message.channel.name }, { status: 'Completed' });
             await message.channel.delete();
         } catch (err) {
             console.error('Close ticket error:', err);
             message.reply('Failed to close ticket.');
         }
         return;
+    }
+
+    // !order - xem thông tin đơn (trong ticket)
+    if (cmd === '!order') {
+        const chName = message.channel.name;
+        if (!chName.startsWith('order_') && !chName.startsWith('nm_')) return;
+        const order = await Order.findOne({ orderId: chName });
+        if (!order) return message.reply('Order not found.');
+        const isPaid = order.status === 'Completed';
+        const method = order.paymentMethod || '—';
+        const embed = new EmbedBuilder()
+            .setColor(0x5865F2)
+            .setTitle(`📋 Order ${order.orderId}`)
+            .addFields(
+                { name: 'Customer', value: order.discordUsername || `<@${order.discordId}>`, inline: true },
+                { name: 'Payment', value: method, inline: true },
+                { name: 'Paid', value: isPaid ? '✅ Yes' : '❌ No', inline: true }
+            );
+        return message.reply({ embeds: [embed] });
     }
 
     // 2) Xem nhanh người đã link trong DB: !linked_users hoặc !checkdb
