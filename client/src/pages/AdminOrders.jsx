@@ -1,16 +1,49 @@
 import { useEffect, useState } from 'react';
+import { Navigate } from 'react-router-dom';
 import axios from 'axios';
+import { useContext } from 'react';
+import { ShopContext } from '../context/ShopContext';
 
 const AdminOrders = () => {
+  const { user } = useContext(ShopContext);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isOwner, setIsOwner] = useState(null);
 
   useEffect(() => {
+    const u = user || (() => {
+      try {
+        const s = localStorage.getItem('discordUser') || localStorage.getItem('user');
+        return s ? JSON.parse(s) : null;
+      } catch { return null; }
+    })();
+    if (!u?.discordId) {
+      setIsOwner(false);
+      return;
+    }
+    axios.get(`/api/shop/check-owner?discordId=${u.discordId}`)
+      .then(res => setIsOwner(res.data?.isOwner === true))
+      .catch(() => setIsOwner(false));
+  }, [user?.discordId]);
+
+  useEffect(() => {
+    if (isOwner !== true) return;
     axios.get('/api/shop/orders')
       .then(res => setOrders(res.data))
       .catch(() => setOrders([]))
       .finally(() => setLoading(false));
-  }, []);
+  }, [isOwner]);
+
+  if (isOwner === false || (!user?.discordId && isOwner !== null)) {
+    return <Navigate to="/" replace />;
+  }
+  if (isOwner !== true) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center text-gray-400">
+        Checking access...
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-black p-4 md:p-8">

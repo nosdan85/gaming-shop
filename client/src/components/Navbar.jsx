@@ -1,16 +1,27 @@
-import { useContext, useState } from 'react';
+import { useContext, useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ShopContext } from '../context/ShopContext';
 import { ShoppingBagIcon, Bars3Icon, XMarkIcon } from '@heroicons/react/24/outline';
+import axios from 'axios';
 
-// --- Discord Review: dùng env VITE_DISCORD_GUILD_ID + VITE_DISCORD_VOUCH_CHANNEL_ID ---
 const GUILD_ID = import.meta.env.VITE_DISCORD_GUILD_ID || '1398984938111369256';
 const VOUCH_CHANNEL_ID = import.meta.env.VITE_DISCORD_VOUCH_CHANNEL_ID || '1399154220434853969';
 const DISCORD_REVIEW_URL = `https://discord.com/channels/${GUILD_ID}/${VOUCH_CHANNEL_ID}`;
 
 const Navbar = () => {
-  const { cart, isCartOpen, setIsCartOpen } = useContext(ShopContext);
+  const { cart, isCartOpen, setIsCartOpen, user } = useContext(ShopContext);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isOwner, setIsOwner] = useState(false);
+
+  useEffect(() => {
+    if (!user?.discordId) {
+      setIsOwner(false);
+      return;
+    }
+    axios.get(`/api/shop/check-owner?discordId=${user.discordId}`)
+      .then(res => setIsOwner(res.data?.isOwner === true))
+      .catch(() => setIsOwner(false));
+  }, [user?.discordId]);
 
   const totalItems = cart.reduce((acc, item) => acc + item.quantity, 0);
 
@@ -49,9 +60,11 @@ const Navbar = () => {
             >
               Trustpilot
             </a>
-            <Link to="/admin" className="text-gray-300 hover:text-white transition-colors font-medium">
-              Admin
-            </Link>
+            {isOwner && (
+              <Link to="/admin" className="text-gray-300 hover:text-white transition-colors font-medium">
+                Admin
+              </Link>
+            )}
           </div>
           
           {/* Mobile Menu Button & Cart */}
@@ -102,13 +115,15 @@ const Navbar = () => {
             >
               Trustpilot
             </a>
-            <Link 
-              to="/admin" 
-              onClick={() => setIsMenuOpen(false)}
-              className="block px-3 py-2 text-base font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-md"
-            >
-              Admin
-            </Link>
+            {isOwner && (
+              <Link 
+                to="/admin" 
+                onClick={() => setIsMenuOpen(false)}
+                className="block px-3 py-2 text-base font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-md"
+              >
+                Admin
+              </Link>
+            )}
           </div>
         </div>
       )}

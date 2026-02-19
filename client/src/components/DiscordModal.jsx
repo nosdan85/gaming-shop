@@ -14,11 +14,11 @@ const DiscordModal = ({ isOpen, onClose }) => {
     setLoading(true);
     try {
       // Gọi API Link
-      const res = await axios.post('http://localhost:5000/api/shop/link-discord', {
+      const res = await axios.post('/api/shop/link-discord', {
         discordId,
         discordUsername
       });
-      loginDiscord(res.data);
+      loginDiscord(res.data.user);
       onClose();
     } catch (err) {
       alert("Error linking discord. Please try again.");

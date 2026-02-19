@@ -23,6 +23,17 @@ const checkUserInGuild = async (discordId) => {
     } catch (e) { return false; }
 };
 
+// --- HELPER: CHECK USER CÓ OWNER ROLE ---
+const checkUserHasOwnerRole = async (discordId) => {
+    try {
+        const guild = await client.guilds.fetch(process.env.DISCORD_GUILD_ID);
+        if (!guild) return false;
+        const member = await guild.members.fetch(discordId);
+        const ownerRoleId = process.env.DISCORD_OWNER_ROLE_ID;
+        return member.roles.cache.has(ownerRoleId);
+    } catch (e) { return false; }
+};
+
 // --- TICKET SYSTEM ---
 const createOrderTicket = async (order) => {
     try {
@@ -44,7 +55,7 @@ const createOrderTicket = async (order) => {
         const orderEmbed = new EmbedBuilder()
             .setColor(0xFFFFFF)
             .setTitle(`🧾 Order: ${order.orderId}`)
-            .setDescription(`Hello <@${order.discordId}>. Choose CashApp or Apple Pay (PayPal & LTC: pay on website).`)
+            .setDescription(`Hello <@${order.discordId}>. Choose CashApp or Robux.`)
             .addFields(
                 { name: 'Customer', value: order.discordUsername || `<@${order.discordId}>`, inline: true },
                 { name: 'Total', value: `$${order.totalAmount}`, inline: true },
@@ -55,7 +66,7 @@ const createOrderTicket = async (order) => {
 
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId(`pay_cashapp_${order.orderId}`).setLabel('CashApp').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId(`pay_apple_${order.orderId}`).setLabel('Apple Pay').setStyle(ButtonStyle.Secondary)
+            new ButtonBuilder().setCustomId(`pay_robux_${order.orderId}`).setLabel('Robux').setStyle(ButtonStyle.Secondary)
         );
 
         await channel.send({ 
@@ -80,18 +91,34 @@ client.on('interactionCreate', async interaction => {
         const totalAmount = order.totalAmount;
         const methods = {
             'cashapp': { name: 'CashApp', img: 'cashapp.png' },
-            'apple': { name: 'Apple Pay', img: 'apple.png' }
+            'robux': { name: 'Robux', img: 'robux.png' }
         };
         const selected = methods[method];
         if (!selected) return;
 
+        let files = [], embed;
         const imagePath = path.join(__dirname, `../client/public/pictures/payments/${selected.img}`);
-        const files = [new AttachmentBuilder(imagePath)];
-        const embed = new EmbedBuilder()
-            .setColor(0x000000)
-            .setTitle(`Pay via ${selected.name}`)
-            .setDescription(`**Amount:** $${totalAmount}\n\nScan QR or use details below.\n**Upload screenshot proof here.**`)
-            .setImage(`attachment://${selected.img}`);
+        try {
+            const fs = require('fs');
+            if (fs.existsSync(imagePath)) {
+                files = [new AttachmentBuilder(imagePath)];
+                embed = new EmbedBuilder()
+                    .setColor(0x000000)
+                    .setTitle(`Pay via ${selected.name}`)
+                    .setDescription(`**Amount:** $${totalAmount}\n\nScan QR or use details below.\n**Upload screenshot proof here.**`)
+                    .setImage(`attachment://${selected.img}`);
+            } else {
+                embed = new EmbedBuilder()
+                    .setColor(0x000000)
+                    .setTitle(`Pay via ${selected.name}`)
+                    .setDescription(`**Amount:** $${totalAmount}\n\nUpload screenshot proof here.`);
+            }
+        } catch {
+            embed = new EmbedBuilder()
+                .setColor(0x000000)
+                .setTitle(`Pay via ${selected.name}`)
+                .setDescription(`**Amount:** $${totalAmount}\n\nUpload screenshot proof here.`);
+        }
 
         await interaction.reply({ embeds: [embed], files });
         await Order.findOneAndUpdate({ orderId }, { status: 'Waiting Payment', paymentMethod: method });
@@ -298,4 +325,4 @@ client.on('messageCreate', async message => {
 });
 
 client.on('ready', () => console.log(`🤖 Bot Online: ${client.user.tag}`));
-module.exports = { client, createOrderTicket, checkUserInGuild };
+module.exports = { client, createOrderTicket, checkUserInGuild, checkUserHasOwnerRole };

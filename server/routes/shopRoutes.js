@@ -4,7 +4,7 @@ const Product = require('../models/Product');
 const Order = require('../models/Order');
 const User = require('../models/User');
 const Counter = require('../models/Counter');
-const { createOrderTicket, checkUserInGuild } = require('../bot');
+const { createOrderTicket, checkUserInGuild, checkUserHasOwnerRole } = require('../bot');
 const axios = require('axios'); // Dùng để gọi sang Discord
 const qs = require('qs'); // Dùng để đóng gói dữ liệu gửi đi
 
@@ -149,9 +149,7 @@ router.post('/checkout', async (req, res) => {
         });
         await newOrder.save();
 
-        const channelId = await createOrderTicket(newOrder);
-        if (channelId) await Order.findOneAndUpdate({ orderId }, { channelId });
-        res.json({ success: true, orderId, channelId });
+        res.json({ success: true, orderId });
     } catch (err) {
         console.error('Checkout error:', err);
         res.status(500).json({ error: 'Server error' });
@@ -270,6 +268,40 @@ router.post('/link-discord', async (req, res) => {
     } catch (err) {
         console.error('LinkDiscord Error:', err);
         return res.status(500).json({ message: 'Server Error' });
+    }
+});
+
+// 6b. Tạo ticket khi khách chọn CashApp/Robux/PayPal F&F
+router.post('/create-ticket', async (req, res) => {
+    try {
+        const { orderId, method } = req.body;
+        if (!orderId) return res.status(400).json({ error: 'Missing orderId' });
+        const order = await Order.findOne({ orderId });
+        if (!order) return res.status(404).json({ error: 'Order not found' });
+        if (method) await Order.findOneAndUpdate({ orderId }, { paymentMethod: method });
+        if (order.channelId) {
+            const paypalEmail = method === 'paypal_ff' ? (process.env.PAYPAL_EMAIL || '') : null;
+            return res.json({ channelId: order.channelId, paypalEmail });
+        }
+        const channelId = await createOrderTicket(order);
+        if (channelId) await Order.findOneAndUpdate({ orderId }, { channelId, ...(method && { paymentMethod: method }) });
+        const paypalEmail = method === 'paypal_ff' ? (process.env.PAYPAL_EMAIL || '') : null;
+        res.json({ channelId: channelId || null, paypalEmail });
+    } catch (err) {
+        console.error('Create ticket error:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// 6c. Check owner role (chỉ admin mới thấy trang Admin)
+router.get('/check-owner', async (req, res) => {
+    try {
+        const discordId = req.query.discordId;
+        if (!discordId) return res.json({ isOwner: false });
+        const isOwner = await checkUserHasOwnerRole(discordId);
+        res.json({ isOwner });
+    } catch (err) {
+        res.json({ isOwner: false });
     }
 });
 

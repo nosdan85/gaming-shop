@@ -67,8 +67,8 @@ const CartModal = () => {
       const res = await axios.post('/api/shop/checkout', { discordId: user.discordId, cartItems: cart });
       clearCart();
       setIsCartOpen(false);
-      const { orderId, channelId } = res.data;
-      window.location.href = `/pay?orderId=${orderId}&total=${totalAmount.toFixed(2)}${channelId ? `&channelId=${channelId}` : ''}`;
+      const { orderId } = res.data;
+      window.location.href = `/pay?orderId=${orderId}&total=${totalAmount.toFixed(2)}`;
     } catch (err) {
       if (err.response?.data?.error_code === "USER_NOT_IN_GUILD") {
           setInviteLink(err.response.data.invite_link);
@@ -182,8 +182,8 @@ const CartModal = () => {
                           <CurrencyDollarIcon className="w-4 h-4" />
                       </div>
                       <div>
-                          <p className="text-white text-sm font-medium">3. Ticket</p>
-                          <p className="text-gray-500 text-xs">A Discord ticket will open automatically.</p>
+                          <p className="text-white text-sm font-medium">3. Choose payment</p>
+                          <p className="text-gray-500 text-xs">Pick CashApp, Robux, or PayPal F&F. Ticket opens when you choose.</p>
                       </div>
                   </div>
                   <div className="flex gap-3">
