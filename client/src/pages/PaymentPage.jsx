@@ -2,7 +2,22 @@ import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 
-const GUILD_ID = import.meta.env.VITE_DISCORD_GUILD_ID || '';
+const GUILD_ID = import.meta.env.VITE_DISCORD_GUILD_ID || '1398984938111369256';
+const VALID_GUILD = GUILD_ID && String(GUILD_ID).trim().length > 0;
+
+const openTicketChannel = (channelId) => {
+  if (!channelId || !VALID_GUILD) return;
+  const httpsUrl = `https://discord.com/channels/${GUILD_ID}/${channelId}`;
+  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  const linkMethod = localStorage.getItem('discordLinkMethod') || 'web';
+  if (isMobile || linkMethod === 'app') {
+    const appUrl = `discord://-/channels/${GUILD_ID}/${channelId}`;
+    window.location.href = appUrl;
+    setTimeout(() => window.open(httpsUrl, '_blank'), 1200);
+  } else {
+    window.open(httpsUrl, '_blank');
+  }
+};
 
 const PaymentPage = () => {
   const [params] = useSearchParams();
@@ -28,7 +43,6 @@ const PaymentPage = () => {
     );
   }
 
-  const ticketUrl = ticketData?.channelId ? `https://discord.com/channels/${GUILD_ID}/${ticketData.channelId}` : null;
   const totalNum = parseFloat(total);
 
   const handlePayPal = async () => {
@@ -68,11 +82,7 @@ const PaymentPage = () => {
       const data = res.data;
       if (data.channelId) {
         setTicketData({ channelId: data.channelId });
-        const linkMethod = localStorage.getItem('discordLinkMethod') || 'web';
-        const ticketUrl = linkMethod === 'app'
-          ? `discord://discord.com/channels/${GUILD_ID}/${data.channelId}`
-          : `https://discord.com/channels/${GUILD_ID}/${data.channelId}`;
-        window.open(ticketUrl, '_blank');
+        openTicketChannel(data.channelId);
       } else {
         alert('Could not create ticket. Try again.');
       }
@@ -106,14 +116,7 @@ const PaymentPage = () => {
       const res = await axios.post('/api/shop/create-ticket-paypal-ff', { orderId });
       const { channelId, email } = res.data || {};
       setPaypalFFData(prev => ({ ...prev, channelId: channelId || null, email: email || prev?.email || '' }));
-      if (channelId) {
-        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-        const useApp = isMobile || (localStorage.getItem('discordLinkMethod') === 'app');
-        const ticketUrl = useApp
-          ? `discord://discord.com/channels/${GUILD_ID}/${channelId}`
-          : `https://discord.com/channels/${GUILD_ID}/${channelId}`;
-        window.open(ticketUrl, '_blank');
-      }
+      if (channelId) openTicketChannel(channelId);
     } catch {
       alert('Could not create ticket. Try again.');
     } finally {
