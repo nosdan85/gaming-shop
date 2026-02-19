@@ -99,6 +99,9 @@ const PaymentPage = () => {
           </button>
         ) : (
           <div className="bg-[#0a0a0c] rounded-xl p-4 border border-[#2c2c2e]">
+            <button onClick={() => setLtcData(null)} className="text-gray-400 hover:text-white text-xs mb-3 flex items-center gap-1">
+              ← Back / Change payment method
+            </button>
             <p className="text-gray-400 text-xs mb-1">Send exactly:</p>
             <p className="text-white font-mono font-bold text-lg mb-2">{ltcData.payAmount} {ltcData.payCurrency?.toUpperCase()}</p>
             <p className="text-gray-400 text-xs mb-1">To address:</p>
