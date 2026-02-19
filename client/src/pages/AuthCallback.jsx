@@ -31,9 +31,10 @@ const AuthCallback = () => {
                 if (response.data.user) {
                     setStatus("Success! Redirecting..."); // Tiếng Anh
                     
-                    localStorage.setItem('user', JSON.stringify(response.data.user));
-                    
-                    if (loginDiscord) loginDiscord(response.data.user);
+                    const userData = response.data.user;
+                    localStorage.setItem('user', JSON.stringify(userData));
+                    localStorage.setItem('discordUser', JSON.stringify(userData));
+                    if (loginDiscord) loginDiscord(userData);
 
                     setTimeout(() => {
                         window.location.href = '/'; 

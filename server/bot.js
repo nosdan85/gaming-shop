@@ -143,6 +143,37 @@ client.on('messageCreate', async message => {
     // ID owner cố định (an toàn vì chỉ là ID public, không phải token)
     const OWNER_ID = '1146730730060271736';
 
+    // !link - gửi OAuth URL. User click link TỪ TRONG Discord → authorize mở trong Discord app (không mở browser)
+    if (cmd === '!link') {
+        try {
+            const clientId = process.env.DISCORD_CLIENT_ID || '1439615003572572250';
+            const redirectUri = process.env.DISCORD_REDIRECT_URI || `${process.env.CLIENT_URL || 'https://www.nosmarket.com'}/auth/discord/callback`;
+            const params = new URLSearchParams({
+                client_id: clientId,
+                redirect_uri: redirectUri,
+                response_type: 'code',
+                scope: 'identify guilds.join',
+                prompt: 'consent'
+            });
+            const oauthUrl = `https://discord.com/oauth2/authorize?${params.toString()}`;
+
+            const embed = new EmbedBuilder()
+                .setColor(0x5865F2)
+                .setTitle('🔗 Link Discord Account')
+                .setDescription(
+                    `Click the link below to link your account.\n\n` +
+                    `**This will open the authorization dialog inside Discord.**\n\n` +
+                    `**[Click here to link](${oauthUrl})**`
+                )
+                .setFooter({ text: 'Link opens in Discord — no browser needed' });
+
+            return message.reply({ embeds: [embed] });
+        } catch (err) {
+            console.error('Error !link:', err);
+            return message.reply('An error occurred. Please try again.');
+        }
+    }
+
     // !close - đóng và xóa ticket (channel order_* hoặc NM_*)
     if (cmd === '!close') {
         if (!message.channel.name.startsWith('order_') && !message.channel.name.startsWith('nm_')) return;
