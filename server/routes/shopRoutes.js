@@ -271,13 +271,22 @@ router.post('/link-discord', async (req, res) => {
     }
 });
 
-// 6b. PayPal F&F: create ticket paypal_1, paypal_2... + return email
+// 6b. Get PayPal email (F&F - no ticket)
+router.get('/paypal-email', (req, res) => {
+    res.json({ email: process.env.PAYPAL_EMAIL || '' });
+});
+
+// 6b2. PayPal F&F: create ticket paypal_1, paypal_2... (chỉ khi bấm Open Ticket)
 router.post('/create-ticket-paypal-ff', async (req, res) => {
     try {
         const { orderId } = req.body;
         if (!orderId) return res.status(400).json({ error: 'Missing orderId' });
         const order = await Order.findOne({ orderId });
         if (!order) return res.status(404).json({ error: 'Order not found' });
+
+        if (order.paypalTicketChannelId) {
+            return res.json({ channelId: order.paypalTicketChannelId, email: process.env.PAYPAL_EMAIL || '' });
+        }
 
         const counter = await Counter.findOneAndUpdate(
             { id: 'paypalTicket' },
@@ -288,7 +297,7 @@ router.post('/create-ticket-paypal-ff', async (req, res) => {
 
         const channelName = `paypal_${paypalSeq}`;
         const channelId = await createPayPalFFTicket(order, paypalSeq);
-        if (channelId) await Order.findOneAndUpdate({ orderId }, { paymentMethod: 'paypal_ff', paypalTicketChannel: channelName });
+        if (channelId) await Order.findOneAndUpdate({ orderId }, { paymentMethod: 'paypal_ff', paypalTicketChannel: channelName, paypalTicketChannelId: channelId });
 
         res.json({
             channelId: channelId || null,

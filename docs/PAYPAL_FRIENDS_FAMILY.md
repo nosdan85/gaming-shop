@@ -10,7 +10,7 @@ Nút **Pay with PayPal or Card** dùng PayPal Goods & Services (tự động, kh
 
 ## PayPal F&F (luồng hiện tại)
 
-1. Khách chọn F&F → hiện email + tạo ticket **paypal_1**, **paypal_2**... (cùng category với ticket CashApp/Robux)
-2. Web dẫn đến ticket: Desktop (theo cách liên kết: web→mở web, app→mở app), Điện thoại→mở app
+1. Khách bấm F&F → hiện email + nút Copy + nút **Open Ticket**
+2. Khách bấm **Open Ticket** → mới tạo ticket paypal_1, paypal_2... và mở ticket (Desktop: theo web/app link, Điện thoại: app)
 3. Khách gửi tiền, upload screenshot trong ticket
 4. Bạn xác minh thủ công, dùng !close trong ticket khi đã nhận tiền

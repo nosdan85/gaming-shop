@@ -16,6 +16,7 @@ const orderSchema = new mongoose.Schema({
     paypalOrderId: { type: String },
     channelId: { type: String },
     paypalTicketChannel: { type: String },
+    paypalTicketChannelId: { type: String },
     createdAt: { type: Date, default: Date.now }
 });
 

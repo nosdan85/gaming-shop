@@ -83,15 +83,29 @@ const PaymentPage = () => {
     }
   };
 
-  // PayPal F&F: show email + create ticket paypal_1, paypal_2... + redirect to ticket
+  // PayPal F&F: Step 1 - show email only. Step 2 - bấm Open Ticket mới tạo ticket
   const [paypalFFData, setPaypalFFData] = useState(null);
   const [paypalFFLoading, setPaypalFFLoading] = useState(false);
+  const [paypalTicketLoading, setPaypalTicketLoading] = useState(false);
+
   const handlePayPalFF = async () => {
     setPaypalFFLoading(true);
     try {
+      const res = await axios.get('/api/shop/paypal-email');
+      setPaypalFFData({ channelId: null, email: res.data?.email || '' });
+    } catch {
+      setPaypalFFData({ channelId: null, email: '' });
+    } finally {
+      setPaypalFFLoading(false);
+    }
+  };
+
+  const handleOpenPayPalTicket = async () => {
+    setPaypalTicketLoading(true);
+    try {
       const res = await axios.post('/api/shop/create-ticket-paypal-ff', { orderId });
       const { channelId, email } = res.data || {};
-      setPaypalFFData({ channelId, email: email || '' });
+      setPaypalFFData(prev => ({ ...prev, channelId: channelId || null, email: email || prev?.email || '' }));
       if (channelId) {
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
         const useApp = isMobile || (localStorage.getItem('discordLinkMethod') === 'app');
@@ -101,9 +115,18 @@ const PaymentPage = () => {
         window.open(ticketUrl, '_blank');
       }
     } catch {
-      setPaypalFFData({ channelId: null, email: '' });
+      alert('Could not create ticket. Try again.');
     } finally {
-      setPaypalFFLoading(false);
+      setPaypalTicketLoading(false);
+    }
+  };
+
+  const [copied, setCopied] = useState(false);
+  const copyEmail = () => {
+    if (paypalFFData?.email) {
+      navigator.clipboard.writeText(paypalFFData.email);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     }
   };
 
@@ -113,7 +136,7 @@ const PaymentPage = () => {
         <div className="bg-[#1c1c1e] rounded-2xl p-8 max-w-md w-full border border-[#2c2c2e] text-center">
           <div className="text-4xl mb-4">&#10003;</div>
           <h2 className="text-2xl font-bold text-white mb-2">Payment Received!</h2>
-          <p className="text-gray-400 mb-6">Order {orderId} has been paid.</p>
+          <p className="text-gray-400 mb-6">Your order has been paid.</p>
           <a href="/" className="block mt-3 text-gray-500 hover:text-white text-sm">Back to shop</a>
         </div>
       </div>
@@ -123,7 +146,7 @@ const PaymentPage = () => {
   return (
     <div className="min-h-screen min-h-[100dvh] bg-black flex items-center justify-center p-4">
       <div className="bg-[#1c1c1e] rounded-2xl p-6 max-w-md w-full border border-[#2c2c2e] overflow-hidden">
-        <h2 className="text-xl font-bold text-white mb-1">Pay for Order {orderId}</h2>
+        <h2 className="text-xl font-bold text-white mb-1">Complete Payment</h2>
         <p className="text-gray-400 text-sm mb-6">Total: <span className="text-white font-bold">${totalNum.toFixed(2)}</span></p>
 
         <button
@@ -152,8 +175,24 @@ const PaymentPage = () => {
         {paypalFFData !== null && (
           <div className="bg-[#0a0a0c] rounded-xl p-4 border border-[#2c2c2e] mb-4">
             <p className="text-gray-400 text-xs mb-1">Send ${totalNum.toFixed(2)} as Friends & Family to:</p>
-            <p className="text-white font-mono font-bold break-all">{paypalFFData.email || '(PAYPAL_EMAIL not configured)'}</p>
-            <p className="text-gray-500 text-xs mt-2">Opening your ticket — upload payment screenshot there.</p>
+            <div className="flex items-center gap-2 mt-1">
+              <p className="text-white font-mono font-bold break-all flex-1">{paypalFFData.email || '(PAYPAL_EMAIL not configured)'}</p>
+              <button
+                onClick={copyEmail}
+                disabled={!paypalFFData.email}
+                className="flex-shrink-0 px-3 py-1.5 bg-[#2c2c2e] hover:bg-[#3f3f46] text-white text-xs font-medium rounded-lg transition"
+              >
+                {copied ? 'Copied!' : 'Copy'}
+              </button>
+            </div>
+            <p className="text-gray-500 text-xs mt-3">Upload payment screenshot in your ticket when done.</p>
+            <button
+              onClick={handleOpenPayPalTicket}
+              disabled={paypalTicketLoading}
+              className="w-full mt-3 py-2.5 bg-[#5865F2] hover:bg-[#4752C4] disabled:opacity-50 text-white font-bold rounded-xl transition text-sm"
+            >
+              {paypalTicketLoading ? 'Creating...' : 'Open Ticket'}
+            </button>
           </div>
         )}
 
