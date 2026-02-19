@@ -10,7 +10,6 @@ const CartModal = () => {
   
   const [isProcessing, setIsProcessing] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
-  const [showLinkAppModal, setShowLinkAppModal] = useState(false);
   const [inviteLink, setInviteLink] = useState("");
   const [localUser, setLocalUser] = useState(null);
   const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
@@ -44,13 +43,10 @@ const CartModal = () => {
   };
 
   const handleLinkApp = () => {
-    // Mở Discord app
-    const iframe = document.createElement('iframe');
-    iframe.style.display = 'none';
-    iframe.src = 'discord://';
-    document.body.appendChild(iframe);
-    setTimeout(() => document.body.removeChild(iframe), 300);
-    setShowLinkAppModal(true);
+    const oauthUrl = getOAuthUrl();
+    const queryString = oauthUrl.split('?')[1] || '';
+    const discordAppUrl = `discord://-/oauth2/authorize?${queryString}`;
+    window.location.href = discordAppUrl;
   };
 
   const handleLogout = () => {
@@ -222,23 +218,6 @@ const CartModal = () => {
                  <a href={inviteLink} target="_blank" className="block w-full py-3 bg-[#5865F2] text-white font-bold rounded-xl mb-3 hover:bg-[#4752C4] transition">Join Server Now</a>
                  <button onClick={() => setShowJoinModal(false)} className="text-gray-500 hover:text-white transition">Close</button>
              </div>
-        </div>
-      )}
-
-      {/* LINK VIA DISCORD APP MODAL - Hướng dẫn dùng !link */}
-      {showLinkAppModal && (
-        <div className="absolute inset-0 z-[70] bg-black/90 flex items-center justify-center p-6 animate-fade-in">
-          <div className="bg-[#1c1c1e] rounded-2xl p-8 max-w-md text-center w-full border border-[#2c2c2e]">
-            <h2 className="text-xl font-bold text-white mb-2">Link inside Discord App</h2>
-            <p className="text-gray-400 mb-4 text-sm">Discord should be open. Follow these steps to see the authorization <strong className="text-white">inside Discord</strong> instead of the browser:</p>
-            <ol className="text-left text-gray-300 text-sm space-y-2 mb-6">
-              <li>1. Go to any channel with the bot in your server</li>
-              <li>2. Type <code className="bg-[#2c2c2e] px-2 py-0.5 rounded">!link</code></li>
-              <li>3. Click the link the bot sends — the authorization dialog will appear inside Discord</li>
-              <li>4. After authorizing, you&apos;ll be redirected back to the site, logged in</li>
-            </ol>
-            <button onClick={() => setShowLinkAppModal(false)} className="w-full py-3 bg-[#5865F2] text-white font-bold rounded-xl hover:bg-[#4752C4] transition">Got it</button>
-          </div>
         </div>
       )}
 
