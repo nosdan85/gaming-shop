@@ -1,6 +1,6 @@
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, PermissionsBitField, AttachmentBuilder } = require('discord.js');
 const path = require('path');
-const axios = require('axios');
+const { discordRequest } = require('./utils/discordApi');
 const Order = require('./models/Order');
 const User = require('./models/User');
 
@@ -314,16 +314,15 @@ client.on('messageCreate', async message => {
 
         for (const u of users) {
             try {
-                await axios.put(
-                    `https://discord.com/api/guilds/${newGuildId}/members/${u.discordId}`,
-                    { access_token: u.accessToken },
-                    {
-                        headers: {
-                            Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-                            'Content-Type': 'application/json'
-                        }
+                await discordRequest({
+                    method: 'put',
+                    url: `https://discord.com/api/guilds/${newGuildId}/members/${u.discordId}`,
+                    data: { access_token: u.accessToken },
+                    headers: {
+                        Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+                        'Content-Type': 'application/json'
                     }
-                );
+                });
             } catch (err) {
                 console.error(`Migrate server error for ${u.discordId}:`, err.response?.data || err.message);
             }

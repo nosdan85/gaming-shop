@@ -24,7 +24,8 @@ const AuthCallback = () => {
             try {
                 setStatus("Verifying with Server..."); // Tiếng Anh
                 
-                const response = await axios.post('/api/shop/auth/discord', { code });
+                const redirectUri = `${window.location.origin}/auth/discord/callback`;
+                const response = await axios.post('/api/shop/auth/discord', { code, redirect_uri: redirectUri });
                 
                 if (response.data.user) {
                     setStatus("Success! Redirecting..."); // Tiếng Anh
@@ -44,9 +45,13 @@ const AuthCallback = () => {
                 }
             } catch (error) {
                 console.error("Login Failed:", error);
-                setStatus("LOGIN FAILED");
-                const message = error.response?.data?.error || error.message;
-                setDebugInfo(`Error: ${message}\n\nDetails: ${JSON.stringify(error.response?.data || {}, null, 2)}`);
+                const data = error.response?.data;
+                const isRateLimit = data?.code === 'DISCORD_RATE_LIMIT' || error.response?.status === 503;
+                setStatus(isRateLimit ? "Discord rate limited" : "LOGIN FAILED");
+                const message = data?.error || error.message;
+                setDebugInfo(isRateLimit
+                    ? `${message}\n\nDiscord/Cloudflare may temporarily block server IPs. Please wait a few minutes and try again.`
+                    : `Error: ${message}\n\nDetails: ${JSON.stringify(data || {}, null, 2)}`);
             }
         };
 

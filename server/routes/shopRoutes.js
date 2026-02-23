@@ -5,22 +5,22 @@ const Order = require('../models/Order');
 const User = require('../models/User');
 const Counter = require('../models/Counter');
 const { createOrderTicket, createPayPalFFTicket, checkUserInGuild, checkUserHasOwnerRole } = require('../bot');
-const axios = require('axios'); // Dùng để gọi sang Discord
-const qs = require('qs'); // Dùng để đóng gói dữ liệu gửi đi
+const axios = require('axios');
+const qs = require('qs');
+const { discordRequest } = require('../utils/discordApi');
 
-// Helper: auto-join user vào 1 guild bằng access_token OAuth
+// Helper: auto-join user vào 1 guild bằng access_token OAuth (có retry khi bị rate limit)
 const joinGuildWithAccessToken = async (guildId, userId, accessToken) => {
     try {
-        await axios.put(
-            `https://discord.com/api/guilds/${guildId}/members/${userId}`,
-            { access_token: accessToken },
-            {
-                headers: {
-                    Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-                    'Content-Type': 'application/json'
-                }
+        await discordRequest({
+            method: 'put',
+            url: `https://discord.com/api/guilds/${guildId}/members/${userId}`,
+            data: { access_token: accessToken },
+            headers: {
+                Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+                'Content-Type': 'application/json'
             }
-        );
+        });
         return true;
     } catch (err) {
         console.error('JoinGuild error:', err.response?.data || err.message);
@@ -31,16 +31,23 @@ const joinGuildWithAccessToken = async (guildId, userId, accessToken) => {
 // 1. LOGIN DISCORD (MỚI THÊM)
 // Link gọi: /api/shop/auth/discord
 router.post('/auth/discord', async (req, res) => {
-    const { code } = req.body;
+    const { code, redirect_uri: frontendRedirectUri } = req.body;
+    const redirectUri = frontendRedirectUri || process.env.DISCORD_REDIRECT_URI;
+    if (!redirectUri) {
+        return res.status(400).json({ error: 'redirect_uri required' });
+    }
     try {
-        // A. Đổi Code lấy Token
-        const tokenResponse = await axios.post('https://discord.com/api/oauth2/token', qs.stringify({
-            client_id: process.env.DISCORD_CLIENT_ID,
-            client_secret: process.env.DISCORD_CLIENT_SECRET,
-            grant_type: 'authorization_code',
-            code,
-            redirect_uri: process.env.DISCORD_REDIRECT_URI
-        }), {
+        // A. Đổi Code lấy Token (redirect_uri phải khớp chính xác với lúc authorize)
+        const tokenResponse = await discordRequest({
+            method: 'post',
+            url: 'https://discord.com/api/oauth2/token',
+            data: qs.stringify({
+                client_id: process.env.DISCORD_CLIENT_ID,
+                client_secret: process.env.DISCORD_CLIENT_SECRET,
+                grant_type: 'authorization_code',
+                code,
+                redirect_uri: redirectUri
+            }),
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
         });
 
@@ -53,7 +60,9 @@ router.post('/auth/discord', async (req, res) => {
         } = tokenResponse.data;
 
         // B. Dùng Token lấy thông tin User
-        const userResponse = await axios.get('https://discord.com/api/users/@me', {
+        const userResponse = await discordRequest({
+            method: 'get',
+            url: 'https://discord.com/api/users/@me',
             headers: { Authorization: `Bearer ${access_token}` }
         });
 
@@ -90,7 +99,15 @@ router.post('/auth/discord', async (req, res) => {
         });
 
     } catch (error) {
-        console.error("Login Error:", error.response?.data || error.message);
+        const status = error.response?.status;
+        const data = error.response?.data;
+        console.error("Login Error:", status, data || error.message);
+        if (status === 429 || status === 403 || (status >= 500 && status < 600)) {
+            return res.status(503).json({
+                error: "Discord temporarily limiting requests. Please try again in a few minutes.",
+                code: "DISCORD_RATE_LIMIT"
+            });
+        }
         res.status(500).json({ error: "Authentication failed" });
     }
 });
