@@ -14,7 +14,8 @@ const SORT_OPTIONS = [
 ];
 
 const CACHE_KEY = 'productsCache';
-const CACHE_TTL_MS = 30 * 60 * 1000; // 30 phút
+const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+const DISCORD_INVITE_URL = import.meta.env.VITE_DISCORD_INVITE_URL || 'https://discord.gg/T4A4ANp9';
 
 const Home = () => {
   const [products, setProducts] = useState([]);
@@ -35,7 +36,9 @@ const Home = () => {
           setProducts(data);
         }
       }
-    } catch (_) {}
+    } catch (_) {
+      // Ignore invalid cache payload.
+    }
 
     setLoading(true);
     axios.get('/api/shop/products')
@@ -43,9 +46,13 @@ const Home = () => {
         setProducts(res.data);
         try {
           localStorage.setItem(CACHE_KEY, JSON.stringify({ data: res.data, ts: Date.now() }));
-        } catch (_) {}
+        } catch (_) {
+          // Ignore cache write errors.
+        }
       })
-      .catch(() => {})
+      .catch(() => {
+        // Product API error is handled by empty state UI.
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -77,7 +84,7 @@ const Home = () => {
                 </p>
             </div>
             {/* THAY LINK DISCORD MỚI CỦA BẠN VÀO DƯỚI ĐÂY */}
-            <a href="https://discord.gg/T4A4ANp9" target="_blank" rel="noreferrer" className="text-sm text-[#2997ff] font-bold hover:underline">
+            <a href={DISCORD_INVITE_URL} target="_blank" rel="noreferrer" className="text-sm text-[#2997ff] font-bold hover:underline">
                 Join Now &rarr;
             </a>
         </div>

@@ -4,7 +4,7 @@ import ProductCard from '../components/ProductCard';
 import ProductDetailModal from '../components/ProductDetailModal'; // Import Modal mới
 
 const Shop = () => {
-  const { products } = useContext(ShopContext);
+  const { products = [] } = useContext(ShopContext);
   // State để lưu sản phẩm đang được xem chi tiết
   const [selectedProduct, setSelectedProduct] = useState(null);
 

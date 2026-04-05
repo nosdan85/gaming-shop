@@ -19,22 +19,25 @@ const AdminOrders = () => {
     })();
     if (!u?.discordId) {
       setIsOwner(false);
+      setLoading(false);
       return;
     }
-    axios.get(`/api/shop/check-owner?discordId=${u.discordId}`)
+    axios.get('/api/shop/check-owner')
       .then(res => setIsOwner(res.data?.isOwner === true))
-      .catch(() => setIsOwner(false));
-  }, [user?.discordId]);
+      .catch(() => setIsOwner(false))
+      .finally(() => setLoading(false));
+  }, [user]);
 
   useEffect(() => {
     if (isOwner !== true) return;
+    setLoading(true);
     axios.get('/api/shop/orders')
       .then(res => setOrders(res.data))
       .catch(() => setOrders([]))
       .finally(() => setLoading(false));
   }, [isOwner]);
 
-  if (isOwner === false || (!user?.discordId && isOwner !== null)) {
+  if (isOwner === false) {
     return <Navigate to="/" replace />;
   }
   if (isOwner !== true) {

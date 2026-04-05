@@ -3,8 +3,6 @@ import { ShopContext } from '../context/ShopContext';
 import { XMarkIcon, CheckBadgeIcon, UserCircleIcon, CurrencyDollarIcon, TicketIcon, ClipboardDocumentListIcon } from '@heroicons/react/24/outline';
 import axios from 'axios';
 
-const GUILD_ID = import.meta.env.VITE_DISCORD_GUILD_ID || '';
-
 const CartModal = () => {
   const { cart, removeFromCart, isCartOpen, setIsCartOpen, user: contextUser, logoutDiscord, clearCart } = useContext(ShopContext);
   
@@ -64,16 +62,17 @@ const CartModal = () => {
     
     setIsProcessing(true);
     try {
-      const totalAmount = cart.reduce((a, i) => a + i.price * i.quantity, 0);
-      const res = await axios.post('/api/shop/checkout', { discordId: user.discordId, cartItems: cart });
+      const res = await axios.post('/api/shop/checkout', { cartItems: cart });
       clearCart();
       setIsCartOpen(false);
       const { orderId } = res.data;
-      window.location.href = `/pay?orderId=${orderId}&total=${totalAmount.toFixed(2)}`;
+      window.location.href = `/pay?orderId=${orderId}`;
     } catch (err) {
       if (err.response?.data?.error_code === "USER_NOT_IN_GUILD") {
           setInviteLink(err.response.data.invite_link);
           setShowJoinModal(true);
+      } else if (err.response?.status === 401) {
+          alert("Login expired. Please link Discord again.");
       } else {
           alert(`Checkout Failed: ${err.response?.data?.error || "Unknown Error"}`);
       }
@@ -216,7 +215,7 @@ const CartModal = () => {
              <div className="bg-[#1c1c1e] rounded-2xl p-8 max-w-sm text-center w-full border border-[#2c2c2e]">
                  <h2 className="text-2xl font-bold text-white mb-2">Join Discord</h2>
                  <p className="text-gray-400 mb-6 text-sm">Required to process your order.</p>
-                 <a href={inviteLink} target="_blank" className="block w-full py-3 bg-[#5865F2] text-white font-bold rounded-xl mb-3 hover:bg-[#4752C4] transition">Join Server Now</a>
+                 <a href={inviteLink} target="_blank" rel="noreferrer" className="block w-full py-3 bg-[#5865F2] text-white font-bold rounded-xl mb-3 hover:bg-[#4752C4] transition">Join Server Now</a>
                  <button onClick={() => setShowJoinModal(false)} className="text-gray-500 hover:text-white transition">Close</button>
              </div>
         </div>

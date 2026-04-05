@@ -1,16 +1,65 @@
 const express = require('express');
-const router = express.Router();
+const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
+const qs = require('qs');
 const Product = require('../models/Product');
 const Order = require('../models/Order');
 const User = require('../models/User');
 const Counter = require('../models/Counter');
 const { createOrderTicket, createPayPalFFTicket, checkUserInGuild, checkUserHasOwnerRole } = require('../bot');
-const axios = require('axios');
-const qs = require('qs');
+const { createPayPalOrder, createLTCInvoice, capturePayPalOrder } = require('../services/paymentService');
 const { discordRequest } = require('../utils/discordApi');
+const { authRequired } = require('../middleware/authMiddleware');
+const { checkoutLimiter } = require('../middleware/rateLimit');
 
-// Helper: auto-join user vào 1 guild bằng access_token OAuth (có retry khi bị rate limit)
+const router = express.Router();
+const OBJECT_ID_PATTERN = /^[a-fA-F0-9]{24}$/;
+
+const getBackendBaseUrl = () => (process.env.WEBHOOK_BASE_URL || process.env.BACKEND_URL || '').replace(/\/+$/, '');
+const getClientBaseUrl = () => ((process.env.CLIENT_URL || '').split(',')[0] || '').trim().replace(/\/+$/, '');
+const buildClientPayUrl = (orderId, extraQuery = '') => {
+    const encodedOrderId = encodeURIComponent(orderId || '');
+    const query = extraQuery ? `&${extraQuery}` : '';
+    const base = getClientBaseUrl();
+    if (base) return `${base}/pay?orderId=${encodedOrderId}${query}`;
+    return `/pay?orderId=${encodedOrderId}${query}`;
+};
+
+const isDiscordTemporaryBlock = (status, data) => {
+    if (status === 429) return true;
+    if (status >= 500 && status < 600) return true;
+    if (status !== 403) return false;
+    const text = typeof data === 'string' ? data.toLowerCase() : JSON.stringify(data || {}).toLowerCase();
+    return text.includes('cloudflare') || text.includes('1015') || text.includes('temporarily blocked');
+};
+
+const getDiscordErrorMessage = (data) => {
+    if (!data) return '';
+    if (typeof data === 'string') return data.slice(0, 200);
+    return data.error_description || data.message || data.error || '';
+};
+
+const timingSafeEqualHex = (left, right) => {
+    if (!left || !right) return false;
+    const a = Buffer.from(left);
+    const b = Buffer.from(right);
+    if (a.length !== b.length) return false;
+    return crypto.timingSafeEqual(a, b);
+};
+
+const extractPayPalSummary = (captureData) => {
+    const purchaseUnit = captureData?.purchase_units?.[0];
+    const capture = purchaseUnit?.payments?.captures?.[0];
+    const amountValue = Number(capture?.amount?.value || purchaseUnit?.amount?.value || 0);
+    const currency = capture?.amount?.currency_code || purchaseUnit?.amount?.currency_code || '';
+    const referenceId = purchaseUnit?.reference_id || '';
+    return { amountValue, currency, referenceId };
+};
+
+const amountsMatch = (left, right) => Math.abs(Number(left) - Number(right)) < 0.01;
+
 const joinGuildWithAccessToken = async (guildId, userId, accessToken) => {
+    if (!guildId || !userId || !accessToken || !process.env.DISCORD_BOT_TOKEN) return false;
     try {
         await discordRequest({
             method: 'put',
@@ -23,21 +72,32 @@ const joinGuildWithAccessToken = async (guildId, userId, accessToken) => {
         });
         return true;
     } catch (err) {
-        console.error('JoinGuild error:', err.response?.data || err.message);
+        console.error('Join guild error:', err.response?.data || err.message);
         return false;
     }
 };
 
-// 1. LOGIN DISCORD (MỚI THÊM)
-// Link gọi: /api/shop/auth/discord
+const getOwnedOrder = async (orderId, discordId) => {
+    const order = await Order.findOne({ orderId });
+    if (!order) return { order: null, status: 404, error: 'Order not found' };
+    if (order.discordId !== discordId) return { order: null, status: 403, error: 'You do not own this order' };
+    return { order, status: 200, error: null };
+};
+
+const canAccessOwnerEndpoints = async (discordId) => {
+    if (!discordId) return false;
+    const ownerId = process.env.DISCORD_OWNER_ID || '';
+    if (ownerId && discordId === ownerId) return true;
+    return checkUserHasOwnerRole(discordId);
+};
+
 router.post('/auth/discord', async (req, res) => {
-    const { code, redirect_uri: frontendRedirectUri } = req.body;
+    const { code, redirect_uri: frontendRedirectUri } = req.body || {};
     const redirectUri = frontendRedirectUri || process.env.DISCORD_REDIRECT_URI;
-    if (!redirectUri) {
-        return res.status(400).json({ error: 'redirect_uri required' });
-    }
+    if (!code) return res.status(400).json({ error: 'Missing authorization code' });
+    if (!redirectUri) return res.status(400).json({ error: 'redirect_uri required' });
+
     try {
-        // A. Đổi Code lấy Token (redirect_uri phải khớp chính xác với lúc authorize)
         const tokenResponse = await discordRequest({
             method: 'post',
             url: 'https://discord.com/api/oauth2/token',
@@ -51,26 +111,20 @@ router.post('/auth/discord', async (req, res) => {
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
         });
 
-        const {
-            access_token,
-            refresh_token,
-            expires_in,
-            scope,
-            token_type
-        } = tokenResponse.data;
+        const { access_token, refresh_token, expires_in, scope } = tokenResponse.data || {};
 
-        // B. Dùng Token lấy thông tin User
         const userResponse = await discordRequest({
             method: 'get',
             url: 'https://discord.com/api/users/@me',
             headers: { Authorization: `Bearer ${access_token}` }
         });
 
-        // C. Lưu / cập nhật vào MongoDB (collection users)
-        const user = userResponse.data;
-
+        const user = userResponse.data || {};
         const discordId = user.id;
         const discordUsername = user.username;
+        if (!discordId || !discordUsername) {
+            return res.status(500).json({ error: 'Discord user payload is invalid' });
+        }
 
         let dbUser = await User.findOne({ discordId });
         if (!dbUser) {
@@ -81,228 +135,348 @@ router.post('/auth/discord', async (req, res) => {
 
         dbUser.accessToken = access_token;
         dbUser.refreshToken = refresh_token;
-        dbUser.tokenExpiresAt = new Date(Date.now() + (expires_in || 0) * 1000);
+        dbUser.tokenExpiresAt = new Date(Date.now() + (Number(expires_in) || 0) * 1000);
         dbUser.scopes = typeof scope === 'string' ? scope.split(' ') : [];
-
         await dbUser.save();
 
-        // D. Auto-join guild hiện tại nếu chưa trong server
         await joinGuildWithAccessToken(process.env.DISCORD_GUILD_ID, discordId, access_token);
 
-        // E. Trả về cho Frontend
-        res.json({
+        if (!process.env.JWT_SECRET) {
+            return res.status(500).json({ error: 'JWT_SECRET is not configured' });
+        }
+
+        const token = jwt.sign(
+            { discordId: dbUser.discordId, type: 'user' },
+            process.env.JWT_SECRET,
+            { expiresIn: '7d' }
+        );
+
+        return res.json({
             user: {
                 discordId: dbUser.discordId,
                 discordUsername: dbUser.discordUsername,
-                avatar: user.avatar
-            }
+                avatar: user.avatar || null
+            },
+            token
         });
-
     } catch (error) {
         const status = error.response?.status;
         const data = error.response?.data;
-        console.error("Login Error:", status, data || error.message);
-        if (status === 429 || status === 403 || (status >= 500 && status < 600)) {
+        const message = getDiscordErrorMessage(data);
+        console.error('Discord auth error:', status, data || error.message);
+
+        if (isDiscordTemporaryBlock(status, data)) {
             return res.status(503).json({
-                error: "Discord temporarily limiting requests. Please try again in a few minutes.",
-                code: "DISCORD_RATE_LIMIT"
+                error: 'Discord temporarily limiting requests. Please try again in a few minutes.',
+                code: 'DISCORD_RATE_LIMIT'
             });
         }
-        res.status(500).json({ error: "Authentication failed" });
+
+        if (status >= 400 && status < 500) {
+            return res.status(400).json({
+                error: message || 'Discord authentication failed. Check app credentials and redirect URI.'
+            });
+        }
+
+        return res.status(500).json({ error: 'Authentication failed' });
     }
 });
 
-// 2. Lấy danh sách sản phẩm
 router.get('/products', async (req, res) => {
     try {
         const products = await Product.find();
-        res.json(products);
+        return res.json(products);
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        return res.status(500).json({ error: err.message });
     }
 });
 
-// 3. Checkout (Mua hàng)
-router.post('/checkout', async (req, res) => {
+router.post('/checkout', authRequired, checkoutLimiter, async (req, res) => {
     try {
-        const { discordId, cartItems } = req.body;
-        if (!discordId || !Array.isArray(cartItems) || cartItems.length === 0) {
-            return res.status(400).json({ error: 'Invalid request' });
+        const discordId = req.user?.discordId;
+        const cartItems = Array.isArray(req.body?.cartItems) ? req.body.cartItems : [];
+        if (!discordId || cartItems.length === 0) {
+            return res.status(400).json({ error: 'Invalid request payload' });
+        }
+
+        const dbUser = await User.findOne({ discordId });
+        if (!dbUser) {
+            return res.status(401).json({ error: 'Discord account not linked' });
         }
 
         const inGuild = await checkUserInGuild(discordId);
         if (!inGuild) {
-            return res.status(403).json({ 
-                error_code: "USER_NOT_IN_GUILD",
-                invite_link: process.env.DISCORD_SERVER_INVITE 
+            return res.status(403).json({
+                error_code: 'USER_NOT_IN_GUILD',
+                invite_link: process.env.DISCORD_SERVER_INVITE || ''
             });
         }
 
-        const dbUser = await User.findOne({ discordId });
-        const discordUsername = dbUser?.discordUsername || '';
+        const quantityByProductId = new Map();
+        for (const item of cartItems) {
+            const productId = typeof item?._id === 'string' ? item._id.trim() : '';
+            const quantity = Number(item?.quantity);
+            if (!OBJECT_ID_PATTERN.test(productId)) continue;
+            if (!Number.isInteger(quantity) || quantity < 1 || quantity > 20) continue;
+            quantityByProductId.set(productId, (quantityByProductId.get(productId) || 0) + quantity);
+        }
 
-        const items = cartItems.map(i => ({
-            product: i._id,
-            name: i.name || 'Item',
-            quantity: Number(i.quantity) || 1,
-            price: Number(i.price) || 0
+        if (quantityByProductId.size === 0) {
+            return res.status(400).json({ error: 'Cart contains invalid products' });
+        }
+
+        const productIds = Array.from(quantityByProductId.keys());
+        const products = await Product.find({ _id: { $in: productIds } });
+        if (products.length !== productIds.length) {
+            return res.status(400).json({ error: 'Some products are invalid or no longer available' });
+        }
+
+        const items = products.map((product) => ({
+            product: product._id,
+            name: product.name,
+            quantity: quantityByProductId.get(String(product._id)),
+            price: product.price
         }));
-        const totalAmount = items.reduce((acc, i) => acc + i.price * i.quantity, 0);
+
+        const totalAmount = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+        if (totalAmount <= 0) {
+            return res.status(400).json({ error: 'Invalid cart total' });
+        }
 
         const counter = await Counter.findOneAndUpdate(
             { id: 'orderId' },
             { $inc: { seq: 1 } },
             { new: true, upsert: true }
         );
-        const orderId = `nm_${counter.seq}`;
 
+        const orderId = `nm_${counter.seq}`;
         const newOrder = new Order({
             orderId,
             discordId,
-            discordUsername,
+            discordUsername: dbUser.discordUsername || '',
             items,
-            totalAmount: parseFloat(totalAmount.toFixed(2)),
+            totalAmount: Number(totalAmount.toFixed(2)),
             status: 'Pending'
         });
         await newOrder.save();
 
-        res.json({ success: true, orderId });
+        return res.json({ success: true, orderId, totalAmount: newOrder.totalAmount });
     } catch (err) {
         console.error('Checkout error:', err);
-        res.status(500).json({ error: 'Server error' });
+        return res.status(500).json({ error: 'Server error' });
     }
 });
 
-// 4. Tạo PayPal order cho web (trả về link thanh toán)
-const { createPayPalOrder, createLTCInvoice, capturePayPalOrder } = require('../services/paymentService');
-router.post('/create-payment', async (req, res) => {
+router.get('/order-payment-info', authRequired, async (req, res) => {
+    const orderId = req.query?.orderId;
+    if (!orderId) return res.status(400).json({ error: 'Missing orderId' });
     try {
-        const { orderId, totalAmount, method } = req.body;
-        if (!orderId || !totalAmount) return res.status(400).json({ error: 'Missing orderId or totalAmount' });
-        const amount = parseFloat(totalAmount);
-
-        if (method === 'paypal') {
-            const base = process.env.WEBHOOK_BASE_URL || process.env.CLIENT_URL || '';
-            const returnUrl = `${base}/api/shop/paypal/capture?orderId=${encodeURIComponent(orderId)}`;
-            const paypal = await createPayPalOrder(orderId, amount, returnUrl);
-            if (!paypal?.approvalLink) return res.status(500).json({ error: 'PayPal not configured' });
-            return res.json({ type: 'paypal', approvalLink: paypal.approvalLink, paypalOrderId: paypal.orderId });
-        }
-        if (method === 'ltc') {
-            const ltc = await createLTCInvoice(orderId, amount);
-            if (!ltc?.payAddress) return res.status(500).json({ error: 'LTC not configured' });
-            return res.json({ type: 'ltc', payAddress: ltc.payAddress, payAmount: ltc.payAmount, payCurrency: ltc.payCurrency });
-        }
-        res.status(400).json({ error: 'Invalid method' });
-    } catch (err) {
-        console.error('Create payment error:', err);
-        res.status(500).json({ error: 'Server error' });
-    }
-});
-
-// 5. PayPal capture via JS SDK (AJAX, no redirect)
-router.post('/paypal/capture-ajax', async (req, res) => {
-    const { paypalOrderId, orderId } = req.body;
-    if (!paypalOrderId) return res.status(400).json({ error: 'Missing paypalOrderId' });
-    try {
-        const ok = await capturePayPalOrder(paypalOrderId);
-        if (ok && orderId) {
-            await Order.findOneAndUpdate({ orderId }, { status: 'Completed', paymentMethod: 'paypal' });
-        }
-        res.json({ success: ok });
-    } catch (e) {
-        console.error('PayPal capture-ajax error:', e);
-        res.status(500).json({ error: 'Capture failed' });
-    }
-});
-
-// 5b. PayPal capture - redirect flow fallback
-router.get('/paypal/capture', async (req, res) => {
-    const token = req.query.token;
-    const orderId = req.query.orderId;
-    const clientUrl = process.env.CLIENT_URL || '';
-    if (!token) return res.redirect(clientUrl || '/');
-    try {
-        const ok = await capturePayPalOrder(token);
-        if (ok && orderId) {
-            const order = await Order.findOne({ orderId });
-            await Order.findOneAndUpdate(
-                { orderId },
-                { status: 'Completed', paymentMethod: 'paypal' }
-            );
-            const total = order?.totalAmount || 0;
-            const chId = order?.channelId || '';
-            const redirectUrl = `${clientUrl}/pay?orderId=${encodeURIComponent(orderId)}&total=${total}&channelId=${chId}&paid=1`;
-            return res.redirect(redirectUrl);
-        }
-    } catch (e) {}
-    res.redirect(clientUrl);
-});
-
-// 5b. Webhook NOWPayments (LTC/crypto) - cập nhật đơn khi thanh toán thành công
-router.post('/webhook/nowpayments', async (req, res) => {
-    try {
-        const { payment_status, order_id } = req.body;
-        if (payment_status === 'finished' && order_id) {
-            await Order.findOneAndUpdate({ orderId: order_id }, { status: 'Completed', paymentMethod: 'ltc' });
-        }
-        res.json({ received: true });
-    } catch (err) {
-        console.error('NOWPayments webhook:', err);
-        res.status(500).json({ error: 'Webhook error' });
-    }
-});
-
-// 6. Link Discord thủ công từ web (DiscordModal)
-//    POST /api/shop/link-discord  { discordId, discordUsername }
-router.post('/link-discord', async (req, res) => {
-    const { discordId, discordUsername } = req.body;
-
-    if (!discordId || !discordUsername) {
-        return res.status(400).json({ message: 'Missing discordId or discordUsername' });
-    }
-
-    try {
-        let user = await User.findOne({ discordId });
-
-        if (!user) {
-            user = await User.create({
-                discordId,
-                discordUsername,
-            });
-        } else {
-            user.discordUsername = discordUsername;
-            await user.save();
-        }
-
+        const { order, status, error } = await getOwnedOrder(orderId, req.user.discordId);
+        if (!order) return res.status(status).json({ error });
         return res.json({
-            message: 'Linked successfully',
-            user: {
-                discordId: user.discordId,
-                discordUsername: user.discordUsername,
-            },
+            orderId: order.orderId,
+            totalAmount: order.totalAmount,
+            status: order.status,
+            isPaid: order.status === 'Completed'
         });
     } catch (err) {
-        console.error('LinkDiscord Error:', err);
-        return res.status(500).json({ message: 'Server Error' });
+        console.error('Order payment info error:', err);
+        return res.status(500).json({ error: 'Server error' });
     }
 });
 
-// 6b. Get PayPal email (F&F - no ticket)
-router.get('/paypal-email', (req, res) => {
-    res.json({ email: process.env.PAYPAL_EMAIL || '' });
+router.post('/create-payment', authRequired, async (req, res) => {
+    try {
+        const { orderId, method } = req.body || {};
+        if (!orderId || !method) {
+            return res.status(400).json({ error: 'Missing orderId or method' });
+        }
+
+        const { order, status, error } = await getOwnedOrder(orderId, req.user.discordId);
+        if (!order) return res.status(status).json({ error });
+
+        if (order.status === 'Completed') {
+            return res.status(400).json({ error: 'Order is already paid' });
+        }
+
+        if (method === 'paypal') {
+            const backendBaseUrl = getBackendBaseUrl();
+            const clientBaseUrl = getClientBaseUrl();
+            if (!backendBaseUrl || !clientBaseUrl) {
+                return res.status(500).json({ error: 'Payment URLs are not configured' });
+            }
+
+            const returnUrl = `${backendBaseUrl}/api/shop/paypal/capture?orderId=${encodeURIComponent(orderId)}`;
+            const cancelUrl = `${clientBaseUrl}/pay?orderId=${encodeURIComponent(orderId)}`;
+            const paypal = await createPayPalOrder(orderId, order.totalAmount, returnUrl, cancelUrl);
+            if (!paypal?.approvalLink || !paypal?.orderId) {
+                return res.status(500).json({ error: 'PayPal is not configured' });
+            }
+
+            await Order.findByIdAndUpdate(order._id, {
+                paypalOrderId: paypal.orderId,
+                paymentMethod: 'paypal'
+            });
+
+            return res.json({
+                type: 'paypal',
+                approvalLink: paypal.approvalLink,
+                paypalOrderId: paypal.orderId
+            });
+        }
+
+        if (method === 'ltc') {
+            const ltc = await createLTCInvoice(orderId, order.totalAmount);
+            if (!ltc?.payAddress) {
+                return res.status(500).json({ error: 'LTC payment is not configured' });
+            }
+
+            await Order.findByIdAndUpdate(order._id, { paymentMethod: 'ltc' });
+            return res.json({
+                type: 'ltc',
+                payAddress: ltc.payAddress,
+                payAmount: ltc.payAmount,
+                payCurrency: ltc.payCurrency
+            });
+        }
+
+        return res.status(400).json({ error: 'Invalid payment method' });
+    } catch (err) {
+        console.error('Create payment error:', err);
+        return res.status(500).json({ error: 'Server error' });
+    }
 });
 
-// 6b2. PayPal F&F: create ticket paypal_1, paypal_2... (chỉ khi bấm Open Ticket)
-router.post('/create-ticket-paypal-ff', async (req, res) => {
+router.post('/paypal/capture-ajax', authRequired, async (req, res) => {
+    const { paypalOrderId, orderId } = req.body || {};
+    if (!paypalOrderId || !orderId) {
+        return res.status(400).json({ error: 'Missing paypalOrderId or orderId' });
+    }
+
     try {
-        const { orderId } = req.body;
-        if (!orderId) return res.status(400).json({ error: 'Missing orderId' });
+        const { order, status, error } = await getOwnedOrder(orderId, req.user.discordId);
+        if (!order) return res.status(status).json({ error });
+
+        if (order.paypalOrderId && order.paypalOrderId !== paypalOrderId) {
+            return res.status(400).json({ error: 'PayPal order mismatch' });
+        }
+
+        const capture = await capturePayPalOrder(paypalOrderId);
+        if (!capture.success) {
+            return res.status(400).json({ error: 'Capture failed' });
+        }
+
+        const summary = extractPayPalSummary(capture.data);
+        if (summary.referenceId && summary.referenceId !== orderId) {
+            return res.status(400).json({ error: 'PayPal reference mismatch' });
+        }
+        if (!amountsMatch(summary.amountValue, order.totalAmount)) {
+            return res.status(400).json({ error: 'Paid amount mismatch' });
+        }
+
+        await Order.findByIdAndUpdate(order._id, {
+            status: 'Completed',
+            paymentMethod: 'paypal'
+        });
+        return res.json({ success: true });
+    } catch (err) {
+        console.error('PayPal capture-ajax error:', err);
+        return res.status(500).json({ error: 'Capture failed' });
+    }
+});
+
+router.get('/paypal/capture', async (req, res) => {
+    const paypalOrderId = req.query?.token;
+    const orderId = req.query?.orderId;
+    const fallback = getClientBaseUrl() || '/';
+
+    if (!paypalOrderId || !orderId) return res.redirect(fallback);
+
+    try {
         const order = await Order.findOne({ orderId });
-        if (!order) return res.status(404).json({ error: 'Order not found' });
+        if (!order) return res.redirect(fallback);
+        if (order.paypalOrderId && order.paypalOrderId !== paypalOrderId) {
+            return res.redirect(buildClientPayUrl(orderId, 'error=paypal_order_mismatch'));
+        }
+
+        const capture = await capturePayPalOrder(paypalOrderId);
+        if (!capture.success) {
+            return res.redirect(buildClientPayUrl(orderId, 'error=paypal_capture_failed'));
+        }
+
+        const summary = extractPayPalSummary(capture.data);
+        if (summary.referenceId && summary.referenceId !== orderId) {
+            return res.redirect(buildClientPayUrl(orderId, 'error=paypal_reference_mismatch'));
+        }
+        if (!amountsMatch(summary.amountValue, order.totalAmount)) {
+            return res.redirect(buildClientPayUrl(orderId, 'error=paypal_amount_mismatch'));
+        }
+
+        await Order.findByIdAndUpdate(order._id, {
+            status: 'Completed',
+            paymentMethod: 'paypal'
+        });
+
+        return res.redirect(buildClientPayUrl(orderId, 'paid=1'));
+    } catch (err) {
+        console.error('PayPal capture redirect error:', err);
+        return res.redirect(buildClientPayUrl(orderId, 'error=paypal_capture_failed'));
+    }
+});
+
+router.post('/webhook/nowpayments', async (req, res) => {
+    try {
+        const signature = req.headers['x-nowpayments-sig'];
+        const secret = process.env.NOWPAYMENTS_IPN_SECRET;
+
+        if (secret) {
+            const expected = crypto.createHmac('sha512', secret).update(req.rawBody || '').digest('hex');
+            if (!timingSafeEqualHex(String(signature || ''), expected)) {
+                return res.status(401).json({ error: 'Invalid webhook signature' });
+            }
+        }
+
+        const paymentStatus = String(req.body?.payment_status || '').toLowerCase();
+        const orderId = req.body?.order_id;
+        const finalStatuses = new Set(['finished', 'confirmed']);
+        if (orderId && finalStatuses.has(paymentStatus)) {
+            const payCurrency = String(req.body?.pay_currency || 'ltc').toLowerCase();
+            await Order.findOneAndUpdate(
+                { orderId },
+                { status: 'Completed', paymentMethod: payCurrency }
+            );
+        }
+
+        return res.json({ received: true });
+    } catch (err) {
+        console.error('NOWPayments webhook error:', err);
+        return res.status(500).json({ error: 'Webhook error' });
+    }
+});
+
+router.post('/link-discord', async (req, res) => {
+    return res.status(410).json({
+        error: 'Manual Discord linking is disabled. Please use OAuth login.'
+    });
+});
+
+router.get('/paypal-email', (req, res) => {
+    return res.json({ email: process.env.PAYPAL_EMAIL || '' });
+});
+
+router.post('/create-ticket-paypal-ff', authRequired, async (req, res) => {
+    try {
+        const { orderId } = req.body || {};
+        if (!orderId) return res.status(400).json({ error: 'Missing orderId' });
+
+        const { order, status, error } = await getOwnedOrder(orderId, req.user.discordId);
+        if (!order) return res.status(status).json({ error });
 
         if (order.paypalTicketChannelId) {
-            return res.json({ channelId: order.paypalTicketChannelId, email: process.env.PAYPAL_EMAIL || '' });
+            return res.json({
+                channelId: order.paypalTicketChannelId,
+                email: process.env.PAYPAL_EMAIL || ''
+            });
         }
 
         const counter = await Counter.findOneAndUpdate(
@@ -310,70 +484,85 @@ router.post('/create-ticket-paypal-ff', async (req, res) => {
             { $inc: { seq: 1 } },
             { new: true, upsert: true }
         );
-        const paypalSeq = counter.seq;
 
+        const paypalSeq = counter.seq;
         const channelName = `paypal_${paypalSeq}`;
         const channelId = await createPayPalFFTicket(order, paypalSeq);
-        if (channelId) await Order.findOneAndUpdate({ orderId }, { paymentMethod: 'paypal_ff', paypalTicketChannel: channelName, paypalTicketChannelId: channelId });
+        if (channelId) {
+            await Order.findByIdAndUpdate(order._id, {
+                paymentMethod: 'paypal_ff',
+                paypalTicketChannel: channelName,
+                paypalTicketChannelId: channelId
+            });
+        }
 
-        res.json({
+        return res.json({
             channelId: channelId || null,
             email: process.env.PAYPAL_EMAIL || ''
         });
     } catch (err) {
-        console.error('Create ticket paypal-ff error:', err);
-        res.status(500).json({ error: 'Server error' });
+        console.error('Create PayPal F&F ticket error:', err);
+        return res.status(500).json({ error: 'Server error' });
     }
 });
 
-// 6c. Create ticket for CashApp/Robux (name: nm_1, nm_2...)
-router.post('/create-ticket', async (req, res) => {
+router.post('/create-ticket', authRequired, async (req, res) => {
     try {
-        const { orderId } = req.body;
+        const { orderId } = req.body || {};
         if (!orderId) return res.status(400).json({ error: 'Missing orderId' });
-        const order = await Order.findOne({ orderId });
-        if (!order) return res.status(404).json({ error: 'Order not found' });
+
+        const { order, status, error } = await getOwnedOrder(orderId, req.user.discordId);
+        if (!order) return res.status(status).json({ error });
+
         if (order.channelId) {
             return res.json({ channelId: order.channelId });
         }
+
         const channelId = await createOrderTicket(order);
-        if (channelId) await Order.findOneAndUpdate({ orderId }, { channelId });
-        res.json({ channelId: channelId || null });
+        if (channelId) {
+            await Order.findByIdAndUpdate(order._id, { channelId });
+        }
+        return res.json({ channelId: channelId || null });
     } catch (err) {
         console.error('Create ticket error:', err);
-        res.status(500).json({ error: 'Server error' });
+        return res.status(500).json({ error: 'Server error' });
     }
 });
 
-// 6d. Check owner role (chỉ admin mới thấy trang Admin)
-router.get('/check-owner', async (req, res) => {
+router.get('/check-owner', authRequired, async (req, res) => {
     try {
-        const discordId = req.query.discordId;
-        if (!discordId) return res.json({ isOwner: false });
-        const isOwner = await checkUserHasOwnerRole(discordId);
-        res.json({ isOwner });
+        const discordId = req.user?.discordId;
+        if (!discordId) return res.status(401).json({ isOwner: false });
+        const isOwner = await canAccessOwnerEndpoints(discordId);
+        return res.json({ isOwner });
     } catch (err) {
-        res.json({ isOwner: false });
+        return res.status(500).json({ isOwner: false });
     }
 });
 
-// 7. Admin: danh sách đơn (Customer, Payment method, Paid)
-router.get('/orders', async (req, res) => {
+router.get('/orders', authRequired, async (req, res) => {
     try {
+        const discordId = req.user?.discordId;
+        if (!discordId) return res.status(401).json({ error: 'Authentication required' });
+
+        const isOwner = await canAccessOwnerEndpoints(discordId);
+        if (!isOwner) return res.status(403).json({ error: 'Forbidden' });
+
         const orders = await Order.find({}).sort({ createdAt: -1 }).limit(100);
-        res.json(orders.map(o => ({
-            orderId: o.orderId,
-            discordId: o.discordId,
-            discordUsername: o.discordUsername,
-            totalAmount: o.totalAmount,
-            paymentMethod: o.paymentMethod || '—',
-            status: o.status,
-            isPaid: o.status === 'Completed',
-            items: o.items
+        return res.json(orders.map((order) => ({
+            orderId: order.orderId,
+            discordId: order.discordId,
+            discordUsername: order.discordUsername,
+            totalAmount: order.totalAmount,
+            paymentMethod: order.paymentMethod || '-',
+            status: order.status,
+            isPaid: order.status === 'Completed',
+            items: order.items,
+            createdAt: order.createdAt
         })));
     } catch (err) {
         console.error('Orders error:', err);
-        res.status(500).json({ error: 'Server error' });
+        return res.status(500).json({ error: 'Server error' });
     }
 });
 

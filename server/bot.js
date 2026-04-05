@@ -3,6 +3,7 @@ const path = require('path');
 const { discordRequest } = require('./utils/discordApi');
 const Order = require('./models/Order');
 const User = require('./models/User');
+const OWNER_ID = process.env.DISCORD_OWNER_ID || '';
 
 const client = new Client({
     intents: [
@@ -12,6 +13,12 @@ const client = new Client({
         GatewayIntentBits.GuildMembers
     ]
 });
+
+const hasOwnerAccess = (message) => {
+    const hasOwnerRole = message.member?.roles?.cache?.has(process.env.DISCORD_OWNER_ROLE_ID);
+    const isExplicitOwner = OWNER_ID && message.author?.id === OWNER_ID;
+    return Boolean(hasOwnerRole || isExplicitOwner);
+};
 
 // --- HELPER: CHECK USER IN GUILD ---
 const checkUserInGuild = async (discordId) => {
@@ -175,7 +182,6 @@ client.on('messageCreate', async message => {
     const cmd = args[0].toLowerCase();
 
     // ID owner cố định (an toàn vì chỉ là ID public, không phải token)
-    const OWNER_ID = '1146730730060271736';
 
     // !close - đóng ticket, đánh dấu đã thanh toán
     if (cmd === '!close') {
@@ -184,13 +190,12 @@ client.on('messageCreate', async message => {
         const isPayPalFF = chName.startsWith('paypal_');
         if (!isCashAppRobux && !isPayPalFF) return;
 
-        const isAdmin = message.member?.roles?.cache?.has(process.env.DISCORD_OWNER_ROLE_ID) || message.author.id === OWNER_ID;
+        const isAdmin = hasOwnerAccess(message);
         const order = isCashAppRobux
             ? await Order.findOne({ orderId: chName })
             : await Order.findOne({ paypalTicketChannel: chName });
-        const isCustomer = order && order.discordId === message.author.id;
 
-        if (!isAdmin && !isCustomer) return message.reply('Only the customer or staff can close this ticket.');
+        if (!isAdmin) return message.reply('Only staff can close and mark ticket as paid.');
         if (!order) return message.reply('Order not found.');
         try {
             await Order.findByIdAndUpdate(order._id, { status: 'Completed' });
@@ -223,7 +228,7 @@ client.on('messageCreate', async message => {
 
     // 2) Xem nhanh người đã link trong DB: !linked_users hoặc !checkdb
     if (cmd === '!linked_users' || cmd === '!checkdb') {
-        if (message.author.id !== OWNER_ID) {
+        if (!hasOwnerAccess(message)) {
             return message.reply(
                 `You don't have permission to use this command.\n` +
                 `Your ID: \`${message.author.id}\`\n` +
@@ -249,7 +254,7 @@ client.on('messageCreate', async message => {
     // 3) GỬI DM CHO TẤT CẢ USER ĐÃ LIÊN KẾT KHI SERVER CŨ BỊ BAN / CHUYỂN SERVER MỚI
     // Cú pháp: !notify_new_server https://discord.gg/xxxx
     if (cmd === '!notify_new_server') {
-        if (message.author.id !== OWNER_ID) {
+        if (!hasOwnerAccess(message)) {
             return message.reply(
                 `You don't have permission to use this command.\n` +
                 `Your ID: \`${message.author.id}\`\n` +
@@ -292,7 +297,7 @@ client.on('messageCreate', async message => {
     // 4) MIGRATE SERVER: thêm tất cả user đã liên kết vào GUILD MỚI (auto-join, không chỉ DM)
     // Cú pháp: !migrate_server NEW_GUILD_ID
     if (cmd === '!migrate_server') {
-        if (message.author.id !== OWNER_ID) {
+        if (!hasOwnerAccess(message)) {
             return message.reply(
                 `You don't have permission to use this command.\n` +
                 `Your ID: \`${message.author.id}\`\n` +
@@ -375,3 +380,4 @@ client.on('messageCreate', async message => {
 client.on('ready', () => console.log(`🤖 Bot Online: ${client.user.tag}`));
 client.on('error', err => console.error('🤖 Bot error:', err.message));
 module.exports = { client, createOrderTicket, createPayPalFFTicket, checkUserInGuild, checkUserHasOwnerRole };
+

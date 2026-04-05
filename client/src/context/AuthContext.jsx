@@ -1,38 +1,66 @@
 import { createContext, useContext, useState, useEffect } from 'react';
+import axios from 'axios';
 
-const AuthContext = createContext();
+export const AuthContext = createContext();
+
+const applyAxiosAuthHeader = (token) => {
+    if (token) {
+        axios.defaults.headers.common.Authorization = `Bearer ${token}`;
+    } else {
+        delete axios.defaults.headers.common.Authorization;
+    }
+};
+
+const parseUser = (rawUser) => {
+    if (!rawUser) return null;
+    try {
+        return JSON.parse(rawUser);
+    } catch {
+        return null;
+    }
+};
 
 export const AuthProvider = ({ children }) => {
-    // 1. Khởi tạo state bằng cách đọc ngay từ LocalStorage (để F5 không bị mất)
-    const [user, setUser] = useState(() => {
-        const savedUser = localStorage.getItem('user');
-        return savedUser ? JSON.parse(savedUser) : null;
-    });
+    const [user, setUser] = useState(() => parseUser(localStorage.getItem('user')));
+    const [token, setToken] = useState(() => localStorage.getItem('token') || '');
 
-    // 2. Login - save to storage
-    const loginDiscord = (userData) => {
-        setUser(userData);
-        localStorage.setItem('user', JSON.stringify(userData));
+    useEffect(() => {
+        applyAxiosAuthHeader(token);
+    }, [token]);
+
+    const loginDiscord = (userData, jwtToken) => {
+        setUser(userData || null);
+        if (userData) {
+            localStorage.setItem('user', JSON.stringify(userData));
+            localStorage.setItem('discordUser', JSON.stringify(userData));
+        } else {
+            localStorage.removeItem('user');
+            localStorage.removeItem('discordUser');
+        }
+
+        if (jwtToken) {
+            setToken(jwtToken);
+            localStorage.setItem('token', jwtToken);
+        }
     };
 
-    // 3. Logout - clear storage
+    const login = (jwtToken) => {
+        if (!jwtToken) return;
+        setToken(jwtToken);
+        localStorage.setItem('token', jwtToken);
+    };
+
     const logout = () => {
         setUser(null);
+        setToken('');
         localStorage.removeItem('user');
+        localStorage.removeItem('discordUser');
         localStorage.removeItem('token');
-        window.location.href = '/'; // Tải lại trang cho sạch
+        window.location.href = '/';
     };
 
-    // 4. Theo dõi thay đổi (Phòng hờ)
-    useEffect(() => {
-        const savedUser = localStorage.getItem('user');
-        if (savedUser && !user) {
-            setUser(JSON.parse(savedUser));
-        }
-    }, []);
-
     return (
-        <AuthContext.Provider value={{ user, loginDiscord, logout }}>
+        <AuthContext.Provider value={{ user, token, loginDiscord, login, logout }}>
             {children}
         </AuthContext.Provider>
     );
