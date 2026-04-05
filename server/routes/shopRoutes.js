@@ -109,7 +109,7 @@ router.post('/auth/discord', async (req, res) => {
                 redirect_uri: redirectUri
             }),
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-        });
+        }, 0, { maxRetries: 1, maxDelayMs: 2500 });
 
         const { access_token, refresh_token, expires_in, scope } = tokenResponse.data || {};
 
@@ -117,7 +117,7 @@ router.post('/auth/discord', async (req, res) => {
             method: 'get',
             url: 'https://discord.com/api/users/@me',
             headers: { Authorization: `Bearer ${access_token}` }
-        });
+        }, 0, { maxRetries: 1, maxDelayMs: 2500 });
 
         const user = userResponse.data || {};
         const discordId = user.id;

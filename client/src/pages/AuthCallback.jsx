@@ -27,6 +27,8 @@ const AuthCallback = () => {
                 const response = await axios.post('/api/shop/auth/discord', {
                     code,
                     redirect_uri: redirectUri
+                }, {
+                    timeout: 15000
                 });
 
                 const userData = response.data?.user;
@@ -53,6 +55,11 @@ const AuthCallback = () => {
                         `${data?.error || 'Discord temporary block.'}\n\n` +
                         'Please wait a few minutes and try again.'
                     );
+                    return;
+                }
+                if (error.code === 'ECONNABORTED') {
+                    setStatus('Discord login timeout');
+                    setDebugInfo('Server took too long to reply. Please try again.');
                     return;
                 }
 
