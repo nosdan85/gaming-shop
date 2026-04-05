@@ -7,9 +7,12 @@ import axios from 'axios';
 const GUILD_ID = import.meta.env.VITE_DISCORD_GUILD_ID || '';
 const VOUCH_CHANNEL_ID = import.meta.env.VITE_DISCORD_VOUCH_CHANNEL_ID || '';
 const DISCORD_REVIEW_URL = `https://discord.com/channels/${GUILD_ID}/${VOUCH_CHANNEL_ID}`;
+const showDiscordReview = Boolean(GUILD_ID && VOUCH_CHANNEL_ID);
+const TRUSTPILOT_URL = import.meta.env.VITE_TRUSTPILOT_URL || '';
+const showTrustpilot = TRUSTPILOT_URL && !TRUSTPILOT_URL.includes('your-domain-here.com');
 
 const Navbar = () => {
-  const { cart, isCartOpen, setIsCartOpen, user } = useContext(ShopContext);
+  const { cart, setIsCartOpen, user } = useContext(ShopContext);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isOwner, setIsOwner] = useState(false);
 
@@ -18,7 +21,7 @@ const Navbar = () => {
       setIsOwner(false);
       return;
     }
-    axios.get(`/api/shop/check-owner?discordId=${user.discordId}`)
+    axios.get('/api/shop/check-owner')
       .then(res => setIsOwner(res.data?.isOwner === true))
       .catch(() => setIsOwner(false));
   }, [user?.discordId]);
@@ -44,22 +47,26 @@ const Navbar = () => {
 
           {/* Desktop Menu: bỏ Home/Shop/About, thêm Discord Review + Trustpilot + Admin */}
           <div className="hidden md:flex space-x-8">
-            <a 
-              href={DISCORD_REVIEW_URL} 
-              target="_blank" 
-              rel="noreferrer"
-              className="text-gray-300 hover:text-white transition-colors font-medium"
-            >
-              Discord Review
-            </a>
-            <a 
-              href="https://www.trustpilot.com/review/your-domain-here.com" 
-              target="_blank" 
-              rel="noreferrer"
-              className="text-gray-300 hover:text-white transition-colors font-medium"
-            >
-              Trustpilot
-            </a>
+            {showDiscordReview && (
+              <a 
+                href={DISCORD_REVIEW_URL} 
+                target="_blank" 
+                rel="noreferrer"
+                className="text-gray-300 hover:text-white transition-colors font-medium"
+              >
+                Discord Review
+              </a>
+            )}
+            {showTrustpilot && (
+              <a 
+                href={TRUSTPILOT_URL}
+                target="_blank" 
+                rel="noreferrer"
+                className="text-gray-300 hover:text-white transition-colors font-medium"
+              >
+                Trustpilot
+              </a>
+            )}
             {isOwner && (
               <Link to="/admin" className="text-gray-300 hover:text-white transition-colors font-medium">
                 Admin
@@ -97,24 +104,28 @@ const Navbar = () => {
       {isMenuOpen && (
         <div className="md:hidden bg-[#09090b] border-t border-white/10">
           <div className="px-4 pt-2 pb-4 space-y-1">
-            <a 
-              href={DISCORD_REVIEW_URL}
-              target="_blank"
-              rel="noreferrer"
-              onClick={() => setIsMenuOpen(false)}
-              className="block px-3 py-2 text-base font-medium text-white hover:bg-white/5 rounded-md"
-            >
-              Discord Review
-            </a>
-            <a 
-              href="https://www.trustpilot.com/review/your-domain-here.com"
-              target="_blank"
-              rel="noreferrer"
-              onClick={() => setIsMenuOpen(false)}
-              className="block px-3 py-2 text-base font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-md"
-            >
-              Trustpilot
-            </a>
+            {showDiscordReview && (
+              <a 
+                href={DISCORD_REVIEW_URL}
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => setIsMenuOpen(false)}
+                className="block px-3 py-2 text-base font-medium text-white hover:bg-white/5 rounded-md"
+              >
+                Discord Review
+              </a>
+            )}
+            {showTrustpilot && (
+              <a 
+                href={TRUSTPILOT_URL}
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => setIsMenuOpen(false)}
+                className="block px-3 py-2 text-base font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-md"
+              >
+                Trustpilot
+              </a>
+            )}
             {isOwner && (
               <Link 
                 to="/admin" 

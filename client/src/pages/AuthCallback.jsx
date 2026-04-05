@@ -5,8 +5,8 @@ import { useAuth } from '../context/AuthContext';
 const AuthCallback = () => {
     const { loginDiscord } = useAuth();
     const hasFetched = useRef(false);
-    const [status, setStatus] = useState("Processing Discord Login..."); // Tiếng Anh
-    const [debugInfo, setDebugInfo] = useState("");
+    const [status, setStatus] = useState('Processing Discord login...');
+    const [debugInfo, setDebugInfo] = useState('');
 
     useEffect(() => {
         const handleAuth = async () => {
@@ -14,7 +14,7 @@ const AuthCallback = () => {
             const code = params.get('code');
 
             if (!code) {
-                setStatus("Error: No Authorization Code found."); // Tiếng Anh
+                setStatus('Error: no authorization code found.');
                 return;
             }
 
@@ -22,36 +22,45 @@ const AuthCallback = () => {
             hasFetched.current = true;
 
             try {
-                setStatus("Verifying with Server..."); // Tiếng Anh
-                
+                setStatus('Verifying with server...');
                 const redirectUri = `${window.location.origin}/auth/discord/callback`;
-                const response = await axios.post('/api/shop/auth/discord', { code, redirect_uri: redirectUri });
-                
-                if (response.data.user) {
-                    setStatus("Success! Redirecting..."); // Tiếng Anh
-                    
-                    const userData = response.data.user;
-                    localStorage.setItem('user', JSON.stringify(userData));
-                    localStorage.setItem('discordUser', JSON.stringify(userData));
-                    if (loginDiscord) loginDiscord(userData);
+                const response = await axios.post('/api/shop/auth/discord', {
+                    code,
+                    redirect_uri: redirectUri
+                });
 
-                    setTimeout(() => {
-                        window.location.href = '/'; 
-                    }, 500);
-
-                } else {
-                    setStatus("Error: User data missing.");
-                    setDebugInfo(JSON.stringify(response.data, null, 2));
+                const userData = response.data?.user;
+                const token = response.data?.token;
+                if (!userData || !token) {
+                    setStatus('Login failed');
+                    setDebugInfo('Missing user/token from server response.');
+                    return;
                 }
+
+                loginDiscord(userData, token);
+                setStatus('Success! Redirecting...');
+                setTimeout(() => {
+                    window.location.href = '/';
+                }, 400);
             } catch (error) {
-                console.error("Login Failed:", error);
-                const data = error.response?.data;
-                const isRateLimit = data?.code === 'DISCORD_RATE_LIMIT' || error.response?.status === 503;
-                setStatus(isRateLimit ? "Discord rate limited" : "LOGIN FAILED");
-                const message = data?.error || error.message;
-                setDebugInfo(isRateLimit
-                    ? `${message}\n\nDiscord/Cloudflare may temporarily block server IPs. Please wait a few minutes and try again.`
-                    : `Error: ${message}\n\nDetails: ${JSON.stringify(data || {}, null, 2)}`);
+                const data = error.response?.data || {};
+                const statusCode = error.response?.status;
+                const isRateLimit = data?.code === 'DISCORD_RATE_LIMIT' || statusCode === 503;
+
+                if (isRateLimit) {
+                    setStatus('Discord is temporarily rate limited');
+                    setDebugInfo(
+                        `${data?.error || 'Discord temporary block.'}\n\n` +
+                        'Please wait a few minutes and try again.'
+                    );
+                    return;
+                }
+
+                setStatus('Discord login failed');
+                setDebugInfo(
+                    `Error: ${data?.error || error.message}\n\n` +
+                    `HTTP: ${statusCode || 'unknown'}`
+                );
             }
         };
 
@@ -63,10 +72,10 @@ const AuthCallback = () => {
             <h2 className="text-2xl font-bold mb-4">{status}</h2>
             {debugInfo && (
                 <div className="bg-red-900 p-4 rounded border border-red-500 max-w-2xl w-full overflow-auto">
-                    <h3 className="font-bold text-red-300 mb-2">Error Log (Send to Admin):</h3>
+                    <h3 className="font-bold text-red-300 mb-2">Error Log:</h3>
                     <pre className="text-sm font-mono whitespace-pre-wrap">{debugInfo}</pre>
-                    <button 
-                        onClick={() => window.location.href = '/'}
+                    <button
+                        onClick={() => { window.location.href = '/'; }}
                         className="mt-4 bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded"
                     >
                         Back to Home

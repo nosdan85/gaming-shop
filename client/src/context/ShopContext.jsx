@@ -1,4 +1,5 @@
 import { createContext, useState, useEffect } from 'react';
+import axios from 'axios';
 
 export const ShopContext = createContext();
 
@@ -19,12 +20,26 @@ export const ShopProvider = ({ children }) => {
 
   useEffect(() => {
     const u = localStorage.getItem('discordUser') || localStorage.getItem('user');
-    if (u) setUser(JSON.parse(u));
+    if (u) {
+      try {
+        setUser(JSON.parse(u));
+      } catch {
+        setUser(null);
+      }
+    }
 
     const onStorage = (e) => {
       if (e.key === 'user' || e.key === 'discordUser') {
         const stored = localStorage.getItem('discordUser') || localStorage.getItem('user');
-        if (stored) setUser(JSON.parse(stored));
+        if (stored) {
+          try {
+            setUser(JSON.parse(stored));
+          } catch {
+            setUser(null);
+          }
+        } else {
+          setUser(null);
+        }
       }
     };
     window.addEventListener('storage', onStorage);
@@ -35,7 +50,9 @@ export const ShopProvider = ({ children }) => {
   useEffect(() => {
     try {
       localStorage.setItem('cart', JSON.stringify(cart));
-    } catch {}
+    } catch {
+      // Ignore storage write errors.
+    }
   }, [cart]);
 
   // Hàm thêm vào giỏ
@@ -72,6 +89,8 @@ export const ShopProvider = ({ children }) => {
     setUser(null);
     localStorage.removeItem('discordUser');
     localStorage.removeItem('user');
+    localStorage.removeItem('token');
+    delete axios.defaults.headers.common.Authorization;
   }
 
   return (
