@@ -100,18 +100,21 @@ const CartModal = () => {
              {cart.length === 0 ? (
                <div className="h-full flex items-center justify-center text-[#86868b]">Your bag is empty.</div>
              ) : (
-               cart.map(item => (
-                 <div key={item._id} className="flex gap-3 md:gap-4 p-3 md:p-4 rounded-2xl bg-[#1c1c1e]">
-                    <img src={`/pictures/products/${item.image}`} className="w-16 h-16 object-contain bg-[#2c2c2e] rounded-lg" />
-                    <div className="flex-1">
-                       <h3 className="font-medium text-white text-sm md:text-base line-clamp-1">{item.name}</h3>
-                       <div className="flex justify-between mt-2 items-center">
-                          <span className="text-gray-400 text-xs md:text-sm">${item.price} x {item.quantity}</span>
-                          <button onClick={() => removeFromCart(item._id)} className="text-[#ff3b30] text-xs md:text-sm font-medium">Remove</button>
-                       </div>
-                    </div>
-                 </div>
-               ))
+               cart.map((item) => {
+                 const displayPrice = item.originalPriceString || `$${item.price}`;
+                 return (
+                   <div key={item._id} className="flex gap-3 md:gap-4 p-3 md:p-4 rounded-2xl bg-[#1c1c1e]">
+                      <img src={`/products/${item.image}`} className="w-16 h-16 object-contain bg-[#2c2c2e] rounded-lg" />
+                      <div className="flex-1">
+                         <h3 className="font-medium text-white text-sm md:text-base line-clamp-1">{item.name}</h3>
+                         <div className="flex justify-between mt-2 items-center">
+                            <span className="text-gray-400 text-xs md:text-sm">{displayPrice} x {item.quantity}</span>
+                            <button onClick={() => removeFromCart(item._id)} className="text-[#ff3b30] text-xs md:text-sm font-medium">Remove</button>
+                         </div>
+                      </div>
+                   </div>
+                 );
+               })
              )}
           </div>
           <div className="pt-4 mt-2 border-t border-[#2c2c2e] flex justify-between text-lg md:text-xl font-bold text-white">

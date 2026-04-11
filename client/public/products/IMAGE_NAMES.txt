@@ -1,0 +1,14 @@
+﻿aura-chest.png
+secret-chest.png
+cosmetic-chest.png
+trait-reroll.png
+race-reroll.png
+passive-shard.png
+mythic-chest.png
+clan-reroll.png
+upper-seal.png
+power-shard.png
+broken-sword.png
+abyss-sigil.png
+dark-grail.png
+frost-relic.png

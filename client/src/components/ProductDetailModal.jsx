@@ -4,6 +4,7 @@ import { XMarkIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
 
 const ProductDetailModal = ({ product, onClose }) => {
   const { addToCart } = useContext(ShopContext);
+  const displayPrice = product?.originalPriceString || `$${product?.price}`;
 
   if (!product) return null;
 
@@ -29,7 +30,7 @@ const ProductDetailModal = ({ product, onClose }) => {
         {/* Cột Trái: Ảnh */}
         <div className="w-full md:w-1/2 bg-black/50 p-8 flex items-center justify-center">
           <img 
-            src={`/pictures/products/${product.image}`} 
+            src={`/products/${product.image}`} 
             alt={product.name}
             className="w-48 h-48 md:w-64 md:h-64 object-contain drop-shadow-[0_10px_20px_rgba(14,165,233,0.3)]"
             onError={(e) => e.target.src = 'https://via.placeholder.com/300'}
@@ -47,7 +48,7 @@ const ProductDetailModal = ({ product, onClose }) => {
           
           {/* Giá bán */}
           <div className="text-3xl font-bold text-white mb-6">
-            ${product.price}
+            {displayPrice}
           </div>
 
           {/* Mô tả (Nếu có) */}
@@ -78,7 +79,7 @@ const ProductDetailModal = ({ product, onClose }) => {
             }}
             className="w-full bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white py-4 rounded-2xl text-lg font-bold shadow-lg shadow-cyan-500/20 active:scale-95 transition-all mt-auto"
           >
-            Add to Cart - ${product.price}
+            Add to Cart - {displayPrice}
           </button>
         </div>
       </div>
