@@ -113,6 +113,10 @@ const Home = () => {
           ))}
         </div>
 
+        <p className="text-center text-xs text-[#9a9aa0] -mt-4 mb-8">
+          Orders above $14.99 per item automatically receive that item's bulk price when available.
+        </p>
+
         <div className="flex flex-wrap justify-center items-center gap-3 mb-12">
           {CATEGORIES.map((cat) => (
             <button

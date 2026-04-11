@@ -14,6 +14,7 @@ const { checkoutLimiter } = require('../middleware/rateLimit');
 
 const router = express.Router();
 const OBJECT_ID_PATTERN = /^[a-fA-F0-9]{24}$/;
+const MAX_QUANTITY_PER_PRODUCT = 100000;
 
 const getBackendBaseUrl = () => (process.env.WEBHOOK_BASE_URL || process.env.BACKEND_URL || '').replace(/\/+$/, '');
 const getClientBaseUrl = () => ((process.env.CLIENT_URL || '').split(',')[0] || '').trim().replace(/\/+$/, '');
@@ -57,6 +58,20 @@ const extractPayPalSummary = (captureData) => {
 };
 
 const amountsMatch = (left, right) => Math.abs(Number(left) - Number(right)) < 0.01;
+const BULK_DISCOUNT_THRESHOLD = 14.99;
+const roundMoney = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+
+const resolveAppliedPrice = (product, quantity) => {
+    const qty = Number(quantity) || 0;
+    const regularUnitPrice = Number(product.price) || 0;
+    const regularTotal = regularUnitPrice * qty;
+    const bulkUnitPrice = Number(product.bulkPrice);
+    const hasBulkPrice = Number.isFinite(bulkUnitPrice) && bulkUnitPrice > 0;
+    if (hasBulkPrice && regularTotal > BULK_DISCOUNT_THRESHOLD) {
+        return bulkUnitPrice;
+    }
+    return regularUnitPrice;
+};
 
 const joinGuildWithAccessToken = async (guildId, userId, accessToken) => {
     if (!guildId || !userId || !accessToken || !process.env.DISCORD_BOT_TOKEN) return false;
@@ -217,7 +232,7 @@ router.post('/checkout', authRequired, checkoutLimiter, async (req, res) => {
             const productId = typeof item?._id === 'string' ? item._id.trim() : '';
             const quantity = Number(item?.quantity);
             if (!OBJECT_ID_PATTERN.test(productId)) continue;
-            if (!Number.isInteger(quantity) || quantity < 1 || quantity > 20) continue;
+            if (!Number.isInteger(quantity) || quantity < 1 || quantity > MAX_QUANTITY_PER_PRODUCT) continue;
             quantityByProductId.set(productId, (quantityByProductId.get(productId) || 0) + quantity);
         }
 
@@ -231,14 +246,18 @@ router.post('/checkout', authRequired, checkoutLimiter, async (req, res) => {
             return res.status(400).json({ error: 'Some products are invalid or no longer available' });
         }
 
-        const items = products.map((product) => ({
-            product: product._id,
-            name: product.name,
-            quantity: quantityByProductId.get(String(product._id)),
-            price: product.price
-        }));
+        const items = products.map((product) => {
+            const quantity = quantityByProductId.get(String(product._id));
+            const appliedUnitPrice = resolveAppliedPrice(product, quantity);
+            return {
+                product: product._id,
+                name: product.name,
+                quantity,
+                price: appliedUnitPrice
+            };
+        });
 
-        const totalAmount = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+        const totalAmount = roundMoney(items.reduce((sum, item) => sum + item.price * item.quantity, 0));
         if (totalAmount <= 0) {
             return res.status(400).json({ error: 'Invalid cart total' });
         }
@@ -255,7 +274,7 @@ router.post('/checkout', authRequired, checkoutLimiter, async (req, res) => {
             discordId,
             discordUsername: dbUser.discordUsername || '',
             items,
-            totalAmount: Number(totalAmount.toFixed(2)),
+            totalAmount,
             status: 'Pending'
         });
         await newOrder.save();

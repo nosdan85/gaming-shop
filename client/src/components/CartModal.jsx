@@ -3,6 +3,28 @@ import { ShopContext } from '../context/ShopContext';
 import { XMarkIcon, CheckBadgeIcon, UserCircleIcon, CurrencyDollarIcon, TicketIcon, ClipboardDocumentListIcon } from '@heroicons/react/24/outline';
 import axios from 'axios';
 
+const BULK_DISCOUNT_THRESHOLD = 14.99;
+const roundMoney = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+
+const getItemPricing = (item) => {
+  const quantity = Number(item?.quantity) || 0;
+  const regularUnitPrice = Number(item?.price) || 0;
+  const regularTotal = regularUnitPrice * quantity;
+  const bulkUnitPrice = Number(item?.bulkPrice);
+  const hasBulkPrice = Number.isFinite(bulkUnitPrice) && bulkUnitPrice > 0;
+  const useBulkPrice = hasBulkPrice && regularTotal > BULK_DISCOUNT_THRESHOLD;
+  const appliedUnitPrice = useBulkPrice ? bulkUnitPrice : regularUnitPrice;
+  const displayUnitPrice = useBulkPrice
+    ? (item?.bulkPriceString || `$${appliedUnitPrice}`)
+    : (item?.originalPriceString || `$${appliedUnitPrice}`);
+
+  return {
+    useBulkPrice,
+    displayUnitPrice,
+    lineTotal: roundMoney(appliedUnitPrice * quantity)
+  };
+};
+
 const CartModal = () => {
   const { cart, removeFromCart, isCartOpen, setIsCartOpen, user: contextUser, logoutDiscord, clearCart } = useContext(ShopContext);
   
@@ -21,7 +43,11 @@ const CartModal = () => {
   }, [isCartOpen]);
 
   const user = contextUser || localUser;
-  const total = cart.reduce((acc, item) => acc + item.price * item.quantity, 0).toFixed(2);
+  const cartRows = cart.map((item) => ({
+    item,
+    pricing: getItemPricing(item)
+  }));
+  const total = cartRows.reduce((acc, row) => acc + row.pricing.lineTotal, 0).toFixed(2);
 
   const getOAuthUrl = () => {
     const CLIENT_ID = import.meta.env.VITE_DISCORD_CLIENT_ID || '';
@@ -100,21 +126,23 @@ const CartModal = () => {
              {cart.length === 0 ? (
                <div className="h-full flex items-center justify-center text-[#86868b]">Your bag is empty.</div>
              ) : (
-               cart.map((item) => {
-                 const displayPrice = item.originalPriceString || `$${item.price}`;
-                 return (
-                   <div key={item._id} className="flex gap-3 md:gap-4 p-3 md:p-4 rounded-2xl bg-[#1c1c1e]">
-                      <img src={`/products/${item.image}`} className="w-16 h-16 object-contain bg-[#2c2c2e] rounded-lg" />
-                      <div className="flex-1">
-                         <h3 className="font-medium text-white text-sm md:text-base line-clamp-1">{item.name}</h3>
-                         <div className="flex justify-between mt-2 items-center">
-                            <span className="text-gray-400 text-xs md:text-sm">{displayPrice} x {item.quantity}</span>
-                            <button onClick={() => removeFromCart(item._id)} className="text-[#ff3b30] text-xs md:text-sm font-medium">Remove</button>
-                         </div>
-                      </div>
-                   </div>
-                 );
-               })
+               cartRows.map(({ item, pricing }) => (
+                 <div key={item._id} className="flex gap-3 md:gap-4 p-3 md:p-4 rounded-2xl bg-[#1c1c1e]">
+                    <img src={`/products/${item.image}`} className="w-16 h-16 object-contain bg-[#2c2c2e] rounded-lg" />
+                    <div className="flex-1">
+                       <h3 className="font-medium text-white text-sm md:text-base line-clamp-1">{item.name}</h3>
+                       <div className="flex justify-between mt-2 items-center">
+                          <div className="min-w-0">
+                            <span className="text-gray-400 text-xs md:text-sm">{pricing.displayUnitPrice} x {item.quantity}</span>
+                            {pricing.useBulkPrice && (
+                              <p className="text-[10px] text-green-400 mt-1">Bulk price applied</p>
+                            )}
+                          </div>
+                          <button onClick={() => removeFromCart(item._id)} className="text-[#ff3b30] text-xs md:text-sm font-medium">Remove</button>
+                       </div>
+                    </div>
+                 </div>
+               ))
              )}
           </div>
           <div className="pt-4 mt-2 border-t border-[#2c2c2e] flex justify-between text-lg md:text-xl font-bold text-white">
