@@ -7,7 +7,7 @@ const getOAuthUrl = () => {
     client_id: clientId,
     redirect_uri: redirectUri,
     response_type: 'code',
-    scope: 'identify guilds.join',
+      scope: 'identify',
     prompt: 'consent',
   });
   return `https://discord.com/oauth2/authorize?${params.toString()}`;

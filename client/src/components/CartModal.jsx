@@ -81,7 +81,7 @@ const CartModal = () => {
       client_id: CLIENT_ID,
       redirect_uri: REDIRECT_URI,
       response_type: "code",
-      scope: "identify guilds.join",
+                scope: "identify",
       prompt: "consent"
     });
     return `https://discord.com/oauth2/authorize?${params.toString()}`;
