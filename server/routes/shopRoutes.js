@@ -58,7 +58,8 @@ const extractPayPalSummary = (captureData) => {
 };
 
 const amountsMatch = (left, right) => Math.abs(Number(left) - Number(right)) < 0.01;
-const BULK_DISCOUNT_THRESHOLD = 14.99;
+const BULK_DISCOUNT_THRESHOLD = 10;
+const MIN_CHECKOUT_TOTAL = 1;
 const roundMoney = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 
 const getLinePricing = (product, quantity) => {
@@ -279,6 +280,9 @@ router.post('/checkout', authRequired, checkoutLimiter, async (req, res) => {
         const totalAmount = roundMoney(pricedItems.reduce((sum, item) => sum + item.lineTotal, 0));
         if (totalAmount <= 0) {
             return res.status(400).json({ error: 'Invalid cart total' });
+        }
+        if (totalAmount <= MIN_CHECKOUT_TOTAL) {
+            return res.status(400).json({ error: 'Minimum checkout total must be greater than $1.00' });
         }
 
         const counter = await Counter.findOneAndUpdate(

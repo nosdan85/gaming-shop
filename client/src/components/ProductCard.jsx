@@ -8,18 +8,55 @@ const MAX_UI_QUANTITY = 100000;
 const ProductCard = ({ product, onOpenDetail }) => {
   const { addToCart } = useContext(ShopContext);
   const [quantity, setQuantity] = useState(1);
+  const [quantityInput, setQuantityInput] = useState('1');
   const displayPrice = formatCardPrice(product.originalPriceString, product.price);
 
-  const updateQuantity = (next) => {
-    if (!Number.isInteger(next)) return;
-    if (next < 1) return;
-    if (next > MAX_UI_QUANTITY) return;
-    setQuantity(next);
+  const normalizeQuantity = (value, fallback = 1) => {
+    const parsed = Number(value);
+    if (!Number.isInteger(parsed) || parsed < 1) return fallback;
+    if (parsed > MAX_UI_QUANTITY) return MAX_UI_QUANTITY;
+    return parsed;
   };
+
+  const updateQuantity = (next) => {
+    const normalized = normalizeQuantity(next, null);
+    if (normalized === null) return;
+    setQuantity(normalized);
+    setQuantityInput(String(normalized));
+  };
+
   const handleQuantityInput = (event) => {
-    const value = Number(event.target.value);
-    if (!Number.isFinite(value)) return;
-    updateQuantity(Math.floor(value));
+    const rawValue = event.target.value;
+    if (rawValue === '') {
+      setQuantityInput('');
+      return;
+    }
+
+    if (!/^\d+$/.test(rawValue)) return;
+    const parsed = Number(rawValue);
+    if (!Number.isFinite(parsed)) return;
+    if (parsed > MAX_UI_QUANTITY) {
+      setQuantity(MAX_UI_QUANTITY);
+      setQuantityInput(String(MAX_UI_QUANTITY));
+      return;
+    }
+
+    setQuantityInput(rawValue);
+    if (parsed >= 1) setQuantity(parsed);
+  };
+
+  const handleQuantityBlur = () => {
+    const normalized = normalizeQuantity(quantityInput);
+    setQuantity(normalized);
+    setQuantityInput(String(normalized));
+  };
+
+  const handleAddToCart = (event) => {
+    event.stopPropagation();
+    const normalized = normalizeQuantity(quantityInput);
+    setQuantity(normalized);
+    setQuantityInput(String(normalized));
+    addToCart(product, normalized);
   };
 
   return (
@@ -67,8 +104,9 @@ const ProductCard = ({ product, onOpenDetail }) => {
                 type="number"
                 min={1}
                 max={MAX_UI_QUANTITY}
-                value={quantity}
+                value={quantityInput}
                 onChange={handleQuantityInput}
+                onBlur={handleQuantityBlur}
                 onClick={(e) => e.stopPropagation()}
                 className="w-14 bg-transparent text-xs font-semibold text-white text-center outline-none"
               />
@@ -84,10 +122,7 @@ const ProductCard = ({ product, onOpenDetail }) => {
 
             <button
               type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                addToCart(product, quantity);
-              }}
+              onClick={handleAddToCart}
               className="bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white p-2 rounded-full transition-all transform hover:scale-105 active:scale-90 shadow-lg shadow-cyan-500/25 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-cyan-400"
               title="Add to Cart"
             >

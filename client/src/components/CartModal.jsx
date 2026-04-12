@@ -4,7 +4,8 @@ import { XMarkIcon, CheckBadgeIcon, UserCircleIcon, CurrencyDollarIcon, TicketIc
 import axios from 'axios';
 import { formatCardPrice } from '../utils/priceFormatting';
 
-const BULK_DISCOUNT_THRESHOLD = 14.99;
+const BULK_DISCOUNT_THRESHOLD = 10;
+const MIN_CHECKOUT_TOTAL = 1;
 const roundMoney = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 
 const getItemPricing = (item) => {
@@ -69,7 +70,9 @@ const CartModal = () => {
     item,
     pricing: getItemPricing(item)
   }));
-  const total = cartRows.reduce((acc, row) => acc + row.pricing.lineTotal, 0).toFixed(2);
+  const totalValue = roundMoney(cartRows.reduce((acc, row) => acc + row.pricing.lineTotal, 0));
+  const total = totalValue.toFixed(2);
+  const isBelowMinimumCheckout = totalValue <= MIN_CHECKOUT_TOTAL;
 
   const getOAuthUrl = () => {
     const CLIENT_ID = import.meta.env.VITE_DISCORD_CLIENT_ID || '';
@@ -107,6 +110,7 @@ const CartModal = () => {
 
   const handleCheckout = async () => {
     if (!user || !user.discordId) return alert("Please link Discord first!");
+    if (isBelowMinimumCheckout) return alert("Checkout total must be above $1.00.");
     
     setIsProcessing(true);
     try {
@@ -255,9 +259,12 @@ const CartModal = () => {
            </div>
 
            {/* 3. Checkout button */}
+           {isBelowMinimumCheckout && cart.length > 0 && (
+             <p className="text-[11px] text-red-400 mb-2">Total must be above $1.00 to checkout.</p>
+           )}
            <button 
              onClick={handleCheckout} 
-             disabled={!user || cart.length === 0 || isProcessing}
+             disabled={!user || cart.length === 0 || isProcessing || isBelowMinimumCheckout}
              className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white py-3 md:py-4 rounded-xl text-base md:text-lg font-bold shadow-lg shadow-blue-900/20 active:scale-95 transition-transform mt-auto"
            >
              {isProcessing ? 'Processing...' : 'Check Out'}

@@ -122,7 +122,7 @@ const Home = () => {
         </div>
 
         <p className="text-center text-xs text-[#9a9aa0] -mt-4 mb-8">
-          First $14.99 uses one-time rate, extra quantity uses bulk rate when available.
+          If one item costs at least $10, it qualifies for bulk pricing.
         </p>
 
         <div className="flex flex-wrap justify-center items-center gap-3 mb-12">
