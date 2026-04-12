@@ -15,15 +15,17 @@ const SORT_OPTIONS = [
 
 const CACHE_KEY = 'productsCache';
 const DISCORD_INVITE_URL = import.meta.env.VITE_DISCORD_INVITE_URL || 'https://discord.gg/T4A4ANp9';
+const normalizeProducts = (value) => {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item) => VALID_CACHE_CATEGORIES.has(item?.category));
+};
 const getCachedProducts = () => {
   if (typeof window === 'undefined') return [];
   try {
     const raw = localStorage.getItem(CACHE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed?.data)) return [];
-    const filtered = parsed.data.filter((item) => VALID_CACHE_CATEGORIES.has(item?.category));
-    return filtered;
+    return normalizeProducts(parsed?.data);
   } catch {
     return [];
   }
@@ -49,9 +51,10 @@ const Home = () => {
 
     axios.get('/api/shop/products')
       .then((res) => {
-        setProducts(res.data);
+        const nextProducts = normalizeProducts(res.data);
+        setProducts(nextProducts);
         try {
-          localStorage.setItem(CACHE_KEY, JSON.stringify({ data: res.data, ts: Date.now() }));
+          localStorage.setItem(CACHE_KEY, JSON.stringify({ data: nextProducts, ts: Date.now() }));
         } catch (_) {
           // Ignore cache write errors.
         }

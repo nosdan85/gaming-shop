@@ -34,17 +34,11 @@ const getRequestBody = (req, hasBody) => {
     return JSON.stringify(req.body);
 };
 
-export const proxyToBackend = async (req, res, prefix) => {
+const sendProxyRequest = async (req, res, targetUrl, label) => {
     const backendBaseUrl = getBackendBaseUrl();
     if (!backendBaseUrl) {
         return res.status(500).json({ error: 'BACKEND_URL is not configured on Vercel' });
     }
-
-    const incomingUrl = new URL(req.url, 'http://localhost');
-    const suffixPath = incomingUrl.pathname.startsWith(prefix)
-        ? incomingUrl.pathname.slice(prefix.length)
-        : '';
-    const targetUrl = `${backendBaseUrl}${prefix}${suffixPath}${incomingUrl.search}`;
     const method = String(req.method || 'GET').toUpperCase();
     const hasBody = !['GET', 'HEAD'].includes(method);
 
@@ -67,9 +61,37 @@ export const proxyToBackend = async (req, res, prefix) => {
 
         return res.status(upstreamResponse.status).send(responseText);
     } catch (error) {
-        console.error(`API proxy error for ${prefix}:`, error?.message || error);
+        console.error(`API proxy error for ${label}:`, error?.message || error);
         return res.status(502).json({
             error: 'Backend API is temporarily unavailable'
         });
     }
+};
+
+export const proxyToBackendPath = async (req, res, targetPath) => {
+    const backendBaseUrl = getBackendBaseUrl();
+    if (!backendBaseUrl) {
+        return res.status(500).json({ error: 'BACKEND_URL is not configured on Vercel' });
+    }
+
+    const incomingUrl = new URL(req.url, 'http://localhost');
+    const normalizedPath = String(targetPath || '').startsWith('/')
+        ? String(targetPath)
+        : `/${String(targetPath || '')}`;
+    const targetUrl = `${backendBaseUrl}${normalizedPath}${incomingUrl.search}`;
+    return sendProxyRequest(req, res, targetUrl, normalizedPath);
+};
+
+export const proxyToBackendPrefix = async (req, res, prefix) => {
+    const backendBaseUrl = getBackendBaseUrl();
+    if (!backendBaseUrl) {
+        return res.status(500).json({ error: 'BACKEND_URL is not configured on Vercel' });
+    }
+
+    const incomingUrl = new URL(req.url, 'http://localhost');
+    const suffixPath = incomingUrl.pathname.startsWith(prefix)
+        ? incomingUrl.pathname.slice(prefix.length)
+        : '';
+    const targetUrl = `${backendBaseUrl}${prefix}${suffixPath}${incomingUrl.search}`;
+    return sendProxyRequest(req, res, targetUrl, prefix);
 };

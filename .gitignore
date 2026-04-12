@@ -6,3 +6,5 @@ server/.env
 client/.env
 .DS_Store
 dist/
+client/preview.out.txt
+client/preview.err.txt
