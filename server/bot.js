@@ -20,6 +20,28 @@ const hasOwnerAccess = (message) => {
     return Boolean(hasOwnerRole || isExplicitOwner);
 };
 
+const resolveOwnerRoleId = async (guild) => {
+    const rawRoleId = String(process.env.DISCORD_OWNER_ROLE_ID || '').trim();
+    if (!rawRoleId) return null;
+    try {
+        const role = await guild.roles.fetch(rawRoleId);
+        return role?.id || null;
+    } catch {
+        return null;
+    }
+};
+
+const resolveTicketCategoryId = async (guild) => {
+    const rawCategoryId = String(process.env.DISCORD_TICKET_CATEGORY_ID || '').trim();
+    if (!rawCategoryId) return null;
+    try {
+        const channel = await guild.channels.fetch(rawCategoryId);
+        return channel?.id || null;
+    } catch {
+        return null;
+    }
+};
+
 // --- HELPER: CHECK USER IN GUILD ---
 const checkUserInGuild = async (discordId) => {
     const guildId = String(process.env.DISCORD_GUILD_ID || '').trim();
@@ -66,20 +88,35 @@ const checkUserHasOwnerRole = async (discordId) => {
 // --- TICKET: PayPal F&F (tên paypal_1, paypal_2...; khác với ticket CashApp/Robux) ---
 const createPayPalFFTicket = async (order, paypalSeq) => {
     try {
+        if (!client.isReady()) {
+            console.error('PayPal F&F Ticket Error: Discord bot is not ready');
+            return null;
+        }
         const guild = await client.guilds.fetch(process.env.DISCORD_GUILD_ID);
-        const category = await guild.channels.fetch(process.env.DISCORD_TICKET_CATEGORY_ID);
+        if (!guild) {
+            console.error('PayPal F&F Ticket Error: Guild not found');
+            return null;
+        }
+        const categoryId = await resolveTicketCategoryId(guild);
+        const ownerRoleId = await resolveOwnerRoleId(guild);
         const channelName = `paypal_${paypalSeq}`;
+        const permissionOverwrites = [
+            { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+            { id: order.discordId, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
+            { id: client.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
+        ];
+        if (ownerRoleId) {
+            permissionOverwrites.push({
+                id: ownerRoleId,
+                allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages]
+            });
+        }
 
         const channel = await guild.channels.create({
             name: channelName,
             type: ChannelType.GuildText,
-            parent: category ? category.id : null,
-            permissionOverwrites: [
-                { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-                { id: order.discordId, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
-                { id: process.env.DISCORD_OWNER_ROLE_ID, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
-                { id: client.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
-            ],
+            parent: categoryId || null,
+            permissionOverwrites,
         });
 
         const embed = new EmbedBuilder()
@@ -92,31 +129,53 @@ const createPayPalFFTicket = async (order, paypalSeq) => {
                 { name: 'Items', value: order.items.map(i => `${i.quantity}x ${i.name}`).join('\n') }
             );
 
+        const mentionContent = ownerRoleId
+            ? `<@${order.discordId}> <@&${ownerRoleId}>`
+            : `<@${order.discordId}>`;
+
         await channel.send({
-            content: `<@${order.discordId}> <@&${process.env.DISCORD_OWNER_ROLE_ID}>`,
+            content: mentionContent,
             embeds: [embed]
         });
 
         return channel.id;
-    } catch (error) { console.error("PayPal F&F Ticket Error:", error); }
+    } catch (error) {
+        console.error("PayPal F&F Ticket Error:", error?.response?.data || error.message || error);
+        return null;
+    }
 };
 
 // --- TICKET: CashApp/Robux (tên nm_1, nm_2...) ---
 const createOrderTicket = async (order) => {
     try {
+        if (!client.isReady()) {
+            console.error('Ticket Error: Discord bot is not ready');
+            return null;
+        }
         const guild = await client.guilds.fetch(process.env.DISCORD_GUILD_ID);
-        const category = await guild.channels.fetch(process.env.DISCORD_TICKET_CATEGORY_ID);
-        
+        if (!guild) {
+            console.error('Ticket Error: Guild not found');
+            return null;
+        }
+        const categoryId = await resolveTicketCategoryId(guild);
+        const ownerRoleId = await resolveOwnerRoleId(guild);
+        const permissionOverwrites = [
+            { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+            { id: order.discordId, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
+            { id: client.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
+        ];
+        if (ownerRoleId) {
+            permissionOverwrites.push({
+                id: ownerRoleId,
+                allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages]
+            });
+        }
+
         const channel = await guild.channels.create({
             name: `${order.orderId}`,
             type: ChannelType.GuildText,
-            parent: category ? category.id : null,
-            permissionOverwrites: [
-                { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-                { id: order.discordId, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
-                { id: process.env.DISCORD_OWNER_ROLE_ID, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
-                { id: client.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
-            ],
+            parent: categoryId || null,
+            permissionOverwrites,
         });
 
         const orderEmbed = new EmbedBuilder()
@@ -136,14 +195,21 @@ const createOrderTicket = async (order) => {
             new ButtonBuilder().setCustomId(`pay_robux_${order.orderId}`).setLabel('Robux').setStyle(ButtonStyle.Secondary)
         );
 
+        const mentionContent = ownerRoleId
+            ? `<@${order.discordId}> <@&${ownerRoleId}>`
+            : `<@${order.discordId}>`;
+
         await channel.send({ 
-            content: `<@${order.discordId}> <@&${process.env.DISCORD_OWNER_ROLE_ID}>`, 
+            content: mentionContent, 
             embeds: [orderEmbed], 
             components: [row] 
         });
 
         return channel.id;
-    } catch (error) { console.error("Ticket Error:", error); }
+    } catch (error) {
+        console.error("Ticket Error:", error?.response?.data || error.message || error);
+        return null;
+    }
 };
 
 // --- BUTTON HANDLER (Ticket: chỉ CashApp & Apple Pay, PayPal/LTC thanh toán trên web) ---

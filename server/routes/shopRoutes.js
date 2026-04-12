@@ -86,6 +86,7 @@ const withTimeout = (promise, timeoutMs, fallbackValue = null) => Promise.race([
 
 const getBackendBaseUrl = () => (process.env.WEBHOOK_BASE_URL || process.env.BACKEND_URL || '').replace(/\/+$/, '');
 const getClientBaseUrl = () => ((process.env.CLIENT_URL || '').split(',')[0] || '').trim().replace(/\/+$/, '');
+const getOriginBaseUrl = (value) => String(value || '').trim().replace(/\/+$/, '');
 const buildClientPayUrl = (orderId, extraQuery = '') => {
     const encodedOrderId = encodeURIComponent(orderId || '');
     const query = extraQuery ? `&${extraQuery}` : '';
@@ -608,8 +609,8 @@ router.post('/create-payment', authRequired, async (req, res) => {
         }
 
         if (method === 'paypal') {
-            const backendBaseUrl = getBackendBaseUrl();
-            const clientBaseUrl = getClientBaseUrl();
+            const backendBaseUrl = getBackendBaseUrl() || getOriginBaseUrl(`${req.protocol}://${req.get('host')}`);
+            const clientBaseUrl = getClientBaseUrl() || getOriginBaseUrl(req.headers.origin);
             if (!backendBaseUrl || !clientBaseUrl) {
                 return res.status(500).json({ error: 'Payment URLs are not configured' });
             }
