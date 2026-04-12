@@ -17,7 +17,10 @@ const createTimeoutError = () => {
 
 const createOAuthUrl = () => {
     const clientId = import.meta.env.VITE_DISCORD_CLIENT_ID || '';
-    const redirectUri = `${window.location.origin}/auth/discord/callback`;
+    const rawRedirectUri = import.meta.env.VITE_DISCORD_REDIRECT_URI;
+    const redirectUri = typeof rawRedirectUri === 'string' && rawRedirectUri.trim()
+        ? rawRedirectUri.trim()
+        : `${window.location.origin}/auth/discord/callback`;
     const params = new URLSearchParams({
         client_id: clientId,
         redirect_uri: redirectUri,
@@ -114,7 +117,10 @@ const AuthCallback = () => {
             inFlight.current = true;
 
             try {
-                const redirectUri = `${window.location.origin}/auth/discord/callback`;
+                const rawRedirectUri = import.meta.env.VITE_DISCORD_REDIRECT_URI;
+                const redirectUri = typeof rawRedirectUri === 'string' && rawRedirectUri.trim()
+                    ? rawRedirectUri.trim()
+                    : `${window.location.origin}/auth/discord/callback`;
                 setDebugInfo('');
                 setCanRetry(false);
                 setRetryInSeconds(0);
