@@ -109,6 +109,9 @@ const getDiscordTicketConfigError = () => {
     if (!String(process.env.DISCORD_GUILD_ID || '').trim()) return 'DISCORD_GUILD_ID is missing';
     return '';
 };
+const getTicketMode = () => String(process.env.DISCORD_TICKET_MODE || 'bot').trim().toLowerCase();
+const getTicketPanelUrl = () => String(process.env.DISCORD_TICKET_PANEL_URL || '').trim();
+const isPanelTicketMode = () => getTicketMode() === 'panel' && /^https?:\/\//i.test(getTicketPanelUrl());
 const buildTicketErrorResponse = (error) => {
     if (error instanceof DiscordBotError) {
         const status = Number(error.status);
@@ -861,16 +864,26 @@ router.get('/bot-status', (req, res) => {
 
 router.post('/create-ticket-paypal-ff', authRequired, async (req, res) => {
     try {
-        const ticketConfigError = getDiscordTicketConfigError();
-        if (ticketConfigError) {
-            return res.status(500).json({ error: ticketConfigError });
-        }
-
         const { orderId } = req.body || {};
         if (!orderId) return res.status(400).json({ error: 'Missing orderId' });
 
         const { order, status, error } = await getOwnedOrder(orderId, req.user.discordId);
         if (!order) return res.status(status).json({ error });
+
+        if (isPanelTicketMode()) {
+            await Order.findByIdAndUpdate(order._id, { paymentMethod: 'paypal_ff' });
+            return res.json({
+                mode: 'panel',
+                panelUrl: getTicketPanelUrl(),
+                orderId: order.orderId,
+                email: process.env.PAYPAL_EMAIL || ''
+            });
+        }
+
+        const ticketConfigError = getDiscordTicketConfigError();
+        if (ticketConfigError) {
+            return res.status(500).json({ error: ticketConfigError });
+        }
 
         if (order.paypalTicketChannelId) {
             return res.json({
@@ -918,16 +931,27 @@ router.post('/create-ticket-paypal-ff', authRequired, async (req, res) => {
 
 router.post('/create-ticket', authRequired, async (req, res) => {
     try {
-        const ticketConfigError = getDiscordTicketConfigError();
-        if (ticketConfigError) {
-            return res.status(500).json({ error: ticketConfigError });
-        }
-
         const { orderId } = req.body || {};
         if (!orderId) return res.status(400).json({ error: 'Missing orderId' });
 
         const { order, status, error } = await getOwnedOrder(orderId, req.user.discordId);
         if (!order) return res.status(status).json({ error });
+
+        if (isPanelTicketMode()) {
+            await Order.findByIdAndUpdate(order._id, {
+                status: order.status === 'Pending' ? 'Waiting Payment' : order.status
+            });
+            return res.json({
+                mode: 'panel',
+                panelUrl: getTicketPanelUrl(),
+                orderId: order.orderId
+            });
+        }
+
+        const ticketConfigError = getDiscordTicketConfigError();
+        if (ticketConfigError) {
+            return res.status(500).json({ error: ticketConfigError });
+        }
 
         if (order.channelId) {
             return res.json({ channelId: order.channelId });

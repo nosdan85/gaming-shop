@@ -161,6 +161,9 @@ const PaymentPage = () => {
       const data = res.data;
       if (data.channelId) {
         openTicketChannel(data.channelId);
+      } else if (data.mode === 'panel' && data.panelUrl) {
+        window.open(data.panelUrl, '_blank');
+        alert(`Discord ticket panel opened. Please click "Create Ticket" in Discord and include Order ID: ${data.orderId || orderId}`);
       } else {
         alert('Could not create ticket. Try again.');
       }
@@ -192,6 +195,10 @@ const PaymentPage = () => {
         { timeout: TICKET_REQUEST_TIMEOUT_MS }
       );
       const { channelId, email } = res.data || {};
+      if (res.data?.mode === 'panel' && res.data?.panelUrl) {
+        window.open(res.data.panelUrl, '_blank');
+        alert(`Discord ticket panel opened. Please click "Create Ticket" and include Order ID: ${res.data.orderId || orderId}`);
+      }
       setPaypalFFData((prev) => ({ ...prev, channelId: channelId || null, email: email || prev?.email || '' }));
       if (channelId) openTicketChannel(channelId);
     } catch (err) {
