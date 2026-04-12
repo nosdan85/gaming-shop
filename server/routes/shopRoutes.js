@@ -39,11 +39,21 @@ const setDiscordAuthCooldownSeconds = (seconds) => {
     discordAuthBlockedUntilMs = Math.max(discordAuthBlockedUntilMs, Date.now() + clamped * 1000);
     return clamped;
 };
-const buildDiscordRateLimitPayload = (retryAfterSeconds) => ({
+const buildDiscordRateLimitPayload = (retryAfterSeconds, step = 'unknown', providerStatus = null) => ({
     error: 'Discord temporarily limiting requests. Please try again in a few minutes.',
     code: 'DISCORD_RATE_LIMIT',
-    retryAfterSeconds
+    retryAfterSeconds,
+    step,
+    providerStatus
 });
+const withDiscordStep = async (step, runner) => {
+    try {
+        return await runner();
+    } catch (error) {
+        if (error && !error.discordStep) error.discordStep = step;
+        throw error;
+    }
+};
 
 const getBackendBaseUrl = () => (process.env.WEBHOOK_BASE_URL || process.env.BACKEND_URL || '').replace(/\/+$/, '');
 const getClientBaseUrl = () => ((process.env.CLIENT_URL || '').split(',')[0] || '').trim().replace(/\/+$/, '');
@@ -168,7 +178,7 @@ const canAccessOwnerEndpoints = async (discordId) => {
 };
 
 const exchangeDiscordAuthCode = async (code, redirectUri) => {
-    const tokenResponse = await discordRequest({
+    const tokenResponse = await withDiscordStep('oauth_token', () => discordRequest({
         method: 'post',
         url: 'https://discord.com/api/oauth2/token',
         timeout: 12000,
@@ -180,16 +190,16 @@ const exchangeDiscordAuthCode = async (code, redirectUri) => {
             redirect_uri: redirectUri
         }),
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-    }, 0, { noRetry: true });
+    }, 0, { noRetry: true }));
 
     const { access_token, refresh_token, expires_in, scope } = tokenResponse.data || {};
 
-    const userResponse = await discordRequest({
+    const userResponse = await withDiscordStep('oauth_user', () => discordRequest({
         method: 'get',
         url: 'https://discord.com/api/users/@me',
         timeout: 12000,
         headers: { Authorization: `Bearer ${access_token}` }
-    }, 0, { noRetry: true });
+    }, 0, { noRetry: true }));
 
     const user = userResponse.data || {};
     const discordId = user.id;
@@ -213,9 +223,9 @@ const exchangeDiscordAuthCode = async (code, redirectUri) => {
     dbUser.scopes = scopes;
     await dbUser.save();
 
-    // Keep Discord API load low: attempt auto-join only for first-time users.
-    if (isNewUser && scopes.includes('guilds.join')) {
-        await joinGuildWithAccessToken(process.env.DISCORD_GUILD_ID, discordId, access_token);
+    // Keep Discord API load low by default; only auto-join when explicitly enabled.
+    if (isNewUser && scopes.includes('guilds.join') && process.env.DISCORD_AUTO_JOIN_ON_LOGIN === 'true') {
+        void joinGuildWithAccessToken(process.env.DISCORD_GUILD_ID, discordId, access_token);
     }
 
     if (!process.env.JWT_SECRET) {
@@ -247,7 +257,7 @@ router.post('/auth/discord', async (req, res) => {
 
     const blockedSeconds = getDiscordAuthCooldownSeconds();
     if (blockedSeconds > 0) {
-        return res.status(503).json(buildDiscordRateLimitPayload(blockedSeconds));
+        return res.status(503).json(buildDiscordRateLimitPayload(blockedSeconds, 'cooldown', 503));
     }
 
     cleanupAuthSuccessCache();
@@ -266,10 +276,11 @@ router.post('/auth/discord', async (req, res) => {
             const status = error.response?.status;
             const data = error.response?.data;
             const message = getDiscordErrorMessage(data);
+            const step = error.discordStep || 'unknown';
             if (isDiscordTemporaryBlock(status, data)) {
                 const retryAfter = Math.max(getDiscordRetryAfterSeconds(error), AUTH_RATE_LIMIT_DEFAULT_RETRY_SECONDS);
                 const cooldown = setDiscordAuthCooldownSeconds(retryAfter) || retryAfter;
-                return res.status(503).json(buildDiscordRateLimitPayload(cooldown));
+                return res.status(503).json(buildDiscordRateLimitPayload(cooldown, step, status || 503));
             }
             if (status >= 400 && status < 500) {
                 return res.status(400).json({
@@ -294,12 +305,18 @@ router.post('/auth/discord', async (req, res) => {
         const status = error.response?.status;
         const data = error.response?.data;
         const message = getDiscordErrorMessage(data);
-        console.error('Discord auth error:', status, data || error.message);
+        const step = error.discordStep || 'unknown';
+        console.error('Discord auth error:', {
+            step,
+            status,
+            retryAfterHeader: error.response?.headers?.['retry-after'],
+            data: data || error.message
+        });
 
         if (isDiscordTemporaryBlock(status, data)) {
             const retryAfter = Math.max(getDiscordRetryAfterSeconds(error), AUTH_RATE_LIMIT_DEFAULT_RETRY_SECONDS);
             const cooldown = setDiscordAuthCooldownSeconds(retryAfter) || retryAfter;
-            return res.status(503).json(buildDiscordRateLimitPayload(cooldown));
+            return res.status(503).json(buildDiscordRateLimitPayload(cooldown, step, status || 503));
         }
 
         if (status >= 400 && status < 500) {
