@@ -15,10 +15,46 @@ const configuredOrigins = (process.env.CLIENT_URL || '')
 
 const defaultDevOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173'];
 const allowedOrigins = new Set([...configuredOrigins, ...defaultDevOrigins]);
+const normalizeHostname = (hostname) => String(hostname || '').trim().toLowerCase().replace(/^www\./, '');
+const isAllowedOrigin = (origin) => {
+    if (!origin || allowedOrigins.size === 0 || allowedOrigins.has(origin)) {
+        return true;
+    }
+
+    try {
+        const requestUrl = new URL(origin);
+        const requestProtocol = requestUrl.protocol;
+        const requestPort = requestUrl.port || '';
+        const requestHost = normalizeHostname(requestUrl.hostname);
+
+        for (const allowedOrigin of allowedOrigins) {
+            try {
+                const allowedUrl = new URL(allowedOrigin);
+                const allowedProtocol = allowedUrl.protocol;
+                const allowedPort = allowedUrl.port || '';
+                const allowedHost = normalizeHostname(allowedUrl.hostname);
+
+                if (
+                    requestProtocol === allowedProtocol &&
+                    requestPort === allowedPort &&
+                    requestHost === allowedHost
+                ) {
+                    return true;
+                }
+            } catch {
+                // Ignore malformed env values and keep checking the rest.
+            }
+        }
+    } catch {
+        return false;
+    }
+
+    return false;
+};
 
 app.use(cors({
     origin: (origin, callback) => {
-        if (!origin || allowedOrigins.size === 0 || allowedOrigins.has(origin)) {
+        if (isAllowedOrigin(origin)) {
             return callback(null, true);
         }
         return callback(new Error('CORS_NOT_ALLOWED'));
