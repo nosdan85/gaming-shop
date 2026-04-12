@@ -551,10 +551,7 @@ router.post('/checkout', authRequired, checkoutLimiter, async (req, res) => {
             });
         }
         if (inGuild === null) {
-            return res.status(503).json({
-                error: 'Discord API is temporarily unavailable. Please retry checkout in a moment.',
-                code: 'DISCORD_API_UNAVAILABLE'
-            });
+            console.warn(`Checkout guild check unavailable for ${discordId}; continuing checkout.`);
         }
 
         const quantityByProductId = new Map();
