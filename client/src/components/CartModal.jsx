@@ -10,18 +10,40 @@ const roundMoney = (value) => Math.round((Number(value) + Number.EPSILON) * 100)
 const getItemPricing = (item) => {
   const quantity = Number(item?.quantity) || 0;
   const regularUnitPrice = Number(item?.price) || 0;
-  const regularTotal = regularUnitPrice * quantity;
+  if (!Number.isFinite(regularUnitPrice) || regularUnitPrice <= 0 || quantity <= 0) {
+    return {
+      displayUnitPrice: '$0',
+      bulkDisplayUnitPrice: '',
+      bulkAppliedUnits: 0,
+      lineTotal: 0
+    };
+  }
+
+  const regularDisplayPrice = formatCardPrice(item?.originalPriceString, regularUnitPrice);
   const bulkUnitPrice = Number(item?.bulkPrice);
   const hasBulkPrice = Number.isFinite(bulkUnitPrice) && bulkUnitPrice > 0;
-  const useBulkPrice = hasBulkPrice && regularTotal > BULK_DISCOUNT_THRESHOLD;
-  const appliedUnitPrice = useBulkPrice ? bulkUnitPrice : regularUnitPrice;
-  const sourcePriceString = useBulkPrice ? item?.bulkPriceString : item?.originalPriceString;
-  const displayUnitPrice = formatCardPrice(sourcePriceString, appliedUnitPrice);
+  if (!hasBulkPrice) {
+    return {
+      displayUnitPrice: regularDisplayPrice,
+      bulkDisplayUnitPrice: '',
+      bulkAppliedUnits: 0,
+      lineTotal: roundMoney(regularUnitPrice * quantity)
+    };
+  }
+
+  const regularUnitsLimit = Math.max(1, Math.floor(BULK_DISCOUNT_THRESHOLD / regularUnitPrice));
+  const regularUnits = Math.min(quantity, regularUnitsLimit);
+  const bulkAppliedUnits = Math.max(0, quantity - regularUnits);
+  const regularPart = regularUnits * regularUnitPrice;
+  const bulkPart = bulkAppliedUnits * bulkUnitPrice;
+  const lineTotal = roundMoney(regularPart + bulkPart);
+  const bulkDisplayUnitPrice = formatCardPrice(item?.bulkPriceString, bulkUnitPrice);
 
   return {
-    useBulkPrice,
-    displayUnitPrice,
-    lineTotal: roundMoney(appliedUnitPrice * quantity)
+    displayUnitPrice: regularDisplayPrice,
+    bulkDisplayUnitPrice,
+    bulkAppliedUnits,
+    lineTotal
   };
 };
 
@@ -134,9 +156,12 @@ const CartModal = () => {
                        <div className="flex justify-between mt-2 items-center">
                           <div className="min-w-0">
                             <span className="text-gray-400 text-xs md:text-sm">{pricing.displayUnitPrice} | qty {item.quantity}</span>
-                            {pricing.useBulkPrice && (
-                              <p className="text-[10px] text-green-400 mt-1">Bulk price applied</p>
+                            {pricing.bulkAppliedUnits > 0 && (
+                              <p className="text-[10px] text-green-400 mt-1">
+                                Bulk applied for {pricing.bulkAppliedUnits} qty ({pricing.bulkDisplayUnitPrice})
+                              </p>
                             )}
+                            <p className="text-[10px] text-gray-500 mt-1">Line total: ${pricing.lineTotal.toFixed(2)}</p>
                           </div>
                           <button onClick={() => removeFromCart(item._id)} className="text-[#ff3b30] text-xs md:text-sm font-medium">Remove</button>
                        </div>

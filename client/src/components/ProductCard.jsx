@@ -16,6 +16,11 @@ const ProductCard = ({ product, onOpenDetail }) => {
     if (next > MAX_UI_QUANTITY) return;
     setQuantity(next);
   };
+  const handleQuantityInput = (event) => {
+    const value = Number(event.target.value);
+    if (!Number.isFinite(value)) return;
+    updateQuantity(Math.floor(value));
+  };
 
   return (
     <div
@@ -58,7 +63,15 @@ const ProductCard = ({ product, onOpenDetail }) => {
               >
                 <MinusIcon className="w-4 h-4" />
               </button>
-              <span className="text-xs font-semibold text-white min-w-[26px] text-center">{quantity}</span>
+              <input
+                type="number"
+                min={1}
+                max={MAX_UI_QUANTITY}
+                value={quantity}
+                onChange={handleQuantityInput}
+                onClick={(e) => e.stopPropagation()}
+                className="w-14 bg-transparent text-xs font-semibold text-white text-center outline-none"
+              />
               <button
                 type="button"
                 onClick={() => updateQuantity(quantity + 1)}

@@ -26,6 +26,11 @@ const ProductDetailModal = ({ product, onClose }) => {
     if (next > MAX_UI_QUANTITY) return;
     setQuantity(next);
   };
+  const handleQuantityInput = (event) => {
+    const value = Number(event.target.value);
+    if (!Number.isFinite(value)) return;
+    updateQuantity(Math.floor(value));
+  };
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
@@ -64,14 +69,7 @@ const ProductDetailModal = ({ product, onClose }) => {
           <div className="rounded-2xl border border-white/10 bg-black/35 p-4 mb-5">
             <p className="text-sm text-white font-semibold">One-time: <span className="font-normal text-gray-300">{oneTimePriceLabel}</span></p>
             <p className="text-sm text-white font-semibold mt-2">Bulk: <span className="font-normal text-gray-300">{bulkPriceLabel}</span></p>
-            <p className="text-[11px] text-[#9ca3b8] mt-3">Bulk rule: line total above $14.99 uses bulk pricing when available.</p>
-          </div>
-
-          <div className="flex-1 mb-6">
-            <h3 className="text-sm font-bold text-gray-300 mb-2 uppercase">Description</h3>
-            <p className="text-gray-400 text-sm leading-relaxed whitespace-pre-line">
-              {product.description || product.desc || 'No description available for this product.'}
-            </p>
+            <p className="text-[11px] text-[#9ca3b8] mt-3">Bulk rule: first $14.99 uses one-time rate, extra quantity uses bulk rate.</p>
           </div>
 
           <div className="space-y-2 mb-6">
@@ -95,7 +93,14 @@ const ProductDetailModal = ({ product, onClose }) => {
               >
                 <MinusIcon className="w-4 h-4" />
               </button>
-              <span className="min-w-[32px] text-center text-sm font-semibold text-white">{quantity}</span>
+              <input
+                type="number"
+                min={1}
+                max={MAX_UI_QUANTITY}
+                value={quantity}
+                onChange={handleQuantityInput}
+                className="w-16 bg-transparent text-sm font-semibold text-white text-center outline-none"
+              />
               <button
                 type="button"
                 onClick={() => updateQuantity(quantity + 1)}

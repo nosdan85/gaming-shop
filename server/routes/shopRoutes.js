@@ -61,16 +61,32 @@ const amountsMatch = (left, right) => Math.abs(Number(left) - Number(right)) < 0
 const BULK_DISCOUNT_THRESHOLD = 14.99;
 const roundMoney = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 
-const resolveAppliedPrice = (product, quantity) => {
+const getLinePricing = (product, quantity) => {
     const qty = Number(quantity) || 0;
     const regularUnitPrice = Number(product.price) || 0;
-    const regularTotal = regularUnitPrice * qty;
+    if (!Number.isFinite(regularUnitPrice) || regularUnitPrice <= 0 || qty <= 0) {
+        return { lineTotal: 0, effectiveUnitPrice: 0, bulkUnits: 0 };
+    }
+
     const bulkUnitPrice = Number(product.bulkPrice);
     const hasBulkPrice = Number.isFinite(bulkUnitPrice) && bulkUnitPrice > 0;
-    if (hasBulkPrice && regularTotal > BULK_DISCOUNT_THRESHOLD) {
-        return bulkUnitPrice;
+    if (!hasBulkPrice) {
+        const lineTotal = roundMoney(regularUnitPrice * qty);
+        return { lineTotal, effectiveUnitPrice: regularUnitPrice, bulkUnits: 0 };
     }
-    return regularUnitPrice;
+
+    const regularUnitsLimit = Math.max(1, Math.floor(BULK_DISCOUNT_THRESHOLD / regularUnitPrice));
+    if (qty <= regularUnitsLimit) {
+        const lineTotal = roundMoney(regularUnitPrice * qty);
+        return { lineTotal, effectiveUnitPrice: regularUnitPrice, bulkUnits: 0 };
+    }
+
+    const bulkUnits = qty - regularUnitsLimit;
+    const regularPart = regularUnitsLimit * regularUnitPrice;
+    const bulkPart = bulkUnits * bulkUnitPrice;
+    const lineTotal = roundMoney(regularPart + bulkPart);
+    const effectiveUnitPrice = roundMoney(lineTotal / qty, 6);
+    return { lineTotal, effectiveUnitPrice, bulkUnits };
 };
 
 const joinGuildWithAccessToken = async (guildId, userId, accessToken) => {
@@ -247,18 +263,20 @@ router.post('/checkout', authRequired, checkoutLimiter, async (req, res) => {
             return res.status(400).json({ error: 'Some products are invalid or no longer available' });
         }
 
-        const items = products.map((product) => {
+        const pricedItems = products.map((product) => {
             const quantity = quantityByProductId.get(String(product._id));
-            const appliedUnitPrice = resolveAppliedPrice(product, quantity);
+            const pricing = getLinePricing(product, quantity);
             return {
                 product: product._id,
                 name: product.name,
                 quantity,
-                price: appliedUnitPrice
+                price: pricing.effectiveUnitPrice,
+                lineTotal: pricing.lineTotal
             };
         });
 
-        const totalAmount = roundMoney(items.reduce((sum, item) => sum + item.price * item.quantity, 0));
+        const items = pricedItems.map(({ lineTotal, ...rest }) => rest);
+        const totalAmount = roundMoney(pricedItems.reduce((sum, item) => sum + item.lineTotal, 0));
         if (totalAmount <= 0) {
             return res.status(400).json({ error: 'Invalid cart total' });
         }
