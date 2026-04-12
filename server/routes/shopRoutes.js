@@ -6,7 +6,13 @@ const Product = require('../models/Product');
 const Order = require('../models/Order');
 const User = require('../models/User');
 const Counter = require('../models/Counter');
-const { createOrderTicket, createPayPalFFTicket, checkUserInGuild, checkUserHasOwnerRole } = require('../bot');
+const {
+    createOrderTicket,
+    createPayPalFFTicket,
+    checkUserInGuild,
+    checkUserHasOwnerRole,
+    DiscordBotError
+} = require('../bot');
 const { createPayPalOrder, createLTCInvoice, capturePayPalOrder } = require('../services/paymentService');
 const { discordRequest } = require('../utils/discordApi');
 const { authRequired } = require('../middleware/authMiddleware');
@@ -21,7 +27,6 @@ const AUTH_RATE_LIMIT_MAX_RETRY_SECONDS = 120;
 const DISCORD_TOKEN_MIN_GAP_MS = 1500;
 const BRIDGE_REQUEST_MAX_AGE_MS = 5 * 60 * 1000;
 const DISCORD_GUILD_CHECK_TIMEOUT_MS = 8000;
-const DISCORD_TICKET_CREATE_TIMEOUT_MS = 12000;
 const PAYMENT_PROVIDER_TIMEOUT_MS = 15000;
 const discordAuthSuccessCache = new Map();
 const discordAuthInFlight = new Map();
@@ -91,6 +96,38 @@ const getDiscordTicketConfigError = () => {
     if (!String(process.env.DISCORD_BOT_TOKEN || '').trim()) return 'DISCORD_BOT_TOKEN is missing';
     if (!String(process.env.DISCORD_GUILD_ID || '').trim()) return 'DISCORD_GUILD_ID is missing';
     return '';
+};
+const buildTicketErrorResponse = (error) => {
+    if (error instanceof DiscordBotError) {
+        const status = Number(error.status);
+        const safeStatus = Number.isFinite(status) && status >= 400 && status <= 599 ? status : 503;
+        return {
+            status: safeStatus,
+            payload: {
+                error: error.message || 'Ticket bot is temporarily unavailable. Please try again in a moment.',
+                code: error.code || 'DISCORD_TICKET_ERROR'
+            }
+        };
+    }
+
+    const fallbackStatus = Number(error?.status);
+    if (Number.isFinite(fallbackStatus) && fallbackStatus >= 400 && fallbackStatus <= 599) {
+        return {
+            status: fallbackStatus,
+            payload: {
+                error: String(error?.message || 'Ticket bot is temporarily unavailable. Please try again in a moment.'),
+                code: String(error?.code || 'DISCORD_TICKET_ERROR')
+            }
+        };
+    }
+
+    return {
+        status: 503,
+        payload: {
+            error: 'Ticket bot is temporarily unavailable. Please try again in a moment.',
+            code: 'DISCORD_TICKET_UNAVAILABLE'
+        }
+    };
 };
 const buildClientPayUrl = (orderId, extraQuery = '') => {
     const encodedOrderId = encodeURIComponent(orderId || '');
@@ -514,7 +551,10 @@ router.post('/checkout', authRequired, checkoutLimiter, async (req, res) => {
             });
         }
         if (inGuild === null) {
-            console.warn(`Guild membership check unavailable for ${discordId}; allowing checkout to avoid hanging request.`);
+            return res.status(503).json({
+                error: 'Discord API is temporarily unavailable. Please retry checkout in a moment.',
+                code: 'DISCORD_API_UNAVAILABLE'
+            });
         }
 
         const quantityByProductId = new Map();
@@ -836,19 +876,7 @@ router.post('/create-ticket-paypal-ff', authRequired, async (req, res) => {
 
         const paypalSeq = counter.seq;
         const channelName = `paypal_${paypalSeq}`;
-        const channelId = await withTimeout(
-            Promise.resolve(createPayPalFFTicket(order, paypalSeq)),
-            DISCORD_TICKET_CREATE_TIMEOUT_MS,
-            null
-        );
-        if (!channelId) {
-            return res.status(503).json({
-                error: 'Ticket bot is temporarily unavailable. Please try again in a moment.',
-                code: 'DISCORD_TICKET_UNAVAILABLE',
-                email: process.env.PAYPAL_EMAIL || '',
-                hint: 'Check /api/shop/bot-status'
-            });
-        }
+        const channelId = await Promise.resolve(createPayPalFFTicket(order, paypalSeq));
         if (channelId) {
             await Order.findByIdAndUpdate(order._id, {
                 paymentMethod: 'paypal_ff',
@@ -863,7 +891,11 @@ router.post('/create-ticket-paypal-ff', authRequired, async (req, res) => {
         });
     } catch (err) {
         console.error('Create PayPal F&F ticket error:', err);
-        return res.status(500).json({ error: 'Server error' });
+        const { status, payload } = buildTicketErrorResponse(err);
+        return res.status(status).json({
+            ...payload,
+            email: process.env.PAYPAL_EMAIL || ''
+        });
     }
 });
 
@@ -884,24 +916,21 @@ router.post('/create-ticket', authRequired, async (req, res) => {
             return res.json({ channelId: order.channelId });
         }
 
-        const channelId = await withTimeout(
-            Promise.resolve(createOrderTicket(order)),
-            DISCORD_TICKET_CREATE_TIMEOUT_MS,
-            null
-        );
-        if (!channelId) {
-            return res.status(503).json({
-                error: 'Ticket bot is temporarily unavailable. Please try again in a moment.',
-                code: 'DISCORD_TICKET_UNAVAILABLE',
-                hint: 'Check /api/shop/bot-status'
-            });
-        }
+        const channelId = await Promise.resolve(createOrderTicket(order));
+        if (!channelId) throw new DiscordBotError('Could not create ticket channel', { status: 503, code: 'DISCORD_TICKET_UNAVAILABLE' });
 
         await Order.findByIdAndUpdate(order._id, { channelId });
         return res.json({ channelId });
     } catch (err) {
         console.error('Create ticket error:', err);
-        return res.status(500).json({ error: 'Server error' });
+        const { status, payload } = buildTicketErrorResponse(err);
+        if (payload.code === 'USER_NOT_IN_GUILD') {
+            return res.status(status).json({
+                ...payload,
+                invite_link: process.env.DISCORD_SERVER_INVITE || ''
+            });
+        }
+        return res.status(status).json(payload);
     }
 });
 

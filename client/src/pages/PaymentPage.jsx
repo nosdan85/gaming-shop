@@ -5,6 +5,7 @@ import axios from 'axios';
 const GUILD_ID = import.meta.env.VITE_DISCORD_GUILD_ID || '';
 const VALID_GUILD = Boolean(GUILD_ID && String(GUILD_ID).trim().length > 0);
 const REQUEST_TIMEOUT_MS = 15000;
+const TICKET_REQUEST_TIMEOUT_MS = 30000;
 
 const getHttpErrorMessage = (err, fallback) => {
   if (err?.code === 'ECONNABORTED') return 'Request timeout. Please try again.';
@@ -147,7 +148,7 @@ const PaymentPage = () => {
       const res = await axios.post(
         '/api/shop/create-ticket',
         { orderId },
-        { timeout: REQUEST_TIMEOUT_MS }
+        { timeout: TICKET_REQUEST_TIMEOUT_MS }
       );
       const data = res.data;
       if (data.channelId) {
@@ -180,7 +181,7 @@ const PaymentPage = () => {
       const res = await axios.post(
         '/api/shop/create-ticket-paypal-ff',
         { orderId },
-        { timeout: REQUEST_TIMEOUT_MS }
+        { timeout: TICKET_REQUEST_TIMEOUT_MS }
       );
       const { channelId, email } = res.data || {};
       setPaypalFFData((prev) => ({ ...prev, channelId: channelId || null, email: email || prev?.email || '' }));
