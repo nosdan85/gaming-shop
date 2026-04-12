@@ -40,6 +40,21 @@ const getDiscordErrorMessage = (data) => {
     return data.error_description || data.message || data.error || '';
 };
 
+const normalizeRetryAfterToSeconds = (value) => {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    if (n > 1000) return Math.ceil(n / 1000);
+    return Math.ceil(n);
+};
+
+const getDiscordRetryAfterSeconds = (error) => {
+    const headerSeconds = normalizeRetryAfterToSeconds(error?.response?.headers?.['retry-after']);
+    const bodySeconds = normalizeRetryAfterToSeconds(
+        error?.response?.data?.retry_after ?? error?.response?.data?.retryAfterSeconds
+    );
+    return Math.max(headerSeconds, bodySeconds, 0);
+};
+
 const timingSafeEqualHex = (left, right) => {
     if (!left || !right) return false;
     const a = Buffer.from(left);
@@ -101,7 +116,7 @@ const joinGuildWithAccessToken = async (guildId, userId, accessToken) => {
                 Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
                 'Content-Type': 'application/json'
             }
-        });
+        }, 0, { noRetry: true });
         return true;
     } catch (err) {
         console.error('Join guild error:', err.response?.data || err.message);
@@ -133,6 +148,7 @@ router.post('/auth/discord', async (req, res) => {
         const tokenResponse = await discordRequest({
             method: 'post',
             url: 'https://discord.com/api/oauth2/token',
+            timeout: 12000,
             data: qs.stringify({
                 client_id: process.env.DISCORD_CLIENT_ID,
                 client_secret: process.env.DISCORD_CLIENT_SECRET,
@@ -141,15 +157,24 @@ router.post('/auth/discord', async (req, res) => {
                 redirect_uri: redirectUri
             }),
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-        }, 0, { maxRetries: 1, maxDelayMs: 2500 });
+        }, 0, {
+            maxRetries: 3,
+            baseDelayMs: 1200,
+            maxDelayMs: 12000
+        });
 
         const { access_token, refresh_token, expires_in, scope } = tokenResponse.data || {};
 
         const userResponse = await discordRequest({
             method: 'get',
             url: 'https://discord.com/api/users/@me',
+            timeout: 12000,
             headers: { Authorization: `Bearer ${access_token}` }
-        }, 0, { maxRetries: 1, maxDelayMs: 2500 });
+        }, 0, {
+            maxRetries: 3,
+            baseDelayMs: 1200,
+            maxDelayMs: 12000
+        });
 
         const user = userResponse.data || {};
         const discordId = user.id;
@@ -198,9 +223,11 @@ router.post('/auth/discord', async (req, res) => {
         console.error('Discord auth error:', status, data || error.message);
 
         if (isDiscordTemporaryBlock(status, data)) {
+            const retryAfterSeconds = getDiscordRetryAfterSeconds(error);
             return res.status(503).json({
                 error: 'Discord temporarily limiting requests. Please try again in a few minutes.',
-                code: 'DISCORD_RATE_LIMIT'
+                code: 'DISCORD_RATE_LIMIT',
+                retryAfterSeconds
             });
         }
 

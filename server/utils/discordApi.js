@@ -7,6 +7,16 @@ const axios = require('axios');
 const DEFAULT_MAX_RETRIES = 2;
 const DEFAULT_BASE_DELAY_MS = 1500;
 const DEFAULT_MAX_DELAY_MS = 8000;
+const DEFAULT_TIMEOUT_MS = 15000;
+const RETRYABLE_NETWORK_ERRORS = new Set([
+  'ECONNABORTED',
+  'ETIMEDOUT',
+  'ECONNRESET',
+  'ERR_NETWORK',
+  'EAI_AGAIN',
+  'ENOTFOUND',
+  'EPIPE'
+]);
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -24,7 +34,9 @@ const isTemporaryCloudflareBlock = (status, data) => {
 const isRetryable = (err) => {
   const status = err.response?.status;
   const data = err.response?.data;
-  return status === 429 || (status >= 500 && status < 600) || isTemporaryCloudflareBlock(status, data);
+  const networkCode = String(err.code || '').toUpperCase();
+  const isNetworkRetryable = !err.response && RETRYABLE_NETWORK_ERRORS.has(networkCode);
+  return isNetworkRetryable || status === 429 || (status >= 500 && status < 600) || isTemporaryCloudflareBlock(status, data);
 };
 
 const normalizeRetryAfterToMs = (value) => {
@@ -50,13 +62,16 @@ const discordRequest = async (config, retries = 0, options = {}) => {
   const noRetry = options.noRetry === true;
 
   try {
+    const timeoutMs = Number.isFinite(config?.timeout) && config.timeout > 0
+      ? Number(config.timeout)
+      : DEFAULT_TIMEOUT_MS;
     const res = await axios({
       ...config,
       headers: {
         'User-Agent': 'GamingShop/1.0 (+https://github.com)',
         ...config.headers
       },
-      timeout: 15000
+      timeout: timeoutMs
     });
     return res;
   } catch (err) {
