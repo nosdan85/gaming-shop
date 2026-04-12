@@ -12,22 +12,28 @@ const Order = require('./models/Order');
 const DISCORD_API_BASE = 'https://discord.com/api/v10';
 const SNOWFLAKE_PATTERN = /^\d{16,22}$/;
 const BOT_SELF_CACHE_TTL_MS = 10 * 60 * 1000;
-const REQUEST_TIMEOUT_MS = 6500;
-const REQUEST_TIMEOUT_CREATE_CHANNEL_MS = 4500;
+const REQUEST_TIMEOUT_MS = 8000;
+const REQUEST_TIMEOUT_CREATE_CHANNEL_MS = 8000;
+const TICKET_CREATE_MIN_GAP_MS = 1200;
 
 const PERM_VIEW_CHANNEL = String(1n << 10n);
 const PERM_VIEW_SEND_HISTORY = String((1n << 10n) | (1n << 11n) | (1n << 16n));
 
 let cachedBotSelfId = '';
 let cachedBotSelfAt = 0;
+let ticketCreateChain = Promise.resolve();
+let lastTicketCreateAt = 0;
 
 class DiscordBotError extends Error {
-    constructor(message, { status = 500, code = 'DISCORD_BOT_ERROR', data = null } = {}) {
+    constructor(message, { status = 500, code = 'DISCORD_BOT_ERROR', data = null, retryAfterSeconds = 0 } = {}) {
         super(message);
         this.name = 'DiscordBotError';
         this.status = status;
         this.code = code;
         this.data = data;
+        this.retryAfterSeconds = Number.isFinite(Number(retryAfterSeconds))
+            ? Math.max(0, Math.ceil(Number(retryAfterSeconds)))
+            : 0;
     }
 }
 
@@ -41,6 +47,33 @@ const getGuildId = () => String(process.env.DISCORD_GUILD_ID || '').trim();
 const getOwnerRoleId = () => String(process.env.DISCORD_OWNER_ROLE_ID || '').trim();
 const getTicketCategoryId = () => String(process.env.DISCORD_TICKET_CATEGORY_ID || '').trim();
 const getOwnerId = () => String(process.env.DISCORD_OWNER_ID || '').trim();
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const normalizeRetryAfterSeconds = (value) => {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    if (n > 1000) return Math.ceil(n / 1000);
+    return Math.ceil(n);
+};
+
+const runTicketCreateQueued = async (runner) => {
+    const run = async () => {
+        const elapsed = Date.now() - lastTicketCreateAt;
+        const waitMs = Math.max(0, TICKET_CREATE_MIN_GAP_MS - elapsed);
+        if (waitMs > 0) {
+            await sleep(waitMs);
+        }
+        try {
+            return await runner();
+        } finally {
+            lastTicketCreateAt = Date.now();
+        }
+    };
+
+    const queued = ticketCreateChain.then(run, run);
+    ticketCreateChain = queued.catch(() => {});
+    return queued;
+};
 
 const truncateText = (value, max = 300) => String(value || '').slice(0, Math.max(0, Number(max) || 0));
 
@@ -95,6 +128,11 @@ const toDiscordBotError = (error, { defaultMessage = 'Discord API request failed
     const status = Number.isFinite(statusRaw) && statusRaw > 0 ? statusRaw : 500;
     const data = error?.response?.data || null;
     const apiMessage = formatDiscordApiMessage(data);
+    const retryAfterSeconds = Math.max(
+        normalizeRetryAfterSeconds(error?.response?.headers?.['retry-after']),
+        normalizeRetryAfterSeconds(data?.retry_after),
+        normalizeRetryAfterSeconds(data?.retryAfterSeconds)
+    );
 
     if (status === 401) {
         return new DiscordBotError('DISCORD_BOT_TOKEN is invalid', {
@@ -120,7 +158,8 @@ const toDiscordBotError = (error, { defaultMessage = 'Discord API request failed
         return new DiscordBotError('Discord is temporarily rate limited. Please retry shortly.', {
             status: 503,
             code: 'DISCORD_RATE_LIMITED',
-            data
+            data,
+            retryAfterSeconds
         });
     }
     if (status >= 500 && status < 600) {
@@ -145,7 +184,15 @@ const toDiscordBotError = (error, { defaultMessage = 'Discord API request failed
     });
 };
 
-const botRequest = async ({ method, path, data, timeout = REQUEST_TIMEOUT_MS, retry = true, defaultCode }) => {
+const botRequest = async ({
+    method,
+    path,
+    data,
+    timeout = REQUEST_TIMEOUT_MS,
+    retry = true,
+    retryOptions = {},
+    defaultCode
+}) => {
     assertDiscordConfig();
     const token = getBotToken();
     try {
@@ -159,7 +206,11 @@ const botRequest = async ({ method, path, data, timeout = REQUEST_TIMEOUT_MS, re
                 'Content-Type': 'application/json'
             }
         }, 0, retry
-            ? { maxRetries: 1, baseDelayMs: 700, maxDelayMs: 2500 }
+            ? {
+                maxRetries: Number.isInteger(retryOptions.maxRetries) ? retryOptions.maxRetries : 2,
+                baseDelayMs: Number.isFinite(retryOptions.baseDelayMs) ? retryOptions.baseDelayMs : 800,
+                maxDelayMs: Number.isFinite(retryOptions.maxDelayMs) ? retryOptions.maxDelayMs : 10000
+            }
             : { noRetry: true }
         );
     } catch (error) {
@@ -321,44 +372,47 @@ const createTicketChannel = async ({ channelName, customerId }) => {
         console.warn(`Ticket guild membership check unavailable for ${customerId}; proceeding with channel create.`);
     }
 
-    const guildId = getGuildId();
-    const payloads = await buildCreateChannelPayloads({ channelName, customerId });
+    return runTicketCreateQueued(async () => {
+        const guildId = getGuildId();
+        const payloads = await buildCreateChannelPayloads({ channelName, customerId });
 
-    let lastRecoverableError = null;
-    for (const payload of payloads) {
-        try {
-            const res = await botRequest({
-                method: 'post',
-                path: `/guilds/${guildId}/channels`,
-                data: payload,
-                timeout: REQUEST_TIMEOUT_CREATE_CHANNEL_MS,
-                retry: false,
-                defaultCode: 'DISCORD_CHANNEL_CREATE_FAILED'
-            });
-            const channelId = String(res?.data?.id || '').trim();
-            if (isSnowflake(channelId)) {
-                return channelId;
+        let lastRecoverableError = null;
+        for (const payload of payloads) {
+            try {
+                const res = await botRequest({
+                    method: 'post',
+                    path: `/guilds/${guildId}/channels`,
+                    data: payload,
+                    timeout: REQUEST_TIMEOUT_CREATE_CHANNEL_MS,
+                    retry: true,
+                    retryOptions: { maxRetries: 2, baseDelayMs: 900, maxDelayMs: 12000 },
+                    defaultCode: 'DISCORD_CHANNEL_CREATE_FAILED'
+                });
+                const channelId = String(res?.data?.id || '').trim();
+                if (isSnowflake(channelId)) {
+                    return channelId;
+                }
+                lastRecoverableError = new DiscordBotError('Discord returned an invalid channel id', {
+                    status: 503,
+                    code: 'DISCORD_CHANNEL_CREATE_INVALID'
+                });
+            } catch (error) {
+                if (!(error instanceof DiscordBotError)) {
+                    throw error;
+                }
+                // Hard fail: config/permission/rate-limit/unavailable
+                if (error.status === 500 || error.status === 503) {
+                    throw error;
+                }
+                // Recoverable candidate mismatch (bad category/role/payload), keep trying fallback payloads
+                lastRecoverableError = error;
             }
-            lastRecoverableError = new DiscordBotError('Discord returned an invalid channel id', {
-                status: 503,
-                code: 'DISCORD_CHANNEL_CREATE_INVALID'
-            });
-        } catch (error) {
-            if (!(error instanceof DiscordBotError)) {
-                throw error;
-            }
-            // Hard fail: config/permission/rate-limit/unavailable
-            if (error.status === 500 || error.status === 503) {
-                throw error;
-            }
-            // Recoverable candidate mismatch (bad category/role/payload), keep trying fallback payloads
-            lastRecoverableError = error;
         }
-    }
 
-    throw lastRecoverableError || new DiscordBotError('Could not create Discord ticket channel', {
-        status: 503,
-        code: 'DISCORD_CHANNEL_CREATE_FAILED'
+        throw lastRecoverableError || new DiscordBotError('Could not create Discord ticket channel', {
+            status: 503,
+            code: 'DISCORD_CHANNEL_CREATE_FAILED'
+        });
     });
 };
 
@@ -379,7 +433,8 @@ const sendTicketMessage = async ({ channelId, content, embed, components = [] })
             components: Array.isArray(components) ? components.map((item) => item.toJSON()) : []
         },
         timeout: REQUEST_TIMEOUT_MS,
-        retry: false,
+        retry: true,
+        retryOptions: { maxRetries: 2, baseDelayMs: 700, maxDelayMs: 8000 },
         defaultCode: 'DISCORD_MESSAGE_SEND_FAILED'
     });
 };

@@ -33,6 +33,8 @@ const discordAuthInFlight = new Map();
 let discordAuthBlockedUntilMs = 0;
 let discordTokenExchangeChain = Promise.resolve();
 let lastDiscordTokenExchangeAtMs = 0;
+const orderTicketInFlight = new Map();
+const paypalTicketInFlight = new Map();
 
 const getAuthCodeCacheKey = (code) => crypto.createHash('sha256').update(String(code || '')).digest('hex');
 const cleanupAuthSuccessCache = () => {
@@ -88,6 +90,16 @@ const withTimeout = (promise, timeoutMs, fallbackValue = null) => Promise.race([
     promise,
     new Promise((resolve) => setTimeout(() => resolve(fallbackValue), timeoutMs))
 ]);
+const runSingleFlight = (map, key, runner) => {
+    const normalizedKey = String(key || '').trim();
+    if (!normalizedKey) return Promise.resolve().then(runner);
+    if (map.has(normalizedKey)) return map.get(normalizedKey);
+    const task = Promise.resolve()
+        .then(runner)
+        .finally(() => map.delete(normalizedKey));
+    map.set(normalizedKey, task);
+    return task;
+};
 
 const getBackendBaseUrl = () => (process.env.WEBHOOK_BASE_URL || process.env.BACKEND_URL || '').replace(/\/+$/, '');
 const getClientBaseUrl = () => ((process.env.CLIENT_URL || '').split(',')[0] || '').trim().replace(/\/+$/, '');
@@ -101,11 +113,13 @@ const buildTicketErrorResponse = (error) => {
     if (error instanceof DiscordBotError) {
         const status = Number(error.status);
         const safeStatus = Number.isFinite(status) && status >= 400 && status <= 599 ? status : 503;
+        const retryAfterSeconds = Number(error.retryAfterSeconds) || 0;
         return {
             status: safeStatus,
             payload: {
                 error: error.message || 'Ticket bot is temporarily unavailable. Please try again in a moment.',
-                code: error.code || 'DISCORD_TICKET_ERROR'
+                code: error.code || 'DISCORD_TICKET_ERROR',
+                ...(retryAfterSeconds > 0 ? { retryAfterSeconds } : {})
             }
         };
     }
@@ -865,22 +879,28 @@ router.post('/create-ticket-paypal-ff', authRequired, async (req, res) => {
             });
         }
 
-        const counter = await Counter.findOneAndUpdate(
-            { id: 'paypalTicket' },
-            { $inc: { seq: 1 } },
-            { new: true, upsert: true }
-        );
+        const channelId = await runSingleFlight(paypalTicketInFlight, `paypal_ff:${order.orderId}`, async () => {
+            const fresh = await Order.findById(order._id).lean();
+            if (fresh?.paypalTicketChannelId) return fresh.paypalTicketChannelId;
 
-        const paypalSeq = counter.seq;
-        const channelName = `paypal_${paypalSeq}`;
-        const channelId = await Promise.resolve(createPayPalFFTicket(order, paypalSeq));
-        if (channelId) {
-            await Order.findByIdAndUpdate(order._id, {
-                paymentMethod: 'paypal_ff',
-                paypalTicketChannel: channelName,
-                paypalTicketChannelId: channelId
-            });
-        }
+            const counter = await Counter.findOneAndUpdate(
+                { id: 'paypalTicket' },
+                { $inc: { seq: 1 } },
+                { new: true, upsert: true }
+            );
+
+            const paypalSeq = counter.seq;
+            const channelName = `paypal_${paypalSeq}`;
+            const createdChannelId = await Promise.resolve(createPayPalFFTicket(order, paypalSeq));
+            if (createdChannelId) {
+                await Order.findByIdAndUpdate(order._id, {
+                    paymentMethod: 'paypal_ff',
+                    paypalTicketChannel: channelName,
+                    paypalTicketChannelId: createdChannelId
+                });
+            }
+            return createdChannelId;
+        });
 
         return res.json({
             channelId: channelId || null,
@@ -913,10 +933,16 @@ router.post('/create-ticket', authRequired, async (req, res) => {
             return res.json({ channelId: order.channelId });
         }
 
-        const channelId = await Promise.resolve(createOrderTicket(order));
+        const channelId = await runSingleFlight(orderTicketInFlight, `order_ticket:${order.orderId}`, async () => {
+            const fresh = await Order.findById(order._id).lean();
+            if (fresh?.channelId) return fresh.channelId;
+            const createdChannelId = await Promise.resolve(createOrderTicket(order));
+            if (createdChannelId) {
+                await Order.findByIdAndUpdate(order._id, { channelId: createdChannelId });
+            }
+            return createdChannelId;
+        });
         if (!channelId) throw new DiscordBotError('Could not create ticket channel', { status: 503, code: 'DISCORD_TICKET_UNAVAILABLE' });
-
-        await Order.findByIdAndUpdate(order._id, { channelId });
         return res.json({ channelId });
     } catch (err) {
         console.error('Create ticket error:', err);

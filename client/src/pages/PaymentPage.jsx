@@ -9,7 +9,15 @@ const TICKET_REQUEST_TIMEOUT_MS = 30000;
 
 const getHttpErrorMessage = (err, fallback) => {
   if (err?.code === 'ECONNABORTED') return 'Request timeout. Please try again.';
-  return err?.response?.data?.error || fallback;
+  const data = err?.response?.data || {};
+  if (data?.code === 'DISCORD_RATE_LIMITED') {
+    const retryAfterSeconds = Number(data?.retryAfterSeconds) || 0;
+    if (retryAfterSeconds > 0) {
+      return `Discord is temporarily rate limited. Please retry in about ${retryAfterSeconds}s.`;
+    }
+    return 'Discord is temporarily rate limited. Please retry shortly.';
+  }
+  return data?.error || fallback;
 };
 
 const openTicketChannel = (channelId) => {
