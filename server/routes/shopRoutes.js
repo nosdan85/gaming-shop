@@ -18,9 +18,12 @@ const MAX_QUANTITY_PER_PRODUCT = 100000;
 const AUTH_CODE_CACHE_TTL_MS = 2 * 60 * 1000;
 const AUTH_RATE_LIMIT_DEFAULT_RETRY_SECONDS = 30;
 const AUTH_RATE_LIMIT_MAX_RETRY_SECONDS = 120;
+const DISCORD_TOKEN_MIN_GAP_MS = 1500;
 const discordAuthSuccessCache = new Map();
 const discordAuthInFlight = new Map();
 let discordAuthBlockedUntilMs = 0;
+let discordTokenExchangeChain = Promise.resolve();
+let lastDiscordTokenExchangeAtMs = 0;
 
 const getAuthCodeCacheKey = (code) => crypto.createHash('sha256').update(String(code || '')).digest('hex');
 const cleanupAuthSuccessCache = () => {
@@ -53,6 +56,23 @@ const withDiscordStep = async (step, runner) => {
         if (error && !error.discordStep) error.discordStep = step;
         throw error;
     }
+};
+const runDiscordTokenExchangeQueued = async (runner) => {
+    const run = async () => {
+        const elapsed = Date.now() - lastDiscordTokenExchangeAtMs;
+        const waitMs = Math.max(0, DISCORD_TOKEN_MIN_GAP_MS - elapsed);
+        if (waitMs > 0) {
+            await new Promise((resolve) => setTimeout(resolve, waitMs));
+        }
+        try {
+            return await runner();
+        } finally {
+            lastDiscordTokenExchangeAtMs = Date.now();
+        }
+    };
+    const queued = discordTokenExchangeChain.then(run, run);
+    discordTokenExchangeChain = queued.catch(() => {});
+    return queued;
 };
 
 const getBackendBaseUrl = () => (process.env.WEBHOOK_BASE_URL || process.env.BACKEND_URL || '').replace(/\/+$/, '');
@@ -92,6 +112,15 @@ const getDiscordRetryAfterSeconds = (error) => {
         error?.response?.data?.retry_after ?? error?.response?.data?.retryAfterSeconds
     );
     return Math.max(headerSeconds, bodySeconds, 0);
+};
+const getDiscordAuthCooldownFromError = (error) => {
+    const baseRetry = Math.max(getDiscordRetryAfterSeconds(error), AUTH_RATE_LIMIT_DEFAULT_RETRY_SECONDS);
+    const step = error?.discordStep || 'unknown';
+    // Token endpoint rate limit is usually stricter; cool down longer to avoid hammering.
+    if (step === 'oauth_token') {
+        return Math.max(baseRetry, 60);
+    }
+    return baseRetry;
 };
 
 const timingSafeEqualHex = (left, right) => {
@@ -178,7 +207,7 @@ const canAccessOwnerEndpoints = async (discordId) => {
 };
 
 const exchangeDiscordAuthCode = async (code, redirectUri) => {
-    const tokenResponse = await withDiscordStep('oauth_token', () => discordRequest({
+    const tokenResponse = await withDiscordStep('oauth_token', () => runDiscordTokenExchangeQueued(() => discordRequest({
         method: 'post',
         url: 'https://discord.com/api/oauth2/token',
         timeout: 12000,
@@ -190,7 +219,7 @@ const exchangeDiscordAuthCode = async (code, redirectUri) => {
             redirect_uri: redirectUri
         }),
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-    }, 0, { noRetry: true }));
+    }, 0, { noRetry: true })));
 
     const { access_token, refresh_token, expires_in, scope } = tokenResponse.data || {};
 
@@ -278,7 +307,7 @@ router.post('/auth/discord', async (req, res) => {
             const message = getDiscordErrorMessage(data);
             const step = error.discordStep || 'unknown';
             if (isDiscordTemporaryBlock(status, data)) {
-                const retryAfter = Math.max(getDiscordRetryAfterSeconds(error), AUTH_RATE_LIMIT_DEFAULT_RETRY_SECONDS);
+                const retryAfter = getDiscordAuthCooldownFromError(error);
                 const cooldown = setDiscordAuthCooldownSeconds(retryAfter) || retryAfter;
                 return res.status(503).json(buildDiscordRateLimitPayload(cooldown, step, status || 503));
             }
@@ -314,7 +343,7 @@ router.post('/auth/discord', async (req, res) => {
         });
 
         if (isDiscordTemporaryBlock(status, data)) {
-            const retryAfter = Math.max(getDiscordRetryAfterSeconds(error), AUTH_RATE_LIMIT_DEFAULT_RETRY_SECONDS);
+            const retryAfter = getDiscordAuthCooldownFromError(error);
             const cooldown = setDiscordAuthCooldownSeconds(retryAfter) || retryAfter;
             return res.status(503).json(buildDiscordRateLimitPayload(cooldown, step, status || 503));
         }
