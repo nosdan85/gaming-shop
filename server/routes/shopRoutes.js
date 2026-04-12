@@ -27,7 +27,6 @@ const AUTH_RATE_LIMIT_MAX_RETRY_SECONDS = 120;
 const DISCORD_TOKEN_MIN_GAP_MS = 1500;
 const BRIDGE_REQUEST_MAX_AGE_MS = 5 * 60 * 1000;
 const DISCORD_GUILD_CHECK_TIMEOUT_MS = 8000;
-const CHECKOUT_TICKET_CREATE_TIMEOUT_MS = 22000;
 const PAYMENT_PROVIDER_TIMEOUT_MS = 15000;
 const discordAuthSuccessCache = new Map();
 const discordAuthInFlight = new Map();
@@ -394,11 +393,41 @@ const ensureOrderTicketChannelId = async (order) => {
         if (channelId) {
             const targetId = order._id || freshOrder?._id;
             if (targetId) {
-                await Order.findByIdAndUpdate(targetId, { channelId });
+                await Order.findByIdAndUpdate(targetId, {
+                    channelId,
+                    ticketStatus: 'ready',
+                    ticketError: '',
+                    status: 'Waiting Payment'
+                });
             }
         }
         return channelId || null;
     });
+};
+const startOrderTicketCreation = (order) => {
+    if (!order?._id || !order?.orderId || isPanelTicketMode()) return;
+
+    void (async () => {
+        try {
+            await Order.findByIdAndUpdate(order._id, {
+                ticketStatus: 'creating',
+                ticketError: ''
+            });
+            const channelId = await ensureOrderTicketChannelId(order);
+            if (!channelId) {
+                await Order.findByIdAndUpdate(order._id, {
+                    ticketStatus: 'failed',
+                    ticketError: 'Automatic ticket creation did not return a Discord channel.'
+                });
+            }
+        } catch (error) {
+            const { payload } = buildTicketErrorResponse(error);
+            await Order.findByIdAndUpdate(order._id, {
+                ticketStatus: 'failed',
+                ticketError: String(payload?.error || 'Automatic ticket creation failed.')
+            });
+        }
+    })();
 };
 
 const canAccessOwnerEndpoints = async (discordId) => {
@@ -640,40 +669,22 @@ router.post('/checkout', authRequired, checkoutLimiter, async (req, res) => {
         );
 
         const orderId = `nm_${counter.seq}`;
+        const ticketMode = isPanelTicketMode() ? 'panel' : 'bot';
         const newOrder = new Order({
             orderId,
             discordId,
             discordUsername: dbUser.discordUsername || '',
             items,
             totalAmount,
-            status: 'Pending'
+            status: ticketMode === 'panel' ? 'Waiting Payment' : 'Pending',
+            ticketStatus: ticketMode === 'panel' ? 'panel' : 'creating',
+            ticketError: ''
         });
         await newOrder.save();
 
-        const ticketMode = isPanelTicketMode() ? 'panel' : 'bot';
         const panelUrl = isPanelTicketMode() ? getTicketPanelUrl() : '';
-        let channelId = null;
-        let ticketError = '';
-        let ticketRetryAfterSeconds = 0;
-
-        if (ticketMode === 'panel') {
-            await Order.findByIdAndUpdate(newOrder._id, { status: 'Waiting Payment' });
-        } else {
-            try {
-                const createdChannelId = await withTimeout(
-                    Promise.resolve(ensureOrderTicketChannelId(newOrder)),
-                    CHECKOUT_TICKET_CREATE_TIMEOUT_MS,
-                    null
-                );
-                channelId = createdChannelId || null;
-                if (!channelId) {
-                    ticketError = 'Order created, but ticket is still being prepared. Please open ticket on payment page.';
-                }
-            } catch (ticketCreateError) {
-                const payload = buildTicketErrorResponse(ticketCreateError).payload || {};
-                ticketError = String(payload.error || 'Order created, but automatic ticket creation failed.');
-                ticketRetryAfterSeconds = Number(payload.retryAfterSeconds || 0);
-            }
+        if (ticketMode === 'bot') {
+            startOrderTicketCreation(newOrder);
         }
 
         return res.json({
@@ -681,10 +692,10 @@ router.post('/checkout', authRequired, checkoutLimiter, async (req, res) => {
             orderId,
             totalAmount: newOrder.totalAmount,
             ticketMode,
-            channelId,
+            channelId: null,
+            ticketStatus: newOrder.ticketStatus,
             ...(panelUrl ? { panelUrl } : {}),
-            ...(ticketError ? { ticketError } : {}),
-            ...(ticketRetryAfterSeconds > 0 ? { ticketRetryAfterSeconds } : {})
+            ticketError: ''
         });
     } catch (err) {
         console.error('Checkout error:', err);
@@ -704,6 +715,8 @@ router.get('/order-payment-info', authRequired, async (req, res) => {
             status: order.status,
             isPaid: order.status === 'Completed',
             channelId: order.channelId || null,
+            ticketStatus: order.ticketStatus || 'pending',
+            ticketError: order.ticketError || '',
             ticketMode: isPanelTicketMode() ? 'panel' : 'bot',
             panelUrl: isPanelTicketMode() ? getTicketPanelUrl() : ''
         });
@@ -1017,12 +1030,22 @@ router.post('/create-ticket', authRequired, async (req, res) => {
             return res.json({ channelId: order.channelId });
         }
 
+        await Order.findByIdAndUpdate(order._id, {
+            ticketStatus: 'creating',
+            ticketError: ''
+        });
         const channelId = await Promise.resolve(ensureOrderTicketChannelId(order));
         if (!channelId) throw new DiscordBotError('Could not create ticket channel', { status: 503, code: 'DISCORD_TICKET_UNAVAILABLE' });
         return res.json({ channelId });
     } catch (err) {
         console.error('Create ticket error:', err);
         const { status, payload } = buildTicketErrorResponse(err);
+        if (req.body?.orderId) {
+            await Order.findOneAndUpdate(
+                { orderId: req.body.orderId, discordId: req.user?.discordId },
+                { ticketStatus: 'failed', ticketError: String(payload.error || 'Ticket creation failed.') }
+            ).catch(() => {});
+        }
         if (payload.code === 'USER_NOT_IN_GUILD') {
             return res.status(status).json({
                 ...payload,

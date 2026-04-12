@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 
@@ -50,6 +50,7 @@ const PaymentPage = () => {
   const [paypalFFLoading, setPaypalFFLoading] = useState(false);
   const [paypalTicketLoading, setPaypalTicketLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const autoOpenedChannelRef = useRef('');
 
   useEffect(() => {
     if (paidFromUrl) setPaid(true);
@@ -68,6 +69,10 @@ const PaymentPage = () => {
       .then((res) => {
         setOrderInfo(res.data);
         if (res.data?.isPaid) setPaid(true);
+        if (res.data?.channelId && autoOpenedChannelRef.current !== res.data.channelId) {
+          autoOpenedChannelRef.current = res.data.channelId;
+          openTicketChannel(res.data.channelId);
+        }
       })
       .catch((err) => {
         if (err.response?.status === 401) {
@@ -82,6 +87,50 @@ const PaymentPage = () => {
       })
       .finally(() => setOrderInfoLoading(false));
   }, [orderId]);
+
+  useEffect(() => {
+    if (!orderId || paid || !orderInfo) return undefined;
+    if (orderInfo.ticketMode !== 'bot') return undefined;
+    if (orderInfo.channelId || orderInfo.ticketStatus !== 'creating') return undefined;
+
+    let cancelled = false;
+    let timeoutId = null;
+    let attempts = 0;
+
+    const pollOrderInfo = async () => {
+      attempts += 1;
+      try {
+        const res = await axios.get(`/api/shop/order-payment-info?orderId=${encodeURIComponent(orderId)}`, {
+          timeout: REQUEST_TIMEOUT_MS
+        });
+        if (cancelled) return;
+
+        setOrderInfo(res.data);
+        if (res.data?.isPaid) setPaid(true);
+        if (res.data?.channelId && autoOpenedChannelRef.current !== res.data.channelId) {
+          autoOpenedChannelRef.current = res.data.channelId;
+          openTicketChannel(res.data.channelId);
+          return;
+        }
+
+        const shouldContinue = attempts < 12 && res.data?.ticketStatus === 'creating' && !res.data?.channelId;
+        if (shouldContinue) {
+          timeoutId = setTimeout(pollOrderInfo, 2000);
+        }
+      } catch {
+        if (cancelled) return;
+        if (attempts < 12) {
+          timeoutId = setTimeout(pollOrderInfo, 3000);
+        }
+      }
+    };
+
+    timeoutId = setTimeout(pollOrderInfo, 2000);
+    return () => {
+      cancelled = true;
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [orderId, paid, orderInfo]);
 
   if (!orderId) {
     return (
@@ -151,6 +200,15 @@ const PaymentPage = () => {
   };
 
   const handleCashAppRobux = async () => {
+    if (orderInfo?.channelId) {
+      openTicketChannel(orderInfo.channelId);
+      return;
+    }
+    if (orderInfo?.ticketMode === 'bot' && orderInfo?.ticketStatus === 'creating') {
+      alert('Discord ticket is still being created. It will open automatically once ready.');
+      return;
+    }
+
     setTicketLoading('ticket');
     try {
       const res = await axios.post(
@@ -236,6 +294,18 @@ const PaymentPage = () => {
         <p className="text-gray-400 text-sm mb-1">Order: <span className="text-white font-bold">{orderId}</span></p>
         <p className="text-gray-400 text-sm mb-6">Total: <span className="text-white font-bold">${totalNum.toFixed(2)}</span></p>
 
+        {orderInfo?.ticketMode === 'bot' && orderInfo?.ticketStatus === 'creating' && !orderInfo?.channelId && (
+          <div className="mb-4 rounded-xl border border-[#2c2c2e] bg-[#111114] px-4 py-3 text-sm text-yellow-300">
+            Creating your Discord ticket. It should open automatically when ready.
+          </div>
+        )}
+
+        {orderInfo?.ticketMode === 'bot' && orderInfo?.ticketStatus === 'failed' && orderInfo?.ticketError && (
+          <div className="mb-4 rounded-xl border border-[#4b1d1d] bg-[#241010] px-4 py-3 text-sm text-red-300">
+            {orderInfo.ticketError}
+          </div>
+        )}
+
         <button
           onClick={handlePayPal}
           disabled={paypalLoading}
@@ -285,10 +355,16 @@ const PaymentPage = () => {
 
         <button
           onClick={handleCashAppRobux}
-          disabled={ticketLoading !== null}
+          disabled={ticketLoading !== null || (orderInfo?.ticketMode === 'bot' && orderInfo?.ticketStatus === 'creating' && !orderInfo?.channelId)}
           className="w-full py-3 min-h-[44px] bg-[#00D632] hover:bg-[#00b329] active:scale-[0.98] disabled:opacity-50 text-black font-bold rounded-xl transition mb-4 touch-manipulation"
         >
-          {ticketLoading === 'ticket' ? 'Loading...' : 'Pay with CashApp or Robux'}
+          {ticketLoading === 'ticket'
+            ? 'Loading...'
+            : (orderInfo?.ticketMode === 'bot' && orderInfo?.ticketStatus === 'creating' && !orderInfo?.channelId)
+              ? 'Creating Discord Ticket...'
+              : orderInfo?.channelId
+                ? 'Open Discord Ticket'
+                : 'Pay with CashApp or Robux'}
         </button>
 
         <div className="flex items-center gap-3 my-6">
