@@ -8,11 +8,138 @@ const OWNER_ID = process.env.DISCORD_OWNER_ID || '';
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMembers
+        GatewayIntentBits.GuildMessages
     ]
 });
+
+const DISCORD_API_BASE = 'https://discord.com/api';
+const SNOWFLAKE_PATTERN = /^\d{16,22}$/;
+const BOT_ID_CACHE_TTL_MS = 10 * 60 * 1000;
+
+const PERM_VIEW_CHANNEL = PermissionsBitField.Flags.ViewChannel.toString();
+const PERM_VIEW_AND_SEND = (
+    PermissionsBitField.Flags.ViewChannel
+    | PermissionsBitField.Flags.SendMessages
+    | PermissionsBitField.Flags.ReadMessageHistory
+).toString();
+
+let cachedBotUserId = null;
+let cachedBotUserIdAt = 0;
+
+const isSnowflake = (value) => SNOWFLAKE_PATTERN.test(String(value || '').trim());
+const getBotToken = () => String(process.env.DISCORD_BOT_TOKEN || '').trim();
+const getGuildId = () => String(process.env.DISCORD_GUILD_ID || '').trim();
+
+const discordBotRequest = async (config) => {
+    const token = getBotToken();
+    if (!token) {
+        throw new Error('DISCORD_BOT_TOKEN is missing');
+    }
+    return discordRequest({
+        ...config,
+        headers: {
+            Authorization: `Bot ${token}`,
+            ...(config.headers || {})
+        }
+    }, 0, { noRetry: true });
+};
+
+const getBotUserId = async () => {
+    if (client?.user?.id) return client.user.id;
+    if (cachedBotUserId && (Date.now() - cachedBotUserIdAt) < BOT_ID_CACHE_TTL_MS) {
+        return cachedBotUserId;
+    }
+    const res = await discordBotRequest({
+        method: 'get',
+        url: `${DISCORD_API_BASE}/users/@me`,
+        timeout: 8000
+    });
+    const id = String(res?.data?.id || '').trim();
+    if (!isSnowflake(id)) return null;
+    cachedBotUserId = id;
+    cachedBotUserIdAt = Date.now();
+    return id;
+};
+
+const createTicketChannelViaRest = async ({ channelName, customerId, categoryId, ownerRoleId }) => {
+    const guildId = getGuildId();
+    if (!isSnowflake(guildId) || !isSnowflake(customerId)) {
+        return null;
+    }
+
+    const botUserId = await getBotUserId().catch(() => null);
+    const basePayload = {
+        name: String(channelName || `ticket_${Date.now()}`).slice(0, 90),
+        type: 0
+    };
+
+    const buildOverwrites = (includeOwnerRole) => {
+        const permissionOverwrites = [
+            { id: guildId, type: 0, deny: PERM_VIEW_CHANNEL },
+            { id: customerId, type: 1, allow: PERM_VIEW_AND_SEND }
+        ];
+        if (includeOwnerRole && isSnowflake(ownerRoleId)) {
+            permissionOverwrites.push({ id: ownerRoleId, type: 0, allow: PERM_VIEW_AND_SEND });
+        }
+        if (isSnowflake(botUserId)) {
+            permissionOverwrites.push({ id: botUserId, type: 1, allow: PERM_VIEW_AND_SEND });
+        }
+        return permissionOverwrites;
+    };
+
+    const candidates = [];
+    const ownerVariants = isSnowflake(ownerRoleId) ? [true, false] : [false];
+    for (const includeOwnerRole of ownerVariants) {
+        const payload = {
+            ...basePayload,
+            permission_overwrites: buildOverwrites(includeOwnerRole)
+        };
+        if (isSnowflake(categoryId)) {
+            candidates.push({ ...payload, parent_id: categoryId });
+        }
+        candidates.push(payload);
+    }
+
+    for (const candidate of candidates) {
+        try {
+            const res = await discordBotRequest({
+                method: 'post',
+                url: `${DISCORD_API_BASE}/guilds/${guildId}/channels`,
+                timeout: 12000,
+                data: candidate,
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const channelId = String(res?.data?.id || '').trim();
+            if (isSnowflake(channelId)) return channelId;
+        } catch (error) {
+            const status = Number(error?.response?.status) || 0;
+            if (status === 401 || status === 403) {
+                throw error;
+            }
+            // Try next candidate (for example, retry without parent_id).
+        }
+    }
+
+    return null;
+};
+
+const sendMessageToChannelViaRest = async ({ channelId, content, embed, components }) => {
+    if (!isSnowflake(channelId)) return false;
+    const payload = {
+        content: String(content || '').slice(0, 1900),
+        embeds: embed ? [embed.toJSON()] : [],
+        components: Array.isArray(components) ? components.map((c) => c.toJSON()) : []
+    };
+
+    await discordBotRequest({
+        method: 'post',
+        url: `${DISCORD_API_BASE}/channels/${channelId}/messages`,
+        timeout: 12000,
+        data: payload,
+        headers: { 'Content-Type': 'application/json' }
+    });
+    return true;
+};
 
 const hasOwnerAccess = (message) => {
     const hasOwnerRole = message.member?.roles?.cache?.has(process.env.DISCORD_OWNER_ROLE_ID);
@@ -22,18 +149,20 @@ const hasOwnerAccess = (message) => {
 
 const resolveOwnerRoleId = async (guild) => {
     const rawRoleId = String(process.env.DISCORD_OWNER_ROLE_ID || '').trim();
-    if (!rawRoleId) return null;
+    if (!isSnowflake(rawRoleId)) return null;
+    if (!guild) return rawRoleId;
     try {
         const role = await guild.roles.fetch(rawRoleId);
         return role?.id || null;
     } catch {
-        return null;
+        return rawRoleId;
     }
 };
 
 const resolveTicketCategoryId = async (guild) => {
     const rawCategoryId = String(process.env.DISCORD_TICKET_CATEGORY_ID || '').trim();
-    if (!rawCategoryId) return null;
+    if (!isSnowflake(rawCategoryId)) return null;
+    if (!guild) return rawCategoryId;
     try {
         const channel = await guild.channels.fetch(rawCategoryId);
         return channel?.id || null;
@@ -76,26 +205,134 @@ const checkUserInGuild = async (discordId) => {
 
 // --- HELPER: CHECK USER CÓ OWNER ROLE ---
 const checkUserHasOwnerRole = async (discordId) => {
+    const ownerRoleId = String(process.env.DISCORD_OWNER_ROLE_ID || '').trim();
+    if (!isSnowflake(discordId) || !isSnowflake(ownerRoleId)) return false;
+
+    const guildId = getGuildId();
+    const token = getBotToken();
+    if (isSnowflake(guildId) && token) {
+        try {
+            const res = await discordBotRequest({
+                method: 'get',
+                url: `${DISCORD_API_BASE}/guilds/${guildId}/members/${discordId}`,
+                timeout: 8000
+            });
+            const roleIds = Array.isArray(res?.data?.roles) ? res.data.roles.map((r) => String(r)) : [];
+            return roleIds.includes(ownerRoleId);
+        } catch (error) {
+            const status = Number(error?.response?.status) || 0;
+            if (status === 404) return false;
+            if (status === 401 || status === 403) {
+                console.error('checkUserHasOwnerRole permission/config error:', error?.response?.data || error.message);
+            }
+        }
+    }
+
     try {
         const guild = await client.guilds.fetch(process.env.DISCORD_GUILD_ID);
         if (!guild) return false;
         const member = await guild.members.fetch(discordId);
-        const ownerRoleId = process.env.DISCORD_OWNER_ROLE_ID;
         return member.roles.cache.has(ownerRoleId);
-    } catch (e) { return false; }
+    } catch (e) {
+        return false;
+    }
+};
+
+const createPayPalFFTicketViaRest = async (order, paypalSeq) => {
+    const categoryId = await resolveTicketCategoryId(null);
+    const ownerRoleId = await resolveOwnerRoleId(null);
+    const channelId = await createTicketChannelViaRest({
+        channelName: `paypal_${paypalSeq}`,
+        customerId: order.discordId,
+        categoryId,
+        ownerRoleId
+    });
+
+    if (!channelId) return null;
+
+    const embed = new EmbedBuilder()
+        .setColor(0x003087)
+        .setTitle(`PayPal F&F - Order ${order.orderId}`)
+        .setDescription(`Hello <@${order.discordId}>. Upload your PayPal payment screenshot here.`)
+        .addFields(
+            { name: 'Customer', value: order.discordUsername || `<@${order.discordId}>`, inline: true },
+            { name: 'Total', value: `$${order.totalAmount}`, inline: true },
+            { name: 'Items', value: order.items.map((i) => `${i.quantity}x ${i.name}`).join('\n') }
+        );
+
+    const mentionContent = isSnowflake(ownerRoleId)
+        ? `<@${order.discordId}> <@&${ownerRoleId}>`
+        : `<@${order.discordId}>`;
+
+    const sent = await sendMessageToChannelViaRest({
+        channelId,
+        content: mentionContent,
+        embed
+    }).catch((error) => {
+        console.error('PayPal F&F REST send message error:', error?.response?.data || error.message || error);
+        return false;
+    });
+
+    return sent ? channelId : null;
+};
+
+const createOrderTicketViaRest = async (order) => {
+    const categoryId = await resolveTicketCategoryId(null);
+    const ownerRoleId = await resolveOwnerRoleId(null);
+    const channelId = await createTicketChannelViaRest({
+        channelName: `${order.orderId}`,
+        customerId: order.discordId,
+        categoryId,
+        ownerRoleId
+    });
+
+    if (!channelId) return null;
+
+    const orderEmbed = new EmbedBuilder()
+        .setColor(0xFFFFFF)
+        .setTitle(`Order: ${order.orderId}`)
+        .setDescription(`Hello <@${order.discordId}>. Choose CashApp or Robux.`)
+        .addFields(
+            { name: 'Customer', value: order.discordUsername || `<@${order.discordId}>`, inline: true },
+            { name: 'Total', value: `$${order.totalAmount}`, inline: true },
+            { name: 'Items', value: order.items.map((i) => `${i.quantity}x ${i.name}`).join('\n') },
+            { name: 'Payment', value: '-', inline: false },
+            { name: 'Paid', value: 'No', inline: false }
+        );
+
+    const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`pay_cashapp_${order.orderId}`).setLabel('CashApp').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`pay_robux_${order.orderId}`).setLabel('Robux').setStyle(ButtonStyle.Secondary)
+    );
+
+    const mentionContent = isSnowflake(ownerRoleId)
+        ? `<@${order.discordId}> <@&${ownerRoleId}>`
+        : `<@${order.discordId}>`;
+
+    const sent = await sendMessageToChannelViaRest({
+        channelId,
+        content: mentionContent,
+        embed: orderEmbed,
+        components: [row]
+    }).catch((error) => {
+        console.error('Order REST send message error:', error?.response?.data || error.message || error);
+        return false;
+    });
+
+    return sent ? channelId : null;
 };
 
 // --- TICKET: PayPal F&F (tên paypal_1, paypal_2...; khác với ticket CashApp/Robux) ---
 const createPayPalFFTicket = async (order, paypalSeq) => {
     try {
         if (!client.isReady()) {
-            console.error('PayPal F&F Ticket Error: Discord bot is not ready');
-            return null;
+            console.warn('PayPal F&F Ticket: bot not ready, fallback to REST');
+            return createPayPalFFTicketViaRest(order, paypalSeq);
         }
         const guild = await client.guilds.fetch(process.env.DISCORD_GUILD_ID);
         if (!guild) {
-            console.error('PayPal F&F Ticket Error: Guild not found');
-            return null;
+            console.warn('PayPal F&F Ticket: guild fetch failed, fallback to REST');
+            return createPayPalFFTicketViaRest(order, paypalSeq);
         }
         const categoryId = await resolveTicketCategoryId(guild);
         const ownerRoleId = await resolveOwnerRoleId(guild);
@@ -141,7 +378,7 @@ const createPayPalFFTicket = async (order, paypalSeq) => {
         return channel.id;
     } catch (error) {
         console.error("PayPal F&F Ticket Error:", error?.response?.data || error.message || error);
-        return null;
+        return createPayPalFFTicketViaRest(order, paypalSeq);
     }
 };
 
@@ -149,13 +386,13 @@ const createPayPalFFTicket = async (order, paypalSeq) => {
 const createOrderTicket = async (order) => {
     try {
         if (!client.isReady()) {
-            console.error('Ticket Error: Discord bot is not ready');
-            return null;
+            console.warn('Order ticket: bot not ready, fallback to REST');
+            return createOrderTicketViaRest(order);
         }
         const guild = await client.guilds.fetch(process.env.DISCORD_GUILD_ID);
         if (!guild) {
-            console.error('Ticket Error: Guild not found');
-            return null;
+            console.warn('Order ticket: guild fetch failed, fallback to REST');
+            return createOrderTicketViaRest(order);
         }
         const categoryId = await resolveTicketCategoryId(guild);
         const ownerRoleId = await resolveOwnerRoleId(guild);
@@ -208,7 +445,7 @@ const createOrderTicket = async (order) => {
         return channel.id;
     } catch (error) {
         console.error("Ticket Error:", error?.response?.data || error.message || error);
-        return null;
+        return createOrderTicketViaRest(order);
     }
 };
 

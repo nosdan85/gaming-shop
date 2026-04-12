@@ -87,6 +87,11 @@ const withTimeout = (promise, timeoutMs, fallbackValue = null) => Promise.race([
 const getBackendBaseUrl = () => (process.env.WEBHOOK_BASE_URL || process.env.BACKEND_URL || '').replace(/\/+$/, '');
 const getClientBaseUrl = () => ((process.env.CLIENT_URL || '').split(',')[0] || '').trim().replace(/\/+$/, '');
 const getOriginBaseUrl = (value) => String(value || '').trim().replace(/\/+$/, '');
+const getDiscordTicketConfigError = () => {
+    if (!String(process.env.DISCORD_BOT_TOKEN || '').trim()) return 'DISCORD_BOT_TOKEN is missing';
+    if (!String(process.env.DISCORD_GUILD_ID || '').trim()) return 'DISCORD_GUILD_ID is missing';
+    return '';
+};
 const buildClientPayUrl = (orderId, extraQuery = '') => {
     const encodedOrderId = encodeURIComponent(orderId || '');
     const query = extraQuery ? `&${extraQuery}` : '';
@@ -781,8 +786,35 @@ router.get('/paypal-email', (req, res) => {
     return res.json({ email: process.env.PAYPAL_EMAIL || '' });
 });
 
+router.get('/create-ticket', (req, res) => {
+    return res.status(405).json({ error: 'Use POST /api/shop/create-ticket' });
+});
+
+router.get('/create-ticket-paypal-ff', (req, res) => {
+    return res.status(405).json({ error: 'Use POST /api/shop/create-ticket-paypal-ff' });
+});
+
+router.get('/bot-status', (req, res) => {
+    const hasBotToken = Boolean(String(process.env.DISCORD_BOT_TOKEN || '').trim());
+    const hasGuildId = Boolean(String(process.env.DISCORD_GUILD_ID || '').trim());
+    const hasCategoryId = Boolean(String(process.env.DISCORD_TICKET_CATEGORY_ID || '').trim());
+    const hasOwnerRoleId = Boolean(String(process.env.DISCORD_OWNER_ROLE_ID || '').trim());
+    return res.json({
+        ok: hasBotToken && hasGuildId,
+        hasBotToken,
+        hasGuildId,
+        hasCategoryId,
+        hasOwnerRoleId
+    });
+});
+
 router.post('/create-ticket-paypal-ff', authRequired, async (req, res) => {
     try {
+        const ticketConfigError = getDiscordTicketConfigError();
+        if (ticketConfigError) {
+            return res.status(500).json({ error: ticketConfigError });
+        }
+
         const { orderId } = req.body || {};
         if (!orderId) return res.status(400).json({ error: 'Missing orderId' });
 
@@ -812,7 +844,9 @@ router.post('/create-ticket-paypal-ff', authRequired, async (req, res) => {
         if (!channelId) {
             return res.status(503).json({
                 error: 'Ticket bot is temporarily unavailable. Please try again in a moment.',
-                email: process.env.PAYPAL_EMAIL || ''
+                code: 'DISCORD_TICKET_UNAVAILABLE',
+                email: process.env.PAYPAL_EMAIL || '',
+                hint: 'Check /api/shop/bot-status'
             });
         }
         if (channelId) {
@@ -835,6 +869,11 @@ router.post('/create-ticket-paypal-ff', authRequired, async (req, res) => {
 
 router.post('/create-ticket', authRequired, async (req, res) => {
     try {
+        const ticketConfigError = getDiscordTicketConfigError();
+        if (ticketConfigError) {
+            return res.status(500).json({ error: ticketConfigError });
+        }
+
         const { orderId } = req.body || {};
         if (!orderId) return res.status(400).json({ error: 'Missing orderId' });
 
@@ -851,7 +890,11 @@ router.post('/create-ticket', authRequired, async (req, res) => {
             null
         );
         if (!channelId) {
-            return res.status(503).json({ error: 'Ticket bot is temporarily unavailable. Please try again in a moment.' });
+            return res.status(503).json({
+                error: 'Ticket bot is temporarily unavailable. Please try again in a moment.',
+                code: 'DISCORD_TICKET_UNAVAILABLE',
+                hint: 'Check /api/shop/bot-status'
+            });
         }
 
         await Order.findByIdAndUpdate(order._id, { channelId });
