@@ -20,6 +20,7 @@ const AUTH_RATE_LIMIT_DEFAULT_RETRY_SECONDS = 30;
 const AUTH_RATE_LIMIT_MAX_RETRY_SECONDS = 120;
 const DISCORD_TOKEN_MIN_GAP_MS = 1500;
 const BRIDGE_REQUEST_MAX_AGE_MS = 5 * 60 * 1000;
+const DISCORD_GUILD_CHECK_TIMEOUT_MS = 8000;
 const discordAuthSuccessCache = new Map();
 const discordAuthInFlight = new Map();
 let discordAuthBlockedUntilMs = 0;
@@ -75,6 +76,11 @@ const runDiscordTokenExchangeQueued = async (runner) => {
     discordTokenExchangeChain = queued.catch(() => {});
     return queued;
 };
+
+const withTimeout = (promise, timeoutMs, fallbackValue = null) => Promise.race([
+    promise,
+    new Promise((resolve) => setTimeout(() => resolve(fallbackValue), timeoutMs))
+]);
 
 const getBackendBaseUrl = () => (process.env.WEBHOOK_BASE_URL || process.env.BACKEND_URL || '').replace(/\/+$/, '');
 const getClientBaseUrl = () => ((process.env.CLIENT_URL || '').split(',')[0] || '').trim().replace(/\/+$/, '');
@@ -488,12 +494,19 @@ router.post('/checkout', authRequired, checkoutLimiter, async (req, res) => {
             return res.status(401).json({ error: 'Discord account not linked' });
         }
 
-        const inGuild = await checkUserInGuild(discordId);
-        if (!inGuild) {
+        const inGuild = await withTimeout(
+            Promise.resolve(checkUserInGuild(discordId)),
+            DISCORD_GUILD_CHECK_TIMEOUT_MS,
+            null
+        );
+        if (inGuild === false) {
             return res.status(403).json({
                 error_code: 'USER_NOT_IN_GUILD',
                 invite_link: process.env.DISCORD_SERVER_INVITE || ''
             });
+        }
+        if (inGuild === null) {
+            console.warn(`Guild membership check unavailable for ${discordId}; allowing checkout to avoid hanging request.`);
         }
 
         const quantityByProductId = new Map();

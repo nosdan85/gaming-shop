@@ -85,12 +85,17 @@ const isInvalidOauthCodeError = (error) => {
 const AuthCallback = () => {
     const { loginDiscord } = useAuth();
     const inFlight = useRef(false);
+    const loginDiscordRef = useRef(loginDiscord);
     const [nonce, setNonce] = useState(0);
     const [status, setStatus] = useState('Processing Discord login...');
     const [debugInfo, setDebugInfo] = useState('');
     const [canRetry, setCanRetry] = useState(false);
     const [retryInSeconds, setRetryInSeconds] = useState(0);
     const [needsFreshOauth, setNeedsFreshOauth] = useState(false);
+
+    useEffect(() => {
+        loginDiscordRef.current = loginDiscord;
+    }, [loginDiscord]);
 
     useEffect(() => {
         if (retryInSeconds <= 0) return undefined;
@@ -146,7 +151,7 @@ const AuthCallback = () => {
                             return;
                         }
 
-                        loginDiscord(userData, token);
+                        loginDiscordRef.current(userData, token);
                         setStatus('Success! Redirecting...');
                         setTimeout(() => {
                             if (!cancelled) window.location.href = '/';
@@ -228,7 +233,7 @@ const AuthCallback = () => {
         return () => {
             cancelled = true;
         };
-    }, [loginDiscord, nonce]);
+    }, [nonce]);
 
     const handleRetry = () => {
         if (inFlight.current || retryInSeconds > 0) return;

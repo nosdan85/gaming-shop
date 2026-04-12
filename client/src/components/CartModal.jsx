@@ -6,6 +6,7 @@ import { formatCardPrice } from '../utils/priceFormatting';
 
 const BULK_DISCOUNT_THRESHOLD = 10;
 const MIN_CHECKOUT_TOTAL = 1;
+const CHECKOUT_TIMEOUT_MS = 20000;
 const roundMoney = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 
 const getItemPricing = (item) => {
@@ -116,12 +117,19 @@ const CartModal = () => {
     
     setIsProcessing(true);
     try {
-      const res = await axios.post('/api/shop/checkout', { cartItems: cart });
+      const res = await axios.post(
+        '/api/shop/checkout',
+        { cartItems: cart },
+        { timeout: CHECKOUT_TIMEOUT_MS }
+      );
       clearCart();
       setIsCartOpen(false);
       const { orderId } = res.data;
       window.location.href = `/pay?orderId=${orderId}`;
     } catch (err) {
+      if (err.code === 'ECONNABORTED') {
+          alert("Checkout timeout. Server đang bận, vui lòng thử lại sau vài giây.");
+      } else
       if (err.response?.data?.error_code === "USER_NOT_IN_GUILD") {
           setInviteLink(err.response.data.invite_link);
           setShowJoinModal(true);

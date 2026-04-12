@@ -22,12 +22,34 @@ const hasOwnerAccess = (message) => {
 
 // --- HELPER: CHECK USER IN GUILD ---
 const checkUserInGuild = async (discordId) => {
+    const guildId = String(process.env.DISCORD_GUILD_ID || '').trim();
+    const botToken = String(process.env.DISCORD_BOT_TOKEN || '').trim();
+    if (!discordId || !guildId || !botToken) return null;
+
     try {
-        const guild = await client.guilds.fetch(process.env.DISCORD_GUILD_ID);
-        if (!guild) return false;
-        await guild.members.fetch(discordId);
+        await discordRequest({
+            method: 'get',
+            url: `https://discord.com/api/guilds/${guildId}/members/${discordId}`,
+            timeout: 8000,
+            headers: {
+                Authorization: `Bot ${botToken}`
+            }
+        }, 0, { noRetry: true });
         return true;
-    } catch (e) { return false; }
+    } catch (error) {
+        const status = Number(error?.response?.status) || 0;
+        if (status === 404) return false;
+        if (status === 429 || (status >= 500 && status < 600)) {
+            console.warn(`checkUserInGuild temporary failure for ${discordId}: ${status}`);
+            return null;
+        }
+        if (status === 401 || status === 403) {
+            console.error('checkUserInGuild bot permission/config error:', error?.response?.data || error.message);
+            return null;
+        }
+        console.error('checkUserInGuild unexpected error:', error?.response?.data || error.message);
+        return null;
+    }
 };
 
 // --- HELPER: CHECK USER CÓ OWNER ROLE ---
