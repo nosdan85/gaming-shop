@@ -60,6 +60,15 @@ const AuthCallback = () => {
     const [status, setStatus] = useState('Processing Discord login...');
     const [debugInfo, setDebugInfo] = useState('');
     const [canRetry, setCanRetry] = useState(false);
+    const [retryInSeconds, setRetryInSeconds] = useState(0);
+
+    useEffect(() => {
+        if (retryInSeconds <= 0) return undefined;
+        const timer = setInterval(() => {
+            setRetryInSeconds((s) => (s > 0 ? s - 1 : 0));
+        }, 1000);
+        return () => clearInterval(timer);
+    }, [retryInSeconds]);
 
     useEffect(() => {
         let cancelled = false;
@@ -81,6 +90,7 @@ const AuthCallback = () => {
                 const redirectUri = `${window.location.origin}/auth/discord/callback`;
                 setDebugInfo('');
                 setCanRetry(false);
+                setRetryInSeconds(0);
 
                 for (let attempt = 1; attempt <= MAX_AUTH_RETRIES; attempt += 1) {
                     if (cancelled) return;
@@ -136,6 +146,7 @@ const AuthCallback = () => {
                                 'Please wait a bit, then press Retry Login once.'
                             );
                             setCanRetry(true);
+                            setRetryInSeconds(Math.max(0, Math.ceil(retryAfterSeconds)));
                             return;
                         }
                         if (timeout) {
@@ -176,10 +187,11 @@ const AuthCallback = () => {
     }, [loginDiscord, nonce]);
 
     const handleRetry = () => {
-        if (inFlight.current) return;
+        if (inFlight.current || retryInSeconds > 0) return;
         setStatus('Retrying Discord login...');
         setDebugInfo('');
         setCanRetry(false);
+        setRetryInSeconds(0);
         setNonce((x) => x + 1);
     };
 
@@ -194,9 +206,10 @@ const AuthCallback = () => {
                         {canRetry && (
                             <button
                                 onClick={handleRetry}
-                                className="bg-[#5865F2] hover:bg-[#4752C4] text-white px-4 py-2 rounded"
+                                disabled={retryInSeconds > 0}
+                                className="bg-[#5865F2] hover:bg-[#4752C4] disabled:bg-[#39408f] disabled:cursor-not-allowed text-white px-4 py-2 rounded"
                             >
-                                Retry Login
+                                {retryInSeconds > 0 ? `Retry Login (${retryInSeconds}s)` : 'Retry Login'}
                             </button>
                         )}
                         <button

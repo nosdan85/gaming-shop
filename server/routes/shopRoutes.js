@@ -15,6 +15,35 @@ const { checkoutLimiter } = require('../middleware/rateLimit');
 const router = express.Router();
 const OBJECT_ID_PATTERN = /^[a-fA-F0-9]{24}$/;
 const MAX_QUANTITY_PER_PRODUCT = 100000;
+const AUTH_CODE_CACHE_TTL_MS = 2 * 60 * 1000;
+const AUTH_RATE_LIMIT_DEFAULT_RETRY_SECONDS = 30;
+const AUTH_RATE_LIMIT_MAX_RETRY_SECONDS = 120;
+const discordAuthSuccessCache = new Map();
+const discordAuthInFlight = new Map();
+let discordAuthBlockedUntilMs = 0;
+
+const getAuthCodeCacheKey = (code) => crypto.createHash('sha256').update(String(code || '')).digest('hex');
+const cleanupAuthSuccessCache = () => {
+    const now = Date.now();
+    for (const [key, entry] of discordAuthSuccessCache.entries()) {
+        if (!entry || entry.expiresAt <= now) {
+            discordAuthSuccessCache.delete(key);
+        }
+    }
+};
+const getDiscordAuthCooldownSeconds = () => Math.max(0, Math.ceil((discordAuthBlockedUntilMs - Date.now()) / 1000));
+const setDiscordAuthCooldownSeconds = (seconds) => {
+    const n = Number(seconds);
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    const clamped = Math.min(AUTH_RATE_LIMIT_MAX_RETRY_SECONDS, Math.max(1, Math.ceil(n)));
+    discordAuthBlockedUntilMs = Math.max(discordAuthBlockedUntilMs, Date.now() + clamped * 1000);
+    return clamped;
+};
+const buildDiscordRateLimitPayload = (retryAfterSeconds) => ({
+    error: 'Discord temporarily limiting requests. Please try again in a few minutes.',
+    code: 'DISCORD_RATE_LIMIT',
+    retryAfterSeconds
+});
 
 const getBackendBaseUrl = () => (process.env.WEBHOOK_BASE_URL || process.env.BACKEND_URL || '').replace(/\/+$/, '');
 const getClientBaseUrl = () => ((process.env.CLIENT_URL || '').split(',')[0] || '').trim().replace(/\/+$/, '');
@@ -138,76 +167,129 @@ const canAccessOwnerEndpoints = async (discordId) => {
     return checkUserHasOwnerRole(discordId);
 };
 
+const exchangeDiscordAuthCode = async (code, redirectUri) => {
+    const tokenResponse = await discordRequest({
+        method: 'post',
+        url: 'https://discord.com/api/oauth2/token',
+        timeout: 12000,
+        data: qs.stringify({
+            client_id: process.env.DISCORD_CLIENT_ID,
+            client_secret: process.env.DISCORD_CLIENT_SECRET,
+            grant_type: 'authorization_code',
+            code,
+            redirect_uri: redirectUri
+        }),
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+    }, 0, { noRetry: true });
+
+    const { access_token, refresh_token, expires_in, scope } = tokenResponse.data || {};
+
+    const userResponse = await discordRequest({
+        method: 'get',
+        url: 'https://discord.com/api/users/@me',
+        timeout: 12000,
+        headers: { Authorization: `Bearer ${access_token}` }
+    }, 0, { noRetry: true });
+
+    const user = userResponse.data || {};
+    const discordId = user.id;
+    const discordUsername = user.username;
+    if (!discordId || !discordUsername) {
+        throw new Error('Discord user payload is invalid');
+    }
+
+    let dbUser = await User.findOne({ discordId });
+    const isNewUser = !dbUser;
+    if (!dbUser) {
+        dbUser = new User({ discordId, discordUsername });
+    } else {
+        dbUser.discordUsername = discordUsername;
+    }
+
+    const scopes = typeof scope === 'string' ? scope.split(' ') : [];
+    dbUser.accessToken = access_token;
+    dbUser.refreshToken = refresh_token;
+    dbUser.tokenExpiresAt = new Date(Date.now() + (Number(expires_in) || 0) * 1000);
+    dbUser.scopes = scopes;
+    await dbUser.save();
+
+    // Keep Discord API load low: attempt auto-join only for first-time users.
+    if (isNewUser && scopes.includes('guilds.join')) {
+        await joinGuildWithAccessToken(process.env.DISCORD_GUILD_ID, discordId, access_token);
+    }
+
+    if (!process.env.JWT_SECRET) {
+        throw new Error('JWT_SECRET is not configured');
+    }
+
+    const token = jwt.sign(
+        { discordId: dbUser.discordId, type: 'user' },
+        process.env.JWT_SECRET,
+        { expiresIn: '7d' }
+    );
+
+    return {
+        user: {
+            discordId: dbUser.discordId,
+            discordUsername: dbUser.discordUsername,
+            avatar: user.avatar || null
+        },
+        token
+    };
+};
+
 router.post('/auth/discord', async (req, res) => {
-    const { code, redirect_uri: frontendRedirectUri } = req.body || {};
+    const { code: rawCode, redirect_uri: frontendRedirectUri } = req.body || {};
+    const code = typeof rawCode === 'string' ? rawCode.trim() : '';
     const redirectUri = frontendRedirectUri || process.env.DISCORD_REDIRECT_URI;
     if (!code) return res.status(400).json({ error: 'Missing authorization code' });
     if (!redirectUri) return res.status(400).json({ error: 'redirect_uri required' });
 
+    const blockedSeconds = getDiscordAuthCooldownSeconds();
+    if (blockedSeconds > 0) {
+        return res.status(503).json(buildDiscordRateLimitPayload(blockedSeconds));
+    }
+
+    cleanupAuthSuccessCache();
+    const cacheKey = getAuthCodeCacheKey(code);
+    const cached = discordAuthSuccessCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+        return res.json(cached.payload);
+    }
+
+    const inFlightPromise = discordAuthInFlight.get(cacheKey);
+    if (inFlightPromise) {
+        try {
+            const payload = await inFlightPromise;
+            return res.json(payload);
+        } catch (error) {
+            const status = error.response?.status;
+            const data = error.response?.data;
+            const message = getDiscordErrorMessage(data);
+            if (isDiscordTemporaryBlock(status, data)) {
+                const retryAfter = Math.max(getDiscordRetryAfterSeconds(error), AUTH_RATE_LIMIT_DEFAULT_RETRY_SECONDS);
+                const cooldown = setDiscordAuthCooldownSeconds(retryAfter) || retryAfter;
+                return res.status(503).json(buildDiscordRateLimitPayload(cooldown));
+            }
+            if (status >= 400 && status < 500) {
+                return res.status(400).json({
+                    error: message || 'Discord authentication failed. Check app credentials and redirect URI.'
+                });
+            }
+            return res.status(500).json({ error: 'Authentication failed' });
+        }
+    }
+
+    const task = exchangeDiscordAuthCode(code, redirectUri);
+    discordAuthInFlight.set(cacheKey, task);
+
     try {
-        const tokenResponse = await discordRequest({
-            method: 'post',
-            url: 'https://discord.com/api/oauth2/token',
-            timeout: 12000,
-            data: qs.stringify({
-                client_id: process.env.DISCORD_CLIENT_ID,
-                client_secret: process.env.DISCORD_CLIENT_SECRET,
-                grant_type: 'authorization_code',
-                code,
-                redirect_uri: redirectUri
-            }),
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-        }, 0, { noRetry: true });
-
-        const { access_token, refresh_token, expires_in, scope } = tokenResponse.data || {};
-
-        const userResponse = await discordRequest({
-            method: 'get',
-            url: 'https://discord.com/api/users/@me',
-            timeout: 12000,
-            headers: { Authorization: `Bearer ${access_token}` }
-        }, 0, { noRetry: true });
-
-        const user = userResponse.data || {};
-        const discordId = user.id;
-        const discordUsername = user.username;
-        if (!discordId || !discordUsername) {
-            return res.status(500).json({ error: 'Discord user payload is invalid' });
-        }
-
-        let dbUser = await User.findOne({ discordId });
-        if (!dbUser) {
-            dbUser = new User({ discordId, discordUsername });
-        } else {
-            dbUser.discordUsername = discordUsername;
-        }
-
-        dbUser.accessToken = access_token;
-        dbUser.refreshToken = refresh_token;
-        dbUser.tokenExpiresAt = new Date(Date.now() + (Number(expires_in) || 0) * 1000);
-        dbUser.scopes = typeof scope === 'string' ? scope.split(' ') : [];
-        await dbUser.save();
-
-        await joinGuildWithAccessToken(process.env.DISCORD_GUILD_ID, discordId, access_token);
-
-        if (!process.env.JWT_SECRET) {
-            return res.status(500).json({ error: 'JWT_SECRET is not configured' });
-        }
-
-        const token = jwt.sign(
-            { discordId: dbUser.discordId, type: 'user' },
-            process.env.JWT_SECRET,
-            { expiresIn: '7d' }
-        );
-
-        return res.json({
-            user: {
-                discordId: dbUser.discordId,
-                discordUsername: dbUser.discordUsername,
-                avatar: user.avatar || null
-            },
-            token
+        const payload = await task;
+        discordAuthSuccessCache.set(cacheKey, {
+            payload,
+            expiresAt: Date.now() + AUTH_CODE_CACHE_TTL_MS
         });
+        return res.json(payload);
     } catch (error) {
         const status = error.response?.status;
         const data = error.response?.data;
@@ -215,12 +297,9 @@ router.post('/auth/discord', async (req, res) => {
         console.error('Discord auth error:', status, data || error.message);
 
         if (isDiscordTemporaryBlock(status, data)) {
-            const retryAfterSeconds = getDiscordRetryAfterSeconds(error);
-            return res.status(503).json({
-                error: 'Discord temporarily limiting requests. Please try again in a few minutes.',
-                code: 'DISCORD_RATE_LIMIT',
-                retryAfterSeconds
-            });
+            const retryAfter = Math.max(getDiscordRetryAfterSeconds(error), AUTH_RATE_LIMIT_DEFAULT_RETRY_SECONDS);
+            const cooldown = setDiscordAuthCooldownSeconds(retryAfter) || retryAfter;
+            return res.status(503).json(buildDiscordRateLimitPayload(cooldown));
         }
 
         if (status >= 400 && status < 500) {
@@ -229,7 +308,13 @@ router.post('/auth/discord', async (req, res) => {
             });
         }
 
+        if (error.message === 'Discord user payload is invalid' || error.message === 'JWT_SECRET is not configured') {
+            return res.status(500).json({ error: error.message });
+        }
+
         return res.status(500).json({ error: 'Authentication failed' });
+    } finally {
+        discordAuthInFlight.delete(cacheKey);
     }
 });
 
