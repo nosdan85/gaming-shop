@@ -155,8 +155,15 @@ const toDiscordBotError = (error, { defaultMessage = 'Discord API request failed
         });
     }
     if (status === 429) {
+        console.warn('Discord rate limit hit', {
+            bucket: error?.response?.headers?.['x-ratelimit-bucket'] || '',
+            remaining: error?.response?.headers?.['x-ratelimit-remaining'] || '',
+            resetAfter: error?.response?.headers?.['x-ratelimit-reset-after'] || '',
+            scope: error?.response?.headers?.['x-ratelimit-scope'] || '',
+            global: error?.response?.headers?.['x-ratelimit-global'] || ''
+        });
         return new DiscordBotError('Discord is temporarily rate limited. Please retry shortly.', {
-            status: 503,
+            status: 429,
             code: 'DISCORD_RATE_LIMITED',
             data,
             retryAfterSeconds
@@ -384,8 +391,7 @@ const createTicketChannel = async ({ channelName, customerId }) => {
                     path: `/guilds/${guildId}/channels`,
                     data: payload,
                     timeout: REQUEST_TIMEOUT_CREATE_CHANNEL_MS,
-                    retry: true,
-                    retryOptions: { maxRetries: 2, baseDelayMs: 900, maxDelayMs: 12000 },
+                    retry: false,
                     defaultCode: 'DISCORD_CHANNEL_CREATE_FAILED'
                 });
                 const channelId = String(res?.data?.id || '').trim();
@@ -401,7 +407,7 @@ const createTicketChannel = async ({ channelName, customerId }) => {
                     throw error;
                 }
                 // Hard fail: config/permission/rate-limit/unavailable
-                if (error.status === 500 || error.status === 503) {
+                if (error.status === 429 || error.status === 500 || error.status === 503) {
                     throw error;
                 }
                 // Recoverable candidate mismatch (bad category/role/payload), keep trying fallback payloads
@@ -464,11 +470,16 @@ const createPayPalFFTicket = async (order, paypalSeq) => {
             { name: 'Items', value: formatOrderItems(order.items) }
         );
 
-    await sendTicketMessage({
-        channelId,
-        content: buildOrderMention(order.discordId),
-        embed
-    });
+    try {
+        await sendTicketMessage({
+            channelId,
+            content: buildOrderMention(order.discordId),
+            embed
+        });
+    } catch (error) {
+        // Channel is already created; do not force duplicate channel attempts.
+        console.error('PayPal F&F ticket message error:', error?.message || error);
+    }
 
     return channelId;
 };
@@ -502,12 +513,17 @@ const createOrderTicket = async (order) => {
             .setStyle(ButtonStyle.Secondary)
     );
 
-    await sendTicketMessage({
-        channelId,
-        content: buildOrderMention(order.discordId),
-        embed,
-        components: [row]
-    });
+    try {
+        await sendTicketMessage({
+            channelId,
+            content: buildOrderMention(order.discordId),
+            embed,
+            components: [row]
+        });
+    } catch (error) {
+        // Channel is already created; do not force duplicate channel attempts.
+        console.error('Order ticket message error:', error?.message || error);
+    }
 
     return channelId;
 };

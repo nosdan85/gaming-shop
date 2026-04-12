@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 
@@ -6,12 +6,43 @@ const GUILD_ID = import.meta.env.VITE_DISCORD_GUILD_ID || '';
 const VALID_GUILD = Boolean(GUILD_ID && String(GUILD_ID).trim().length > 0);
 const REQUEST_TIMEOUT_MS = 15000;
 const TICKET_REQUEST_TIMEOUT_MS = 30000;
+const DEFAULT_RETRY_AFTER_MS = 5000;
+
+const normalizeRetryAfterMs = (value) => {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  if (n > 1000) return Math.round(n);
+  return Math.round(n * 1000);
+};
+
+const getRetryAfterMsFromError = (err) => {
+  const data = err?.response?.data || {};
+  const fromBody = Math.max(
+    normalizeRetryAfterMs(data?.retryAfterMs),
+    normalizeRetryAfterMs(data?.retryAfterSeconds)
+  );
+  const fromHeader = normalizeRetryAfterMs(err?.response?.headers?.['retry-after']);
+  return Math.max(fromBody, fromHeader, 0);
+};
 
 const getHttpErrorMessage = (err, fallback) => {
   if (err?.code === 'ECONNABORTED') return 'Request timeout. Please try again.';
   const data = err?.response?.data || {};
+  if (data?.code === 'TICKET_CREATION_IN_PROGRESS' || data?.code === 'PAYPAL_TICKET_CREATION_IN_PROGRESS') {
+    const retryAfterSeconds = Math.max(
+      Number(data?.retryAfterSeconds) || 0,
+      Math.ceil(normalizeRetryAfterMs(data?.retryAfterMs) / 1000)
+    );
+    if (retryAfterSeconds > 0) {
+      return `Ticket is already being created. Please wait about ${retryAfterSeconds}s.`;
+    }
+    return 'Ticket is already being created. Please wait a moment.';
+  }
   if (data?.code === 'DISCORD_RATE_LIMITED') {
-    const retryAfterSeconds = Number(data?.retryAfterSeconds) || 0;
+    const retryAfterSeconds = Math.max(
+      Number(data?.retryAfterSeconds) || 0,
+      Math.ceil(normalizeRetryAfterMs(data?.retryAfterMs) / 1000)
+    );
     if (retryAfterSeconds > 0) {
       return `Discord is temporarily rate limited. Please retry in about ${retryAfterSeconds}s.`;
     }
@@ -50,31 +81,49 @@ const PaymentPage = () => {
   const [paypalFFLoading, setPaypalFFLoading] = useState(false);
   const [paypalTicketLoading, setPaypalTicketLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [ticketRetryInSeconds, setTicketRetryInSeconds] = useState(0);
+  const [paypalTicketRetryInSeconds, setPaypalTicketRetryInSeconds] = useState(0);
   const autoOpenedChannelRef = useRef('');
 
   useEffect(() => {
     if (paidFromUrl) setPaid(true);
   }, [paidFromUrl]);
 
-  useEffect(() => {
-    if (!orderId) {
-      setOrderInfoLoading(false);
-      setOrderInfoError('Invalid payment link.');
-      return;
+  const fetchOrderInfo = useCallback(async ({ showLoader = false } = {}) => {
+    if (!orderId) return null;
+    if (showLoader) {
+      setOrderInfoLoading(true);
+      setOrderInfoError('');
     }
 
-    setOrderInfoLoading(true);
-    setOrderInfoError('');
-    axios.get(`/api/shop/order-payment-info?orderId=${encodeURIComponent(orderId)}`, { timeout: REQUEST_TIMEOUT_MS })
-      .then((res) => {
-        setOrderInfo(res.data);
-        if (res.data?.isPaid) setPaid(true);
-        if (res.data?.channelId && autoOpenedChannelRef.current !== res.data.channelId) {
-          autoOpenedChannelRef.current = res.data.channelId;
-          openTicketChannel(res.data.channelId);
-        }
-      })
-      .catch((err) => {
+    try {
+      const res = await axios.get(`/api/shop/order-payment-info?orderId=${encodeURIComponent(orderId)}`, {
+        timeout: REQUEST_TIMEOUT_MS
+      });
+      const next = res.data || {};
+      setOrderInfo(next);
+
+      if (next?.isPaid) setPaid(true);
+      if (next?.channelId && autoOpenedChannelRef.current !== next.channelId) {
+        autoOpenedChannelRef.current = next.channelId;
+        openTicketChannel(next.channelId);
+      }
+
+      if (next?.ticketStatus === 'creating') {
+        setTicketRetryInSeconds((prev) => Math.max(prev, Number(next?.ticketRetryAfterSeconds) || 0));
+      } else {
+        setTicketRetryInSeconds(0);
+      }
+
+      if (next?.paypalTicketStatus === 'creating') {
+        setPaypalTicketRetryInSeconds((prev) => Math.max(prev, Number(next?.paypalTicketRetryAfterSeconds) || 0));
+      } else {
+        setPaypalTicketRetryInSeconds(0);
+      }
+
+      return next;
+    } catch (err) {
+      if (showLoader) {
         if (err.response?.status === 401) {
           setOrderInfoError('Session expired. Please login Discord again.');
         } else if (err.response?.status === 403) {
@@ -84,14 +133,49 @@ const PaymentPage = () => {
         } else {
           setOrderInfoError(err.response?.data?.error || 'Failed to load order.');
         }
-      })
-      .finally(() => setOrderInfoLoading(false));
+      }
+      throw err;
+    } finally {
+      if (showLoader) {
+        setOrderInfoLoading(false);
+      }
+    }
   }, [orderId]);
 
   useEffect(() => {
-    if (!orderId || paid || !orderInfo) return undefined;
-    if (orderInfo.ticketMode !== 'bot') return undefined;
-    if (orderInfo.channelId || orderInfo.ticketStatus !== 'creating') return undefined;
+    if (!orderId) {
+      setOrderInfoLoading(false);
+      setOrderInfoError('Invalid payment link.');
+      return;
+    }
+
+    fetchOrderInfo({ showLoader: true }).catch(() => {});
+  }, [orderId, fetchOrderInfo]);
+
+  useEffect(() => {
+    if (ticketRetryInSeconds <= 0) return undefined;
+    const timer = setInterval(() => {
+      setTicketRetryInSeconds((value) => (value > 0 ? value - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [ticketRetryInSeconds]);
+
+  useEffect(() => {
+    if (paypalTicketRetryInSeconds <= 0) return undefined;
+    const timer = setInterval(() => {
+      setPaypalTicketRetryInSeconds((value) => (value > 0 ? value - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [paypalTicketRetryInSeconds]);
+
+  const ticketMode = orderInfo?.ticketMode;
+  const ticketStatus = orderInfo?.ticketStatus;
+  const orderChannelId = orderInfo?.channelId;
+
+  useEffect(() => {
+    if (!orderId || paid) return undefined;
+    if (ticketMode !== 'bot') return undefined;
+    if (orderChannelId || ticketStatus !== 'creating') return undefined;
 
     let cancelled = false;
     let timeoutId = null;
@@ -100,20 +184,10 @@ const PaymentPage = () => {
     const pollOrderInfo = async () => {
       attempts += 1;
       try {
-        const res = await axios.get(`/api/shop/order-payment-info?orderId=${encodeURIComponent(orderId)}`, {
-          timeout: REQUEST_TIMEOUT_MS
-        });
+        const next = await fetchOrderInfo();
         if (cancelled) return;
 
-        setOrderInfo(res.data);
-        if (res.data?.isPaid) setPaid(true);
-        if (res.data?.channelId && autoOpenedChannelRef.current !== res.data.channelId) {
-          autoOpenedChannelRef.current = res.data.channelId;
-          openTicketChannel(res.data.channelId);
-          return;
-        }
-
-        const shouldContinue = attempts < 12 && res.data?.ticketStatus === 'creating' && !res.data?.channelId;
+        const shouldContinue = attempts < 12 && next?.ticketStatus === 'creating' && !next?.channelId;
         if (shouldContinue) {
           timeoutId = setTimeout(pollOrderInfo, 2000);
         }
@@ -130,7 +204,7 @@ const PaymentPage = () => {
       cancelled = true;
       if (timeoutId) clearTimeout(timeoutId);
     };
-  }, [orderId, paid, orderInfo]);
+  }, [orderId, paid, ticketMode, ticketStatus, orderChannelId, fetchOrderInfo]);
 
   if (!orderId) {
     return (
@@ -204,8 +278,13 @@ const PaymentPage = () => {
       openTicketChannel(orderInfo.channelId);
       return;
     }
+    if (ticketRetryInSeconds > 0) {
+      alert(`Please wait about ${ticketRetryInSeconds}s before retrying ticket creation.`);
+      return;
+    }
     if (orderInfo?.ticketMode === 'bot' && orderInfo?.ticketStatus === 'creating') {
-      alert('Discord ticket is still being created. It will open automatically once ready.');
+      const waitText = ticketRetryInSeconds > 0 ? ` (${ticketRetryInSeconds}s)` : '';
+      alert(`Discord ticket is still being created${waitText}.`);
       return;
     }
 
@@ -218,7 +297,15 @@ const PaymentPage = () => {
       );
       const data = res.data;
       if (data.channelId) {
+        setOrderInfo((prev) => (prev ? {
+          ...prev,
+          channelId: data.channelId,
+          ticketStatus: 'created',
+          ticketError: ''
+        } : prev));
+        setTicketRetryInSeconds(0);
         openTicketChannel(data.channelId);
+        await fetchOrderInfo().catch(() => {});
       } else if (data.mode === 'panel' && data.panelUrl) {
         window.open(data.panelUrl, '_blank');
         alert(`Discord ticket panel opened. Please click "Create Ticket" in Discord and include Order ID: ${data.orderId || orderId}`);
@@ -226,6 +313,17 @@ const PaymentPage = () => {
         alert('Could not create ticket. Try again.');
       }
     } catch (err) {
+      const retryAfterMs = getRetryAfterMsFromError(err);
+      if (retryAfterMs > 0) {
+        setTicketRetryInSeconds(Math.ceil(retryAfterMs / 1000));
+      }
+      if ([409, 429].includes(Number(err?.response?.status))) {
+        setOrderInfo((prev) => (prev ? { ...prev, ticketStatus: 'creating' } : prev));
+        const nextPollDelay = Math.max(1500, retryAfterMs || DEFAULT_RETRY_AFTER_MS);
+        setTimeout(() => {
+          fetchOrderInfo().catch(() => {});
+        }, nextPollDelay);
+      }
       alert(getHttpErrorMessage(err, 'Could not create ticket. Try again.'));
     } finally {
       setTicketLoading(null);
@@ -245,6 +343,10 @@ const PaymentPage = () => {
   };
 
   const handleOpenPayPalTicket = async () => {
+    if (paypalTicketRetryInSeconds > 0) {
+      alert(`Please wait about ${paypalTicketRetryInSeconds}s before retrying.`);
+      return;
+    }
     setPaypalTicketLoading(true);
     try {
       const res = await axios.post(
@@ -258,8 +360,14 @@ const PaymentPage = () => {
         alert(`Discord ticket panel opened. Please click "Create Ticket" and include Order ID: ${res.data.orderId || orderId}`);
       }
       setPaypalFFData((prev) => ({ ...prev, channelId: channelId || null, email: email || prev?.email || '' }));
+      setPaypalTicketRetryInSeconds(0);
       if (channelId) openTicketChannel(channelId);
+      await fetchOrderInfo().catch(() => {});
     } catch (err) {
+      const retryAfterMs = getRetryAfterMsFromError(err);
+      if (retryAfterMs > 0) {
+        setPaypalTicketRetryInSeconds(Math.ceil(retryAfterMs / 1000));
+      }
       alert(getHttpErrorMessage(err, 'Could not create ticket. Try again.'));
     } finally {
       setPaypalTicketLoading(false);
@@ -296,7 +404,8 @@ const PaymentPage = () => {
 
         {orderInfo?.ticketMode === 'bot' && orderInfo?.ticketStatus === 'creating' && !orderInfo?.channelId && (
           <div className="mb-4 rounded-xl border border-[#2c2c2e] bg-[#111114] px-4 py-3 text-sm text-yellow-300">
-            Creating your Discord ticket. It should open automatically when ready.
+            Creating your Discord ticket. Please do not tap repeatedly.
+            {ticketRetryInSeconds > 0 ? ` Retry in ${ticketRetryInSeconds}s.` : ''}
           </div>
         )}
 
@@ -345,21 +454,31 @@ const PaymentPage = () => {
             <p className="text-gray-500 text-xs mt-3">Upload payment screenshot in your ticket when done.</p>
             <button
               onClick={handleOpenPayPalTicket}
-              disabled={paypalTicketLoading}
+              disabled={paypalTicketLoading || paypalTicketRetryInSeconds > 0}
               className="w-full mt-3 py-2.5 bg-[#5865F2] hover:bg-[#4752C4] disabled:opacity-50 text-white font-bold rounded-xl transition text-sm"
             >
-              {paypalTicketLoading ? 'Creating...' : 'Open Ticket'}
+              {paypalTicketLoading
+                ? 'Creating...'
+                : paypalTicketRetryInSeconds > 0
+                  ? `Retry in ${paypalTicketRetryInSeconds}s`
+                  : 'Open Ticket'}
             </button>
           </div>
         )}
 
         <button
           onClick={handleCashAppRobux}
-          disabled={ticketLoading !== null || (orderInfo?.ticketMode === 'bot' && orderInfo?.ticketStatus === 'creating' && !orderInfo?.channelId)}
+          disabled={
+            ticketLoading !== null
+            || ticketRetryInSeconds > 0
+            || (orderInfo?.ticketMode === 'bot' && orderInfo?.ticketStatus === 'creating' && !orderInfo?.channelId)
+          }
           className="w-full py-3 min-h-[44px] bg-[#00D632] hover:bg-[#00b329] active:scale-[0.98] disabled:opacity-50 text-black font-bold rounded-xl transition mb-4 touch-manipulation"
         >
           {ticketLoading === 'ticket'
             ? 'Loading...'
+            : ticketRetryInSeconds > 0
+              ? `Retry in ${ticketRetryInSeconds}s`
             : (orderInfo?.ticketMode === 'bot' && orderInfo?.ticketStatus === 'creating' && !orderInfo?.channelId)
               ? 'Creating Discord Ticket...'
               : orderInfo?.channelId

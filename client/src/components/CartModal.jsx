@@ -255,8 +255,8 @@ const CartModal = () => {
                   <CurrencyDollarIcon className="w-4 h-4" />
                 </div>
                 <div>
-                  <p className="text-white text-sm font-medium">3. Auto-create ticket</p>
-                  <p className="text-gray-500 text-xs">After checkout, the bot creates your Discord ticket automatically.</p>
+                  <p className="text-white text-sm font-medium">3. Open payment page</p>
+                  <p className="text-gray-500 text-xs">After checkout, press the green payment button to create your Discord ticket.</p>
                 </div>
               </div>
               <div className="flex gap-3">

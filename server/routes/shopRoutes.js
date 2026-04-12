@@ -28,13 +28,13 @@ const DISCORD_TOKEN_MIN_GAP_MS = 1500;
 const BRIDGE_REQUEST_MAX_AGE_MS = 5 * 60 * 1000;
 const DISCORD_GUILD_CHECK_TIMEOUT_MS = 8000;
 const PAYMENT_PROVIDER_TIMEOUT_MS = 15000;
+const TICKET_LOCK_WINDOW_MS = 30 * 1000;
+const PAYPAL_TICKET_LOCK_WINDOW_MS = 30 * 1000;
 const discordAuthSuccessCache = new Map();
 const discordAuthInFlight = new Map();
 let discordAuthBlockedUntilMs = 0;
 let discordTokenExchangeChain = Promise.resolve();
 let lastDiscordTokenExchangeAtMs = 0;
-const orderTicketInFlight = new Map();
-const paypalTicketInFlight = new Map();
 
 const getAuthCodeCacheKey = (code) => crypto.createHash('sha256').update(String(code || '')).digest('hex');
 const cleanupAuthSuccessCache = () => {
@@ -90,16 +90,6 @@ const withTimeout = (promise, timeoutMs, fallbackValue = null) => Promise.race([
     promise,
     new Promise((resolve) => setTimeout(() => resolve(fallbackValue), timeoutMs))
 ]);
-const runSingleFlight = (map, key, runner) => {
-    const normalizedKey = String(key || '').trim();
-    if (!normalizedKey) return Promise.resolve().then(runner);
-    if (map.has(normalizedKey)) return map.get(normalizedKey);
-    const task = Promise.resolve()
-        .then(runner)
-        .finally(() => map.delete(normalizedKey));
-    map.set(normalizedKey, task);
-    return task;
-};
 
 const getBackendBaseUrl = () => (process.env.WEBHOOK_BASE_URL || process.env.BACKEND_URL || '').replace(/\/+$/, '');
 const getClientBaseUrl = () => ((process.env.CLIENT_URL || '').split(',')[0] || '').trim().replace(/\/+$/, '');
@@ -115,14 +105,21 @@ const isPanelTicketMode = () => getTicketMode() === 'panel' && /^https?:\/\//i.t
 const buildTicketErrorResponse = (error) => {
     if (error instanceof DiscordBotError) {
         const status = Number(error.status);
-        const safeStatus = Number.isFinite(status) && status >= 400 && status <= 599 ? status : 503;
+        const safeStatus = Number.isFinite(status) && status >= 400 && status <= 599
+            ? status
+            : (error.code === 'DISCORD_RATE_LIMITED' ? 429 : 503);
         const retryAfterSeconds = Number(error.retryAfterSeconds) || 0;
         return {
             status: safeStatus,
             payload: {
                 error: error.message || 'Ticket bot is temporarily unavailable. Please try again in a moment.',
                 code: error.code || 'DISCORD_TICKET_ERROR',
-                ...(retryAfterSeconds > 0 ? { retryAfterSeconds } : {})
+                ...(retryAfterSeconds > 0
+                    ? {
+                        retryAfterSeconds,
+                        retryAfterMs: retryAfterSeconds * 1000
+                    }
+                    : {})
             }
         };
     }
@@ -144,6 +141,37 @@ const buildTicketErrorResponse = (error) => {
             error: 'Ticket bot is temporarily unavailable. Please try again in a moment.',
             code: 'DISCORD_TICKET_UNAVAILABLE'
         }
+    };
+};
+const normalizeTicketStatus = (value) => {
+    const status = String(value || '').trim().toLowerCase();
+    if (status === 'ready') return 'created';
+    if (status === 'creating') return 'creating';
+    if (status === 'created') return 'created';
+    if (status === 'failed') return 'failed';
+    if (status === 'panel') return 'panel';
+    return 'pending';
+};
+const normalizePayPalTicketStatus = (value) => {
+    const status = String(value || '').trim().toLowerCase();
+    if (status === 'creating') return 'creating';
+    if (status === 'created') return 'created';
+    if (status === 'failed') return 'failed';
+    return 'pending';
+};
+const getLockRetryAfterMs = (lockUntil) => {
+    if (!lockUntil) return 0;
+    const lockMs = new Date(lockUntil).getTime();
+    if (!Number.isFinite(lockMs)) return 0;
+    return Math.max(0, lockMs - Date.now());
+};
+const buildInProgressPayload = (lockUntil, message, code) => {
+    const retryAfterMs = getLockRetryAfterMs(lockUntil);
+    const retryAfterSeconds = retryAfterMs > 0 ? Math.ceil(retryAfterMs / 1000) : 0;
+    return {
+        error: message,
+        code,
+        ...(retryAfterMs > 0 ? { retryAfterMs, retryAfterSeconds } : {})
     };
 };
 const buildClientPayUrl = (orderId, extraQuery = '') => {
@@ -378,56 +406,117 @@ const getOwnedOrder = async (orderId, discordId) => {
     if (order.discordId !== discordId) return { order: null, status: 403, error: 'You do not own this order' };
     return { order, status: 200, error: null };
 };
-const ensureOrderTicketChannelId = async (order) => {
-    if (!order?.orderId) return null;
+const acquireOrderTicketLock = async ({ orderId, discordId }) => {
+    const now = new Date();
+    const lockUntil = new Date(Date.now() + TICKET_LOCK_WINDOW_MS);
 
-    if (isPanelTicketMode()) {
-        return null;
-    }
-
-    return runSingleFlight(orderTicketInFlight, `order_ticket:${order.orderId}`, async () => {
-        const freshOrder = await Order.findOne({ orderId: order.orderId }).lean();
-        if (freshOrder?.channelId) return freshOrder.channelId;
-
-        const channelId = await Promise.resolve(createOrderTicket(order));
-        if (channelId) {
-            const targetId = order._id || freshOrder?._id;
-            if (targetId) {
-                await Order.findByIdAndUpdate(targetId, {
-                    channelId,
-                    ticketStatus: 'ready',
-                    ticketError: '',
-                    status: 'Waiting Payment'
-                });
-            }
-        }
-        return channelId || null;
-    });
-};
-const startOrderTicketCreation = (order) => {
-    if (!order?._id || !order?.orderId || isPanelTicketMode()) return;
-
-    void (async () => {
-        try {
-            await Order.findByIdAndUpdate(order._id, {
+    const lockedOrder = await Order.findOneAndUpdate(
+        {
+            orderId,
+            discordId,
+            status: { $ne: 'Cancelled' },
+            $and: [
+                {
+                    $or: [
+                        { channelId: null },
+                        { channelId: '' },
+                        { channelId: { $exists: false } }
+                    ]
+                },
+                {
+                    $or: [
+                        { ticketLockUntil: null },
+                        { ticketLockUntil: { $exists: false } },
+                        { ticketLockUntil: { $lt: now } }
+                    ]
+                }
+            ],
+            $or: [
+                { ticketStatus: { $in: ['pending', 'failed', 'creating', 'ready', 'created'] } },
+                { ticketStatus: null },
+                { ticketStatus: { $exists: false } }
+            ]
+        },
+        {
+            $set: {
                 ticketStatus: 'creating',
-                ticketError: ''
-            });
-            const channelId = await ensureOrderTicketChannelId(order);
-            if (!channelId) {
-                await Order.findByIdAndUpdate(order._id, {
-                    ticketStatus: 'failed',
-                    ticketError: 'Automatic ticket creation did not return a Discord channel.'
-                });
+                ticketError: '',
+                ticketLockUntil: lockUntil
             }
-        } catch (error) {
-            const { payload } = buildTicketErrorResponse(error);
-            await Order.findByIdAndUpdate(order._id, {
+        },
+        { new: true }
+    );
+
+    return { lockedOrder, lockUntil };
+};
+const releaseOrderTicketLockAsFailed = async (orderId, discordId, lockUntil, message) => {
+    const lockFilter = lockUntil ? { ticketLockUntil: lockUntil } : {};
+    await Order.updateOne(
+        { orderId, discordId, ...lockFilter },
+        {
+            $set: {
                 ticketStatus: 'failed',
-                ticketError: String(payload?.error || 'Automatic ticket creation failed.')
-            });
+                ticketError: String(message || 'Ticket creation failed.')
+            },
+            $unset: { ticketLockUntil: 1 }
         }
-    })();
+    );
+};
+const acquirePayPalTicketLock = async ({ orderId, discordId }) => {
+    const now = new Date();
+    const lockUntil = new Date(Date.now() + PAYPAL_TICKET_LOCK_WINDOW_MS);
+
+    const lockedOrder = await Order.findOneAndUpdate(
+        {
+            orderId,
+            discordId,
+            status: { $ne: 'Cancelled' },
+            $and: [
+                {
+                    $or: [
+                        { paypalTicketChannelId: null },
+                        { paypalTicketChannelId: '' },
+                        { paypalTicketChannelId: { $exists: false } }
+                    ]
+                },
+                {
+                    $or: [
+                        { paypalTicketLockUntil: null },
+                        { paypalTicketLockUntil: { $exists: false } },
+                        { paypalTicketLockUntil: { $lt: now } }
+                    ]
+                }
+            ],
+            $or: [
+                { paypalTicketStatus: { $in: ['pending', 'failed', 'creating'] } },
+                { paypalTicketStatus: null },
+                { paypalTicketStatus: { $exists: false } }
+            ]
+        },
+        {
+            $set: {
+                paypalTicketStatus: 'creating',
+                paypalTicketError: '',
+                paypalTicketLockUntil: lockUntil
+            }
+        },
+        { new: true }
+    );
+
+    return { lockedOrder, lockUntil };
+};
+const releasePayPalTicketLockAsFailed = async (orderId, discordId, lockUntil, message) => {
+    const lockFilter = lockUntil ? { paypalTicketLockUntil: lockUntil } : {};
+    await Order.updateOne(
+        { orderId, discordId, ...lockFilter },
+        {
+            $set: {
+                paypalTicketStatus: 'failed',
+                paypalTicketError: String(message || 'PayPal ticket creation failed.')
+            },
+            $unset: { paypalTicketLockUntil: 1 }
+        }
+    );
 };
 
 const canAccessOwnerEndpoints = async (discordId) => {
@@ -677,15 +766,12 @@ router.post('/checkout', authRequired, checkoutLimiter, async (req, res) => {
             items,
             totalAmount,
             status: ticketMode === 'panel' ? 'Waiting Payment' : 'Pending',
-            ticketStatus: ticketMode === 'panel' ? 'panel' : 'creating',
+            ticketStatus: ticketMode === 'panel' ? 'panel' : 'pending',
             ticketError: ''
         });
         await newOrder.save();
 
         const panelUrl = isPanelTicketMode() ? getTicketPanelUrl() : '';
-        if (ticketMode === 'bot') {
-            startOrderTicketCreation(newOrder);
-        }
 
         return res.json({
             success: true,
@@ -709,14 +795,29 @@ router.get('/order-payment-info', authRequired, async (req, res) => {
     try {
         const { order, status, error } = await getOwnedOrder(orderId, req.user.discordId);
         if (!order) return res.status(status).json({ error });
+        const normalizedTicketStatus = normalizeTicketStatus(order.ticketStatus);
+        const normalizedPayPalTicketStatus = normalizePayPalTicketStatus(order.paypalTicketStatus);
+        const ticketRetryAfterMs = normalizedTicketStatus === 'creating' ? getLockRetryAfterMs(order.ticketLockUntil) : 0;
+        const paypalTicketRetryAfterMs = normalizedPayPalTicketStatus === 'creating'
+            ? getLockRetryAfterMs(order.paypalTicketLockUntil)
+            : 0;
         return res.json({
             orderId: order.orderId,
             totalAmount: order.totalAmount,
             status: order.status,
             isPaid: order.status === 'Completed',
             channelId: order.channelId || null,
-            ticketStatus: order.ticketStatus || 'pending',
+            ticketStatus: normalizedTicketStatus,
             ticketError: order.ticketError || '',
+            ticketRetryAfterMs,
+            ticketRetryAfterSeconds: ticketRetryAfterMs > 0 ? Math.ceil(ticketRetryAfterMs / 1000) : 0,
+            paypalTicketChannelId: order.paypalTicketChannelId || null,
+            paypalTicketStatus: normalizedPayPalTicketStatus,
+            paypalTicketError: order.paypalTicketError || '',
+            paypalTicketRetryAfterMs,
+            paypalTicketRetryAfterSeconds: paypalTicketRetryAfterMs > 0
+                ? Math.ceil(paypalTicketRetryAfterMs / 1000)
+                : 0,
             ticketMode: isPanelTicketMode() ? 'panel' : 'bot',
             panelUrl: isPanelTicketMode() ? getTicketPanelUrl() : ''
         });
@@ -936,6 +1037,9 @@ router.get('/bot-status', (req, res) => {
 });
 
 router.post('/create-ticket-paypal-ff', authRequired, async (req, res) => {
+    let lockAcquiredOrderId = '';
+    let lockAcquiredDiscordId = '';
+    let lockAcquiredUntil = null;
     try {
         const { orderId } = req.body || {};
         if (!orderId) return res.status(400).json({ error: 'Missing orderId' });
@@ -960,41 +1064,136 @@ router.post('/create-ticket-paypal-ff', authRequired, async (req, res) => {
 
         if (order.paypalTicketChannelId) {
             return res.json({
+                success: true,
+                alreadyExists: true,
                 channelId: order.paypalTicketChannelId,
                 email: process.env.PAYPAL_EMAIL || ''
             });
         }
 
-        const channelId = await runSingleFlight(paypalTicketInFlight, `paypal_ff:${order.orderId}`, async () => {
-            const fresh = await Order.findById(order._id).lean();
-            if (fresh?.paypalTicketChannelId) return fresh.paypalTicketChannelId;
-
-            const counter = await Counter.findOneAndUpdate(
-                { id: 'paypalTicket' },
-                { $inc: { seq: 1 } },
-                { new: true, upsert: true }
-            );
-
-            const paypalSeq = counter.seq;
-            const channelName = `paypal_${paypalSeq}`;
-            const createdChannelId = await Promise.resolve(createPayPalFFTicket(order, paypalSeq));
-            if (createdChannelId) {
-                await Order.findByIdAndUpdate(order._id, {
-                    paymentMethod: 'paypal_ff',
-                    paypalTicketChannel: channelName,
-                    paypalTicketChannelId: createdChannelId
+        const { lockedOrder, lockUntil } = await acquirePayPalTicketLock({
+            orderId,
+            discordId: req.user.discordId
+        });
+        if (!lockedOrder) {
+            const fresh = await Order.findOne({ orderId, discordId: req.user.discordId }).lean();
+            if (!fresh) {
+                return res.status(404).json({ error: 'Order not found' });
+            }
+            if (fresh?.paypalTicketChannelId) {
+                return res.json({
+                    success: true,
+                    alreadyExists: true,
+                    channelId: fresh.paypalTicketChannelId,
+                    email: process.env.PAYPAL_EMAIL || ''
                 });
             }
-            return createdChannelId;
-        });
+
+            if (normalizePayPalTicketStatus(fresh?.paypalTicketStatus) === 'creating') {
+                return res.status(409).json({
+                    ...buildInProgressPayload(
+                        fresh?.paypalTicketLockUntil,
+                        'PayPal ticket is already being created. Please wait a moment.',
+                        'PAYPAL_TICKET_CREATION_IN_PROGRESS'
+                    ),
+                    email: process.env.PAYPAL_EMAIL || ''
+                });
+            }
+
+            return res.status(409).json({
+                error: 'PayPal ticket cannot be created right now. Please retry shortly.',
+                code: 'PAYPAL_TICKET_NOT_READY',
+                email: process.env.PAYPAL_EMAIL || ''
+            });
+        }
+
+        lockAcquiredOrderId = lockedOrder.orderId;
+        lockAcquiredDiscordId = lockedOrder.discordId;
+        lockAcquiredUntil = lockUntil;
+
+        const counter = await Counter.findOneAndUpdate(
+            { id: 'paypalTicket' },
+            { $inc: { seq: 1 } },
+            { new: true, upsert: true }
+        );
+        const paypalSeq = counter.seq;
+        const channelName = `paypal_${paypalSeq}`;
+        const channelId = await Promise.resolve(createPayPalFFTicket(lockedOrder, paypalSeq));
+        if (!channelId) {
+            throw new DiscordBotError('Could not create PayPal ticket channel', {
+                status: 503,
+                code: 'DISCORD_TICKET_UNAVAILABLE'
+            });
+        }
+
+        const persistResult = await Order.updateOne(
+            { _id: lockedOrder._id, paypalTicketLockUntil: lockAcquiredUntil },
+            {
+                $set: {
+                    paymentMethod: 'paypal_ff',
+                    paypalTicketChannel: channelName,
+                    paypalTicketChannelId: channelId,
+                    paypalTicketStatus: 'created',
+                    paypalTicketError: ''
+                },
+                $unset: { paypalTicketLockUntil: 1 }
+            }
+        );
+        if (!persistResult?.matchedCount) {
+            const fresh = await Order.findById(lockedOrder._id).lean();
+            if (fresh?.paypalTicketChannelId) {
+                return res.json({
+                    success: true,
+                    alreadyExists: true,
+                    channelId: fresh.paypalTicketChannelId,
+                    email: process.env.PAYPAL_EMAIL || ''
+                });
+            }
+            await Order.updateOne(
+                {
+                    _id: lockedOrder._id,
+                    $or: [
+                        { paypalTicketChannelId: null },
+                        { paypalTicketChannelId: '' },
+                        { paypalTicketChannelId: { $exists: false } }
+                    ]
+                },
+                {
+                    $set: {
+                        paymentMethod: 'paypal_ff',
+                        paypalTicketChannel: channelName,
+                        paypalTicketChannelId: channelId,
+                        paypalTicketStatus: 'created',
+                        paypalTicketError: ''
+                    },
+                    $unset: { paypalTicketLockUntil: 1 }
+                }
+            );
+        }
 
         return res.json({
+            success: true,
             channelId: channelId || null,
             email: process.env.PAYPAL_EMAIL || ''
         });
     } catch (err) {
         console.error('Create PayPal F&F ticket error:', err);
         const { status, payload } = buildTicketErrorResponse(err);
+        if (lockAcquiredOrderId && lockAcquiredDiscordId) {
+            await releasePayPalTicketLockAsFailed(
+                lockAcquiredOrderId,
+                lockAcquiredDiscordId,
+                lockAcquiredUntil,
+                payload.error || 'PayPal ticket creation failed.'
+            ).catch(() => {});
+        }
+        if (payload.code === 'USER_NOT_IN_GUILD') {
+            return res.status(status).json({
+                ...payload,
+                invite_link: process.env.DISCORD_SERVER_INVITE || '',
+                email: process.env.PAYPAL_EMAIL || ''
+            });
+        }
         return res.status(status).json({
             ...payload,
             email: process.env.PAYPAL_EMAIL || ''
@@ -1003,6 +1202,9 @@ router.post('/create-ticket-paypal-ff', authRequired, async (req, res) => {
 });
 
 router.post('/create-ticket', authRequired, async (req, res) => {
+    let lockAcquiredOrderId = '';
+    let lockAcquiredDiscordId = '';
+    let lockAcquiredUntil = null;
     try {
         const { orderId } = req.body || {};
         if (!orderId) return res.status(400).json({ error: 'Missing orderId' });
@@ -1027,23 +1229,113 @@ router.post('/create-ticket', authRequired, async (req, res) => {
         }
 
         if (order.channelId) {
-            return res.json({ channelId: order.channelId });
+            return res.json({
+                success: true,
+                alreadyExists: true,
+                channelId: order.channelId
+            });
         }
 
-        await Order.findByIdAndUpdate(order._id, {
-            ticketStatus: 'creating',
-            ticketError: ''
+        const { lockedOrder, lockUntil } = await acquireOrderTicketLock({
+            orderId,
+            discordId: req.user.discordId
         });
-        const channelId = await Promise.resolve(ensureOrderTicketChannelId(order));
-        if (!channelId) throw new DiscordBotError('Could not create ticket channel', { status: 503, code: 'DISCORD_TICKET_UNAVAILABLE' });
-        return res.json({ channelId });
+        if (!lockedOrder) {
+            const fresh = await Order.findOne({ orderId, discordId: req.user.discordId }).lean();
+            if (!fresh) {
+                return res.status(404).json({ error: 'Order not found' });
+            }
+            if (fresh?.channelId) {
+                return res.json({
+                    success: true,
+                    alreadyExists: true,
+                    channelId: fresh.channelId
+                });
+            }
+
+            if (normalizeTicketStatus(fresh?.ticketStatus) === 'creating') {
+                return res.status(409).json(
+                    buildInProgressPayload(
+                        fresh?.ticketLockUntil,
+                        'Ticket is already being created. Please wait a moment.',
+                        'TICKET_CREATION_IN_PROGRESS'
+                    )
+                );
+            }
+
+            return res.status(409).json({
+                error: 'Ticket cannot be created right now. Please retry shortly.',
+                code: 'TICKET_NOT_READY'
+            });
+        }
+
+        lockAcquiredOrderId = lockedOrder.orderId;
+        lockAcquiredDiscordId = lockedOrder.discordId;
+        lockAcquiredUntil = lockUntil;
+
+        const channelId = await Promise.resolve(createOrderTicket(lockedOrder));
+        if (!channelId) {
+            throw new DiscordBotError('Could not create ticket channel', {
+                status: 503,
+                code: 'DISCORD_TICKET_UNAVAILABLE'
+            });
+        }
+
+        const persistResult = await Order.updateOne(
+            { _id: lockedOrder._id, ticketLockUntil: lockAcquiredUntil },
+            {
+                $set: {
+                    channelId,
+                    ticketStatus: 'created',
+                    ticketError: '',
+                    status: lockedOrder.status === 'Pending' ? 'Waiting Payment' : lockedOrder.status
+                },
+                $unset: { ticketLockUntil: 1 }
+            }
+        );
+        if (!persistResult?.matchedCount) {
+            const fresh = await Order.findById(lockedOrder._id).lean();
+            if (fresh?.channelId) {
+                return res.json({
+                    success: true,
+                    alreadyExists: true,
+                    channelId: fresh.channelId
+                });
+            }
+            await Order.updateOne(
+                {
+                    _id: lockedOrder._id,
+                    $or: [
+                        { channelId: null },
+                        { channelId: '' },
+                        { channelId: { $exists: false } }
+                    ]
+                },
+                {
+                    $set: {
+                        channelId,
+                        ticketStatus: 'created',
+                        ticketError: '',
+                        status: lockedOrder.status === 'Pending' ? 'Waiting Payment' : lockedOrder.status
+                    },
+                    $unset: { ticketLockUntil: 1 }
+                }
+            );
+        }
+
+        return res.json({
+            success: true,
+            channelId
+        });
     } catch (err) {
         console.error('Create ticket error:', err);
         const { status, payload } = buildTicketErrorResponse(err);
-        if (req.body?.orderId) {
-            await Order.findOneAndUpdate(
-                { orderId: req.body.orderId, discordId: req.user?.discordId },
-                { ticketStatus: 'failed', ticketError: String(payload.error || 'Ticket creation failed.') }
+        if (lockAcquiredOrderId && lockAcquiredDiscordId) {
+            await releaseOrderTicketLockAsFailed(
+                lockAcquiredOrderId,
+                lockAcquiredDiscordId,
+                lockAcquiredUntil,
+                payload.error || 'Ticket creation failed.'
             ).catch(() => {});
         }
         if (payload.code === 'USER_NOT_IN_GUILD') {

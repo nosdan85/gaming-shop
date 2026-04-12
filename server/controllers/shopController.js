@@ -2,89 +2,107 @@ const Order = require('../models/Order');
 const Product = require('../models/Product');
 const Counter = require('../models/Counter');
 const User = require('../models/User');
-const { createOrderTicket, checkUserInGuild } = require('../bot'); // Import hàm check
+const { checkUserInGuild } = require('../bot');
+
+const OBJECT_ID_PATTERN = /^[a-fA-F0-9]{24}$/;
+const MAX_QUANTITY_PER_PRODUCT = 100000;
 
 exports.checkout = async (req, res) => {
-    const { discordId, cartItems } = req.body;
+    const { discordId, cartItems } = req.body || {};
     try {
-        const user = await User.findOne({ discordId });
-        if (!user) return res.status(400).json({ message: "Discord not linked" });
+        if (!discordId || !Array.isArray(cartItems) || cartItems.length === 0) {
+            return res.status(400).json({ message: 'Invalid request payload' });
+        }
 
-        // --- BƯỚC KIỂM TRA QUAN TRỌNG: JOIN SERVER ---
-        const isInServer = await checkUserInGuild(discordId);
-        
-        if (!isInServer) {
-            // Nếu chưa vào server, trả về mã lỗi đặc biệt để Frontend hiện bảng Join
-            return res.status(403).json({ 
-                error_code: "USER_NOT_IN_GUILD",
-                message: "You must join our Discord Server to order.",
-                invite_link: process.env.DISCORD_SERVER_INVITE // Link lấy từ .env
+        const user = await User.findOne({ discordId });
+        if (!user) {
+            return res.status(400).json({ message: 'Discord not linked' });
+        }
+
+        const inGuild = await checkUserInGuild(discordId);
+        if (inGuild === false) {
+            return res.status(403).json({
+                error_code: 'USER_NOT_IN_GUILD',
+                message: 'You must join our Discord server to order.',
+                invite_link: process.env.DISCORD_SERVER_INVITE || ''
             });
         }
-        // ----------------------------------------------
 
-        // Tính tiền và Validate sản phẩm
-        let totalAmount = 0;
-        const items = [];
+        const quantityByProductId = new Map();
         for (const item of cartItems) {
-            const product = await Product.findById(item._id);
-            if (product) {
-                totalAmount += product.price * item.quantity;
-                items.push({
-                    product: product._id,
-                    name: product.name,
-                    quantity: item.quantity,
-                    price: product.price
-                });
-            }
+            const productId = typeof item?._id === 'string' ? item._id.trim() : '';
+            const quantity = Number(item?.quantity);
+            if (!OBJECT_ID_PATTERN.test(productId)) continue;
+            if (!Number.isInteger(quantity) || quantity < 1 || quantity > MAX_QUANTITY_PER_PRODUCT) continue;
+            quantityByProductId.set(productId, (quantityByProductId.get(productId) || 0) + quantity);
         }
 
-        if (items.length === 0) return res.status(400).json({ message: "Cart empty or invalid items" });
+        if (quantityByProductId.size === 0) {
+            return res.status(400).json({ message: 'Cart empty or invalid items' });
+        }
 
-        // Tạo Order ID (order_fp_x)
+        const products = await Product.find({ _id: { $in: Array.from(quantityByProductId.keys()) } });
+        if (products.length !== quantityByProductId.size) {
+            return res.status(400).json({ message: 'Cart contains invalid products' });
+        }
+
+        const items = products.map((product) => {
+            const quantity = quantityByProductId.get(String(product._id));
+            return {
+                product: product._id,
+                name: product.name,
+                quantity,
+                price: Number(product.price) || 0
+            };
+        });
+        const totalAmount = Number(
+            items.reduce((sum, item) => sum + (Number(item.price) || 0) * (Number(item.quantity) || 0), 0).toFixed(2)
+        );
+        if (totalAmount <= 0) {
+            return res.status(400).json({ message: 'Invalid cart total' });
+        }
+
         const counter = await Counter.findOneAndUpdate(
-            { id: "orderId" }, 
-            { $inc: { seq: 1 } }, 
+            { id: 'orderId' },
+            { $inc: { seq: 1 } },
             { new: true, upsert: true }
         );
-        const orderIdStr = `order_fp_${counter.seq}`;
+        const orderId = `nm_${counter.seq}`;
 
-        // Lưu đơn hàng
         const newOrder = new Order({
-            orderId: orderIdStr,
-            user: user._id,
+            orderId,
             discordId: user.discordId,
+            discordUsername: user.discordUsername || '',
             items,
-            totalAmount: parseFloat(totalAmount.toFixed(2)),
-            status: 'Pending'
+            totalAmount,
+            status: 'Pending',
+            ticketStatus: 'pending',
+            ticketError: ''
         });
-
         await newOrder.save();
-        
-        // Gọi bot tạo ticket
-        await createOrderTicket(newOrder);
 
-        res.json({ message: "Success", orderId: orderIdStr });
-
+        return res.json({
+            message: 'Success',
+            orderId,
+            totalAmount
+        });
     } catch (err) {
-        console.error("Checkout Error:", err);
-        res.status(500).json({ message: "Server Error" });
+        console.error('Checkout Error:', err);
+        return res.status(500).json({ message: 'Server Error' });
     }
 };
 
-// Lấy danh sách sản phẩm
 exports.getProducts = async (req, res) => {
     try {
-        const products = await Product.find();
-        res.json(products);
+        const products = await Product.find().lean();
+        return res.json(products);
     } catch (err) {
-        res.status(500).json({ message: err.message });
+        return res.status(500).json({ message: err.message });
     }
 };
 
-// Link Discord từ website (DiscordModal) -> lưu vào collection User
 exports.linkDiscord = async (req, res) => {
-    const { discordId, discordUsername } = req.body;
+    const { discordId, discordUsername } = req.body || {};
 
     if (!discordId || !discordUsername) {
         return res.status(400).json({ message: 'Missing discordId or discordUsername' });
@@ -92,12 +110,8 @@ exports.linkDiscord = async (req, res) => {
 
     try {
         let user = await User.findOne({ discordId });
-
         if (!user) {
-            user = await User.create({
-                discordId,
-                discordUsername,
-            });
+            user = await User.create({ discordId, discordUsername });
         } else {
             user.discordUsername = discordUsername;
             await user.save();
@@ -107,8 +121,8 @@ exports.linkDiscord = async (req, res) => {
             message: 'Linked successfully',
             user: {
                 discordId: user.discordId,
-                discordUsername: user.discordUsername,
-            },
+                discordUsername: user.discordUsername
+            }
         });
     } catch (err) {
         console.error('LinkDiscord Error:', err);

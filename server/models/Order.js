@@ -15,10 +15,14 @@ const orderSchema = new mongoose.Schema({
     paymentMethod: { type: String, default: null },
     paypalOrderId: { type: String },
     channelId: { type: String },
-    ticketStatus: { type: String, enum: ['pending', 'creating', 'ready', 'failed', 'panel'], default: 'pending' },
+    ticketStatus: { type: String, enum: ['pending', 'creating', 'created', 'ready', 'failed', 'panel'], default: 'pending' },
+    ticketLockUntil: { type: Date, default: null },
     ticketError: { type: String, default: '' },
     paypalTicketChannel: { type: String },
     paypalTicketChannelId: { type: String },
+    paypalTicketStatus: { type: String, enum: ['pending', 'creating', 'created', 'failed'], default: 'pending' },
+    paypalTicketLockUntil: { type: Date, default: null },
+    paypalTicketError: { type: String, default: '' },
     createdAt: { type: Date, default: Date.now }
 });
 
