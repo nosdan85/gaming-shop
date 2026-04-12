@@ -21,6 +21,8 @@ const AUTH_RATE_LIMIT_MAX_RETRY_SECONDS = 120;
 const DISCORD_TOKEN_MIN_GAP_MS = 1500;
 const BRIDGE_REQUEST_MAX_AGE_MS = 5 * 60 * 1000;
 const DISCORD_GUILD_CHECK_TIMEOUT_MS = 8000;
+const DISCORD_TICKET_CREATE_TIMEOUT_MS = 12000;
+const PAYMENT_PROVIDER_TIMEOUT_MS = 15000;
 const discordAuthSuccessCache = new Map();
 const discordAuthInFlight = new Map();
 let discordAuthBlockedUntilMs = 0;
@@ -614,9 +616,13 @@ router.post('/create-payment', authRequired, async (req, res) => {
 
             const returnUrl = `${backendBaseUrl}/api/shop/paypal/capture?orderId=${encodeURIComponent(orderId)}`;
             const cancelUrl = `${clientBaseUrl}/pay?orderId=${encodeURIComponent(orderId)}`;
-            const paypal = await createPayPalOrder(orderId, order.totalAmount, returnUrl, cancelUrl);
+            const paypal = await withTimeout(
+                createPayPalOrder(orderId, order.totalAmount, returnUrl, cancelUrl),
+                PAYMENT_PROVIDER_TIMEOUT_MS,
+                null
+            );
             if (!paypal?.approvalLink || !paypal?.orderId) {
-                return res.status(500).json({ error: 'PayPal is not configured' });
+                return res.status(503).json({ error: 'PayPal is temporarily unavailable. Please use another payment option.' });
             }
 
             await Order.findByIdAndUpdate(order._id, {
@@ -632,9 +638,13 @@ router.post('/create-payment', authRequired, async (req, res) => {
         }
 
         if (method === 'ltc') {
-            const ltc = await createLTCInvoice(orderId, order.totalAmount);
+            const ltc = await withTimeout(
+                createLTCInvoice(orderId, order.totalAmount),
+                PAYMENT_PROVIDER_TIMEOUT_MS,
+                null
+            );
             if (!ltc?.payAddress) {
-                return res.status(500).json({ error: 'LTC payment is not configured' });
+                return res.status(503).json({ error: 'LTC payment is temporarily unavailable. Please use another payment option.' });
             }
 
             await Order.findByIdAndUpdate(order._id, { paymentMethod: 'ltc' });
@@ -793,7 +803,17 @@ router.post('/create-ticket-paypal-ff', authRequired, async (req, res) => {
 
         const paypalSeq = counter.seq;
         const channelName = `paypal_${paypalSeq}`;
-        const channelId = await createPayPalFFTicket(order, paypalSeq);
+        const channelId = await withTimeout(
+            Promise.resolve(createPayPalFFTicket(order, paypalSeq)),
+            DISCORD_TICKET_CREATE_TIMEOUT_MS,
+            null
+        );
+        if (!channelId) {
+            return res.status(503).json({
+                error: 'Ticket bot is temporarily unavailable. Please try again in a moment.',
+                email: process.env.PAYPAL_EMAIL || ''
+            });
+        }
         if (channelId) {
             await Order.findByIdAndUpdate(order._id, {
                 paymentMethod: 'paypal_ff',
@@ -824,11 +844,17 @@ router.post('/create-ticket', authRequired, async (req, res) => {
             return res.json({ channelId: order.channelId });
         }
 
-        const channelId = await createOrderTicket(order);
-        if (channelId) {
-            await Order.findByIdAndUpdate(order._id, { channelId });
+        const channelId = await withTimeout(
+            Promise.resolve(createOrderTicket(order)),
+            DISCORD_TICKET_CREATE_TIMEOUT_MS,
+            null
+        );
+        if (!channelId) {
+            return res.status(503).json({ error: 'Ticket bot is temporarily unavailable. Please try again in a moment.' });
         }
-        return res.json({ channelId: channelId || null });
+
+        await Order.findByIdAndUpdate(order._id, { channelId });
+        return res.json({ channelId });
     } catch (err) {
         console.error('Create ticket error:', err);
         return res.status(500).json({ error: 'Server error' });

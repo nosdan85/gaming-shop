@@ -4,6 +4,12 @@ import axios from 'axios';
 
 const GUILD_ID = import.meta.env.VITE_DISCORD_GUILD_ID || '';
 const VALID_GUILD = Boolean(GUILD_ID && String(GUILD_ID).trim().length > 0);
+const REQUEST_TIMEOUT_MS = 15000;
+
+const getHttpErrorMessage = (err, fallback) => {
+  if (err?.code === 'ECONNABORTED') return 'Request timeout. Please try again.';
+  return err?.response?.data?.error || fallback;
+};
 
 const openTicketChannel = (channelId) => {
   if (!channelId || !VALID_GUILD) return;
@@ -49,7 +55,7 @@ const PaymentPage = () => {
 
     setOrderInfoLoading(true);
     setOrderInfoError('');
-    axios.get(`/api/shop/order-payment-info?orderId=${encodeURIComponent(orderId)}`)
+    axios.get(`/api/shop/order-payment-info?orderId=${encodeURIComponent(orderId)}`, { timeout: REQUEST_TIMEOUT_MS })
       .then((res) => {
         setOrderInfo(res.data);
         if (res.data?.isPaid) setPaid(true);
@@ -101,14 +107,18 @@ const PaymentPage = () => {
   const handlePayPal = async () => {
     setPaypalLoading(true);
     try {
-      const res = await axios.post('/api/shop/create-payment', { orderId, method: 'paypal' });
+      const res = await axios.post(
+        '/api/shop/create-payment',
+        { orderId, method: 'paypal' },
+        { timeout: REQUEST_TIMEOUT_MS }
+      );
       if (res.data.approvalLink) {
         window.location.href = res.data.approvalLink;
       } else {
         alert('PayPal is not available right now.');
       }
     } catch (err) {
-      alert(err.response?.data?.error || 'PayPal is not available right now.');
+      alert(getHttpErrorMessage(err, 'PayPal is not available right now.'));
     } finally {
       setPaypalLoading(false);
     }
@@ -117,11 +127,15 @@ const PaymentPage = () => {
   const handleLTC = async () => {
     setLtcLoading(true);
     try {
-      const res = await axios.post('/api/shop/create-payment', { orderId, method: 'ltc' });
+      const res = await axios.post(
+        '/api/shop/create-payment',
+        { orderId, method: 'ltc' },
+        { timeout: REQUEST_TIMEOUT_MS }
+      );
       if (res.data.payAddress) setLtcData(res.data);
       else alert('LTC payment not available.');
     } catch (err) {
-      alert(err.response?.data?.error || 'LTC payment not available.');
+      alert(getHttpErrorMessage(err, 'LTC payment not available.'));
     } finally {
       setLtcLoading(false);
     }
@@ -130,7 +144,11 @@ const PaymentPage = () => {
   const handleCashAppRobux = async () => {
     setTicketLoading('ticket');
     try {
-      const res = await axios.post('/api/shop/create-ticket', { orderId });
+      const res = await axios.post(
+        '/api/shop/create-ticket',
+        { orderId },
+        { timeout: REQUEST_TIMEOUT_MS }
+      );
       const data = res.data;
       if (data.channelId) {
         openTicketChannel(data.channelId);
@@ -138,7 +156,7 @@ const PaymentPage = () => {
         alert('Could not create ticket. Try again.');
       }
     } catch (err) {
-      alert(err.response?.data?.error || 'Could not create ticket. Try again.');
+      alert(getHttpErrorMessage(err, 'Could not create ticket. Try again.'));
     } finally {
       setTicketLoading(null);
     }
@@ -147,7 +165,7 @@ const PaymentPage = () => {
   const handlePayPalFF = async () => {
     setPaypalFFLoading(true);
     try {
-      const res = await axios.get('/api/shop/paypal-email');
+      const res = await axios.get('/api/shop/paypal-email', { timeout: REQUEST_TIMEOUT_MS });
       setPaypalFFData({ channelId: null, email: res.data?.email || '' });
     } catch {
       setPaypalFFData({ channelId: null, email: '' });
@@ -159,12 +177,16 @@ const PaymentPage = () => {
   const handleOpenPayPalTicket = async () => {
     setPaypalTicketLoading(true);
     try {
-      const res = await axios.post('/api/shop/create-ticket-paypal-ff', { orderId });
+      const res = await axios.post(
+        '/api/shop/create-ticket-paypal-ff',
+        { orderId },
+        { timeout: REQUEST_TIMEOUT_MS }
+      );
       const { channelId, email } = res.data || {};
       setPaypalFFData((prev) => ({ ...prev, channelId: channelId || null, email: email || prev?.email || '' }));
       if (channelId) openTicketChannel(channelId);
     } catch (err) {
-      alert(err.response?.data?.error || 'Could not create ticket. Try again.');
+      alert(getHttpErrorMessage(err, 'Could not create ticket. Try again.'));
     } finally {
       setPaypalTicketLoading(false);
     }
