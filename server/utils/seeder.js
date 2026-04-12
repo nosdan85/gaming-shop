@@ -34,9 +34,9 @@ const SHOP_DATA = {
         {
             name: 'Mythic Chest',
             priceNumber: 1,
-            oneTimePrice: '$1/8.000',
+            oneTimePrice: '$1/8k',
             bulkPriceNumber: 1,
-            bulkPriceString: '$1/9000',
+            bulkPriceString: '$1/9k',
             image: 'mythic-chest.png'
         }
     ],
@@ -60,9 +60,9 @@ const SHOP_DATA = {
         {
             name: 'Clan Reroll',
             priceNumber: 1,
-            oneTimePrice: '$1/10000',
+            oneTimePrice: '$1/10k',
             bulkPriceNumber: 1,
-            bulkPriceString: '$1/12000',
+            bulkPriceString: '$1/12k',
             image: 'clan-reroll.png'
         }
     ],
@@ -78,7 +78,7 @@ const SHOP_DATA = {
         {
             name: 'Power Shard',
             priceNumber: 1,
-            oneTimePrice: '$1/30000',
+            oneTimePrice: '$1/30k',
             bulkPriceNumber: 1,
             bulkPriceString: '$1/35k',
             image: 'power-shard.png'
@@ -88,9 +88,9 @@ const SHOP_DATA = {
         {
             name: 'Upper Seal',
             priceNumber: 1,
-            oneTimePrice: '$1/30000',
+            oneTimePrice: '$1/30k',
             bulkPriceNumber: 1,
-            bulkPriceString: '$1/35000',
+            bulkPriceString: '$1/35k',
             image: 'upper-seal.png'
         }
     ],

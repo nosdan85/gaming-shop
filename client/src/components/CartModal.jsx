@@ -2,6 +2,7 @@ import { useContext, useState, useEffect } from 'react';
 import { ShopContext } from '../context/ShopContext';
 import { XMarkIcon, CheckBadgeIcon, UserCircleIcon, CurrencyDollarIcon, TicketIcon, ClipboardDocumentListIcon } from '@heroicons/react/24/outline';
 import axios from 'axios';
+import { formatCardPrice } from '../utils/priceFormatting';
 
 const BULK_DISCOUNT_THRESHOLD = 14.99;
 const roundMoney = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
@@ -14,9 +15,8 @@ const getItemPricing = (item) => {
   const hasBulkPrice = Number.isFinite(bulkUnitPrice) && bulkUnitPrice > 0;
   const useBulkPrice = hasBulkPrice && regularTotal > BULK_DISCOUNT_THRESHOLD;
   const appliedUnitPrice = useBulkPrice ? bulkUnitPrice : regularUnitPrice;
-  const displayUnitPrice = useBulkPrice
-    ? (item?.bulkPriceString || `$${appliedUnitPrice}`)
-    : (item?.originalPriceString || `$${appliedUnitPrice}`);
+  const sourcePriceString = useBulkPrice ? item?.bulkPriceString : item?.originalPriceString;
+  const displayUnitPrice = formatCardPrice(sourcePriceString, appliedUnitPrice);
 
   return {
     useBulkPrice,
@@ -133,7 +133,7 @@ const CartModal = () => {
                        <h3 className="font-medium text-white text-sm md:text-base line-clamp-1">{item.name}</h3>
                        <div className="flex justify-between mt-2 items-center">
                           <div className="min-w-0">
-                            <span className="text-gray-400 text-xs md:text-sm">{pricing.displayUnitPrice} x {item.quantity}</span>
+                            <span className="text-gray-400 text-xs md:text-sm">{pricing.displayUnitPrice} | qty {item.quantity}</span>
                             {pricing.useBulkPrice && (
                               <p className="text-[10px] text-green-400 mt-1">Bulk price applied</p>
                             )}

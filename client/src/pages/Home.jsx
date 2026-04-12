@@ -6,6 +6,7 @@ import { MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 
 const GAMES = ['Sailor Piece'];
 const CATEGORIES = ['All', 'Chest', 'Reroll', 'Shard', 'Seal', 'Relic'];
+const VALID_CACHE_CATEGORIES = new Set(CATEGORIES.filter((category) => category !== 'All'));
 const SORT_OPTIONS = [
   { id: 'none', label: 'Default' },
   { id: 'low-high', label: 'Price: Low -> High' },
@@ -13,32 +14,39 @@ const SORT_OPTIONS = [
 ];
 
 const CACHE_KEY = 'productsCache';
-const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 const DISCORD_INVITE_URL = import.meta.env.VITE_DISCORD_INVITE_URL || 'https://discord.gg/T4A4ANp9';
+const getCachedProducts = () => {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed?.data)) return [];
+    const filtered = parsed.data.filter((item) => VALID_CACHE_CATEGORIES.has(item?.category));
+    return filtered;
+  } catch {
+    return [];
+  }
+};
 
 const Home = () => {
-  const [products, setProducts] = useState([]);
+  const [products, setProducts] = useState(() => getCachedProducts());
   const [activeGame, setActiveGame] = useState('Sailor Piece');
   const [activeCategory, setActiveCategory] = useState('All');
   const [selectedProduct, setSelectedProduct] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => getCachedProducts().length === 0);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('none');
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(CACHE_KEY);
-      if (raw) {
-        const { data, ts } = JSON.parse(raw);
-        if (data?.length && Date.now() - ts < CACHE_TTL_MS) {
-          setProducts(data);
-        }
-      }
-    } catch (_) {
-      // Ignore invalid cache payload.
+    const cachedProducts = getCachedProducts();
+    if (cachedProducts.length > 0) {
+      setProducts(cachedProducts);
+      setLoading(false);
+    } else {
+      setLoading(true);
     }
 
-    setLoading(true);
     axios.get('/api/shop/products')
       .then((res) => {
         setProducts(res.data);

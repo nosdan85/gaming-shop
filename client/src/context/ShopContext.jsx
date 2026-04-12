@@ -3,8 +3,16 @@ import axios from 'axios';
 
 export const ShopContext = createContext();
 
+const MAX_CART_QUANTITY = 100000;
+const normalizeQuantity = (value, fallback = 1) => {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed)) return fallback;
+  if (parsed < 1) return fallback;
+  if (parsed > MAX_CART_QUANTITY) return MAX_CART_QUANTITY;
+  return parsed;
+};
+
 export const ShopProvider = ({ children }) => {
-  // Cart: init from localStorage so F5/redirect keeps items
   const [cart, setCart] = useState(() => {
     if (typeof window === 'undefined') return [];
     try {
@@ -46,7 +54,6 @@ export const ShopProvider = ({ children }) => {
     return () => window.removeEventListener('storage', onStorage);
   }, []);
 
-  // Persist cart to localStorage on change
   useEffect(() => {
     try {
       localStorage.setItem('cart', JSON.stringify(cart));
@@ -55,21 +62,22 @@ export const ShopProvider = ({ children }) => {
     }
   }, [cart]);
 
-  // Hàm thêm vào giỏ
-  const addToCart = (product) => {
+  const addToCart = (product, quantity = 1) => {
+    const normalizedQuantity = normalizeQuantity(quantity);
     setCart((prev) => {
       const exist = prev.find((x) => x._id === product._id);
       if (exist) {
-        return prev.map((x) => x._id === product._id ? { ...x, quantity: x.quantity + 1 } : x);
-      } else {
-        return [...prev, { ...product, quantity: 1 }];
+        return prev.map((x) => {
+          if (x._id !== product._id) return x;
+          const nextQuantity = Math.min(MAX_CART_QUANTITY, x.quantity + normalizedQuantity);
+          return { ...x, ...product, quantity: nextQuantity };
+        });
       }
+
+      return [...prev, { ...product, quantity: normalizedQuantity }];
     });
-    
-    // KHÔNG TỰ BẬT CART NỮA -> Thay bằng thông báo
-    setNotification(`Added ${product.name} to bag`);
-    
-    // Tắt thông báo sau 3s
+
+    setNotification(`Added ${normalizedQuantity}x ${product.name} to bag`);
     setTimeout(() => setNotification(null), 3000);
   };
 
@@ -78,7 +86,7 @@ export const ShopProvider = ({ children }) => {
   };
 
   const clearCart = () => setCart([]);
-  
+
   const loginDiscord = (userData) => {
     setUser(userData);
     localStorage.setItem('discordUser', JSON.stringify(userData));
@@ -91,18 +99,17 @@ export const ShopProvider = ({ children }) => {
     localStorage.removeItem('user');
     localStorage.removeItem('token');
     delete axios.defaults.headers.common.Authorization;
-  }
+  };
 
   return (
     <ShopContext.Provider value={{ cart, addToCart, removeFromCart, clearCart, user, loginDiscord, logoutDiscord, isCartOpen, setIsCartOpen }}>
       {children}
-      
-      {/* Toast notification */}
+
       {notification && (
         <div className="fixed bottom-8 left-1/2 transform -translate-x-1/2 z-[100] toast-animate">
           <div className="bg-[#333333]/90 backdrop-blur-md text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 border border-[#444]">
-             <span className="text-[#00D632] bg-white/10 rounded-full p-1 text-xs">✓</span> 
-             <span className="text-sm font-medium">{notification}</span>
+            <span className="text-[#00D632] bg-white/10 rounded-full p-1 text-xs">✓</span>
+            <span className="text-sm font-medium">{notification}</span>
           </div>
         </div>
       )}

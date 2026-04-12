@@ -199,7 +199,8 @@ router.post('/auth/discord', async (req, res) => {
 
 router.get('/products', async (req, res) => {
     try {
-        const products = await Product.find();
+        const products = await Product.find().lean();
+        res.set('Cache-Control', 'public, max-age=120, stale-while-revalidate=600');
         return res.json(products);
     } catch (err) {
         return res.status(500).json({ error: err.message });
