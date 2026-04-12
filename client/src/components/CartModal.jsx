@@ -7,7 +7,23 @@ import { formatCardPrice } from '../utils/priceFormatting';
 const BULK_DISCOUNT_THRESHOLD = 10;
 const MIN_CHECKOUT_TOTAL = 1;
 const CHECKOUT_TIMEOUT_MS = 20000;
+const GUILD_ID = import.meta.env.VITE_DISCORD_GUILD_ID || '';
+const VALID_GUILD = Boolean(GUILD_ID && String(GUILD_ID).trim().length > 0);
 const roundMoney = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+
+const openTicketChannel = (channelId) => {
+  if (!channelId || !VALID_GUILD) return;
+  const httpsUrl = `https://discord.com/channels/${GUILD_ID}/${channelId}`;
+  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  const linkMethod = localStorage.getItem('discordLinkMethod') || 'web';
+  if (isMobile || linkMethod === 'app') {
+    const appUrl = `discord://-/channels/${GUILD_ID}/${channelId}`;
+    window.location.href = appUrl;
+    setTimeout(() => window.open(httpsUrl, '_blank'), 1200);
+  } else {
+    window.open(httpsUrl, '_blank');
+  }
+};
 
 const getItemPricing = (item) => {
   const quantity = Number(item?.quantity) || 0;
@@ -122,9 +138,33 @@ const CartModal = () => {
         { cartItems: cart },
         { timeout: CHECKOUT_TIMEOUT_MS }
       );
+      const {
+        orderId,
+        channelId,
+        ticketMode,
+        panelUrl,
+        ticketError,
+        ticketRetryAfterSeconds
+      } = res.data || {};
+      if (!orderId) {
+        throw new Error('Invalid checkout response: missing orderId');
+      }
+
+      if (channelId) {
+        openTicketChannel(channelId);
+      } else if (ticketMode === 'panel' && panelUrl) {
+        window.open(panelUrl, '_blank');
+      }
+
+      if (ticketError) {
+        const retryHint = Number(ticketRetryAfterSeconds) > 0
+          ? ` Retry in about ${ticketRetryAfterSeconds}s on the payment page.`
+          : ' You can open/retry ticket creation on the payment page.';
+        alert(`${ticketError}${retryHint}`);
+      }
+
       clearCart();
       setIsCartOpen(false);
-      const { orderId } = res.data;
       window.location.href = `/pay?orderId=${orderId}`;
     } catch (err) {
       if (err.code === 'ECONNABORTED') {

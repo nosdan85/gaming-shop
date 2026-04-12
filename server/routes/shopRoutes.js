@@ -27,6 +27,7 @@ const AUTH_RATE_LIMIT_MAX_RETRY_SECONDS = 120;
 const DISCORD_TOKEN_MIN_GAP_MS = 1500;
 const BRIDGE_REQUEST_MAX_AGE_MS = 5 * 60 * 1000;
 const DISCORD_GUILD_CHECK_TIMEOUT_MS = 8000;
+const CHECKOUT_TICKET_CREATE_TIMEOUT_MS = 22000;
 const PAYMENT_PROVIDER_TIMEOUT_MS = 15000;
 const discordAuthSuccessCache = new Map();
 const discordAuthInFlight = new Map();
@@ -378,6 +379,27 @@ const getOwnedOrder = async (orderId, discordId) => {
     if (order.discordId !== discordId) return { order: null, status: 403, error: 'You do not own this order' };
     return { order, status: 200, error: null };
 };
+const ensureOrderTicketChannelId = async (order) => {
+    if (!order?.orderId) return null;
+
+    if (isPanelTicketMode()) {
+        return null;
+    }
+
+    return runSingleFlight(orderTicketInFlight, `order_ticket:${order.orderId}`, async () => {
+        const freshOrder = await Order.findOne({ orderId: order.orderId }).lean();
+        if (freshOrder?.channelId) return freshOrder.channelId;
+
+        const channelId = await Promise.resolve(createOrderTicket(order));
+        if (channelId) {
+            const targetId = order._id || freshOrder?._id;
+            if (targetId) {
+                await Order.findByIdAndUpdate(targetId, { channelId });
+            }
+        }
+        return channelId || null;
+    });
+};
 
 const canAccessOwnerEndpoints = async (discordId) => {
     if (!discordId) return false;
@@ -628,7 +650,42 @@ router.post('/checkout', authRequired, checkoutLimiter, async (req, res) => {
         });
         await newOrder.save();
 
-        return res.json({ success: true, orderId, totalAmount: newOrder.totalAmount });
+        const ticketMode = isPanelTicketMode() ? 'panel' : 'bot';
+        const panelUrl = isPanelTicketMode() ? getTicketPanelUrl() : '';
+        let channelId = null;
+        let ticketError = '';
+        let ticketRetryAfterSeconds = 0;
+
+        if (ticketMode === 'panel') {
+            await Order.findByIdAndUpdate(newOrder._id, { status: 'Waiting Payment' });
+        } else {
+            try {
+                const createdChannelId = await withTimeout(
+                    Promise.resolve(ensureOrderTicketChannelId(newOrder)),
+                    CHECKOUT_TICKET_CREATE_TIMEOUT_MS,
+                    null
+                );
+                channelId = createdChannelId || null;
+                if (!channelId) {
+                    ticketError = 'Order created, but ticket is still being prepared. Please open ticket on payment page.';
+                }
+            } catch (ticketCreateError) {
+                const payload = buildTicketErrorResponse(ticketCreateError).payload || {};
+                ticketError = String(payload.error || 'Order created, but automatic ticket creation failed.');
+                ticketRetryAfterSeconds = Number(payload.retryAfterSeconds || 0);
+            }
+        }
+
+        return res.json({
+            success: true,
+            orderId,
+            totalAmount: newOrder.totalAmount,
+            ticketMode,
+            channelId,
+            ...(panelUrl ? { panelUrl } : {}),
+            ...(ticketError ? { ticketError } : {}),
+            ...(ticketRetryAfterSeconds > 0 ? { ticketRetryAfterSeconds } : {})
+        });
     } catch (err) {
         console.error('Checkout error:', err);
         return res.status(500).json({ error: 'Server error' });
@@ -645,7 +702,10 @@ router.get('/order-payment-info', authRequired, async (req, res) => {
             orderId: order.orderId,
             totalAmount: order.totalAmount,
             status: order.status,
-            isPaid: order.status === 'Completed'
+            isPaid: order.status === 'Completed',
+            channelId: order.channelId || null,
+            ticketMode: isPanelTicketMode() ? 'panel' : 'bot',
+            panelUrl: isPanelTicketMode() ? getTicketPanelUrl() : ''
         });
     } catch (err) {
         console.error('Order payment info error:', err);
@@ -957,15 +1017,7 @@ router.post('/create-ticket', authRequired, async (req, res) => {
             return res.json({ channelId: order.channelId });
         }
 
-        const channelId = await runSingleFlight(orderTicketInFlight, `order_ticket:${order.orderId}`, async () => {
-            const fresh = await Order.findById(order._id).lean();
-            if (fresh?.channelId) return fresh.channelId;
-            const createdChannelId = await Promise.resolve(createOrderTicket(order));
-            if (createdChannelId) {
-                await Order.findByIdAndUpdate(order._id, { channelId: createdChannelId });
-            }
-            return createdChannelId;
-        });
+        const channelId = await Promise.resolve(ensureOrderTicketChannelId(order));
         if (!channelId) throw new DiscordBotError('Could not create ticket channel', { status: 503, code: 'DISCORD_TICKET_UNAVAILABLE' });
         return res.json({ channelId });
     } catch (err) {
