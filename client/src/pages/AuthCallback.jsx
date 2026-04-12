@@ -16,10 +16,17 @@ const createTimeoutError = () => {
 };
 
 const postAuthCode = async (code, redirectUri) => {
-    const responsePromise = axios.post('/api/shop/auth/discord', {
-        code,
-        redirect_uri: redirectUri
-    });
+    const responsePromise = axios.post(
+        '/api/discord-exchange',
+        {
+            code,
+            redirect_uri: redirectUri
+        },
+        {
+            // Force same-origin Vercel function instead of axios global baseURL (Render).
+            baseURL: window.location.origin
+        }
+    );
 
     const timeoutPromise = new Promise((_, reject) => {
         setTimeout(() => reject(createTimeoutError()), AUTH_REQUEST_TIMEOUT_MS);

@@ -7,8 +7,7 @@ const getOAuthUrl = () => {
     client_id: clientId,
     redirect_uri: redirectUri,
     response_type: 'code',
-      scope: 'identify',
-    prompt: 'consent',
+    scope: 'identify',
   });
   return `https://discord.com/oauth2/authorize?${params.toString()}`;
 };

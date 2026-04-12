@@ -19,6 +19,7 @@ const AUTH_CODE_CACHE_TTL_MS = 2 * 60 * 1000;
 const AUTH_RATE_LIMIT_DEFAULT_RETRY_SECONDS = 30;
 const AUTH_RATE_LIMIT_MAX_RETRY_SECONDS = 120;
 const DISCORD_TOKEN_MIN_GAP_MS = 1500;
+const BRIDGE_REQUEST_MAX_AGE_MS = 5 * 60 * 1000;
 const discordAuthSuccessCache = new Map();
 const discordAuthInFlight = new Map();
 let discordAuthBlockedUntilMs = 0;
@@ -131,6 +132,117 @@ const timingSafeEqualHex = (left, right) => {
     return crypto.timingSafeEqual(a, b);
 };
 
+const parseBridgeTimestampMs = (value) => {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    if (n < 1e12) return Math.round(n * 1000);
+    return Math.round(n);
+};
+
+const getBridgeVerificationResult = (req) => {
+    const secret = String(process.env.DISCORD_AUTH_BRIDGE_SECRET || '').trim();
+    if (!secret) {
+        return { ok: false, status: 500, error: 'DISCORD_AUTH_BRIDGE_SECRET is not configured' };
+    }
+
+    const timestampHeader = String(req.headers['x-bridge-timestamp'] || '').trim();
+    const signatureHeader = String(req.headers['x-bridge-signature'] || '').trim().toLowerCase();
+    if (!timestampHeader || !signatureHeader) {
+        return { ok: false, status: 401, error: 'Missing bridge signature headers' };
+    }
+
+    const timestampMs = parseBridgeTimestampMs(timestampHeader);
+    if (!timestampMs || Math.abs(Date.now() - timestampMs) > BRIDGE_REQUEST_MAX_AGE_MS) {
+        return { ok: false, status: 401, error: 'Bridge request timestamp is invalid or expired' };
+    }
+
+    const rawBody = typeof req.rawBody === 'string' ? req.rawBody : JSON.stringify(req.body || {});
+    const expectedSignature = crypto
+        .createHmac('sha256', secret)
+        .update(`${timestampMs}.${rawBody}`)
+        .digest('hex')
+        .toLowerCase();
+
+    if (!timingSafeEqualHex(signatureHeader, expectedSignature)) {
+        return { ok: false, status: 401, error: 'Bridge signature verification failed' };
+    }
+
+    return { ok: true };
+};
+
+const issueDiscordUserJwt = (discordId) => {
+    if (!process.env.JWT_SECRET) {
+        throw new Error('JWT_SECRET is not configured');
+    }
+
+    return jwt.sign(
+        { discordId, type: 'user' },
+        process.env.JWT_SECRET,
+        { expiresIn: '7d' }
+    );
+};
+
+const normalizeDiscordScopes = (scope) => {
+    if (typeof scope !== 'string') return [];
+    return scope
+        .split(' ')
+        .map((s) => s.trim())
+        .filter(Boolean);
+};
+
+const upsertDiscordUserAndBuildAuthPayload = async ({
+    discordUser,
+    accessToken = '',
+    refreshToken = '',
+    expiresIn = 0,
+    scope = ''
+}) => {
+    const discordId = String(discordUser?.id || '').trim();
+    const discordUsername = String(discordUser?.username || discordUser?.global_name || '').trim();
+    if (!discordId || !discordUsername) {
+        throw new Error('Discord user payload is invalid');
+    }
+
+    let dbUser = await User.findOne({ discordId });
+    const isNewUser = !dbUser;
+    if (!dbUser) {
+        dbUser = new User({ discordId, discordUsername });
+    } else {
+        dbUser.discordUsername = discordUsername;
+    }
+
+    const safeAccessToken = typeof accessToken === 'string' ? accessToken.trim() : '';
+    const safeRefreshToken = typeof refreshToken === 'string' ? refreshToken.trim() : '';
+    const scopes = normalizeDiscordScopes(scope);
+    const expiresInSeconds = Number(expiresIn);
+
+    if (safeAccessToken) dbUser.accessToken = safeAccessToken;
+    if (safeRefreshToken) dbUser.refreshToken = safeRefreshToken;
+    if (Number.isFinite(expiresInSeconds) && expiresInSeconds > 0) {
+        dbUser.tokenExpiresAt = new Date(Date.now() + expiresInSeconds * 1000);
+    }
+    if (scopes.length > 0) {
+        dbUser.scopes = scopes;
+    }
+
+    await dbUser.save();
+
+    // Keep Discord API load low by default; only auto-join when explicitly enabled.
+    if (isNewUser && scopes.includes('guilds.join') && process.env.DISCORD_AUTO_JOIN_ON_LOGIN === 'true' && safeAccessToken) {
+        void joinGuildWithAccessToken(process.env.DISCORD_GUILD_ID, discordId, safeAccessToken);
+    }
+
+    const token = issueDiscordUserJwt(dbUser.discordId);
+    return {
+        user: {
+            discordId: dbUser.discordId,
+            discordUsername: dbUser.discordUsername,
+            avatar: discordUser?.avatar || null
+        },
+        token
+    };
+};
+
 const extractPayPalSummary = (captureData) => {
     const purchaseUnit = captureData?.purchase_units?.[0];
     const capture = purchaseUnit?.payments?.captures?.[0];
@@ -230,51 +342,13 @@ const exchangeDiscordAuthCode = async (code, redirectUri) => {
         headers: { Authorization: `Bearer ${access_token}` }
     }, 0, { noRetry: true }));
 
-    const user = userResponse.data || {};
-    const discordId = user.id;
-    const discordUsername = user.username;
-    if (!discordId || !discordUsername) {
-        throw new Error('Discord user payload is invalid');
-    }
-
-    let dbUser = await User.findOne({ discordId });
-    const isNewUser = !dbUser;
-    if (!dbUser) {
-        dbUser = new User({ discordId, discordUsername });
-    } else {
-        dbUser.discordUsername = discordUsername;
-    }
-
-    const scopes = typeof scope === 'string' ? scope.split(' ') : [];
-    dbUser.accessToken = access_token;
-    dbUser.refreshToken = refresh_token;
-    dbUser.tokenExpiresAt = new Date(Date.now() + (Number(expires_in) || 0) * 1000);
-    dbUser.scopes = scopes;
-    await dbUser.save();
-
-    // Keep Discord API load low by default; only auto-join when explicitly enabled.
-    if (isNewUser && scopes.includes('guilds.join') && process.env.DISCORD_AUTO_JOIN_ON_LOGIN === 'true') {
-        void joinGuildWithAccessToken(process.env.DISCORD_GUILD_ID, discordId, access_token);
-    }
-
-    if (!process.env.JWT_SECRET) {
-        throw new Error('JWT_SECRET is not configured');
-    }
-
-    const token = jwt.sign(
-        { discordId: dbUser.discordId, type: 'user' },
-        process.env.JWT_SECRET,
-        { expiresIn: '7d' }
-    );
-
-    return {
-        user: {
-            discordId: dbUser.discordId,
-            discordUsername: dbUser.discordUsername,
-            avatar: user.avatar || null
-        },
-        token
-    };
+    return upsertDiscordUserAndBuildAuthPayload({
+        discordUser: userResponse.data || {},
+        accessToken: access_token,
+        refreshToken: refresh_token,
+        expiresIn: expires_in,
+        scope
+    });
 };
 
 router.post('/auth/discord', async (req, res) => {
@@ -361,6 +435,33 @@ router.post('/auth/discord', async (req, res) => {
         return res.status(500).json({ error: 'Authentication failed' });
     } finally {
         discordAuthInFlight.delete(cacheKey);
+    }
+});
+
+router.post('/auth/discord-bridge', async (req, res) => {
+    const verification = getBridgeVerificationResult(req);
+    if (!verification.ok) {
+        return res.status(verification.status).json({ error: verification.error });
+    }
+
+    try {
+        const payload = await upsertDiscordUserAndBuildAuthPayload({
+            discordUser: req.body?.user || {},
+            accessToken: req.body?.access_token,
+            refreshToken: req.body?.refresh_token,
+            expiresIn: req.body?.expires_in,
+            scope: req.body?.scope
+        });
+        return res.json(payload);
+    } catch (error) {
+        if (error.message === 'Discord user payload is invalid') {
+            return res.status(400).json({ error: error.message });
+        }
+        if (error.message === 'JWT_SECRET is not configured') {
+            return res.status(500).json({ error: error.message });
+        }
+        console.error('Discord bridge auth error:', error);
+        return res.status(500).json({ error: 'Authentication failed' });
     }
 });
 
