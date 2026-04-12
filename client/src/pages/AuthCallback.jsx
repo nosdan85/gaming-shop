@@ -15,6 +15,18 @@ const createTimeoutError = () => {
     return timeoutError;
 };
 
+const createOAuthUrl = () => {
+    const clientId = import.meta.env.VITE_DISCORD_CLIENT_ID || '';
+    const redirectUri = `${window.location.origin}/auth/discord/callback`;
+    const params = new URLSearchParams({
+        client_id: clientId,
+        redirect_uri: redirectUri,
+        response_type: 'code',
+        scope: 'identify'
+    });
+    return `https://discord.com/oauth2/authorize?${params.toString()}`;
+};
+
 const postAuthCode = async (code, redirectUri) => {
     const responsePromise = axios.post(
         '/api/discord-exchange',
@@ -60,6 +72,13 @@ const isRateLimitedError = (error) => {
     return data?.code === 'DISCORD_RATE_LIMIT' || statusCode === 503 || statusCode === 429;
 };
 
+const isInvalidOauthCodeError = (error) => {
+    const statusCode = error?.response?.status;
+    const raw = error?.response?.data?.error || error?.message || '';
+    const text = String(raw).toLowerCase();
+    return statusCode === 400 && (text.includes('invalid "code"') || text.includes('invalid grant'));
+};
+
 const AuthCallback = () => {
     const { loginDiscord } = useAuth();
     const inFlight = useRef(false);
@@ -68,6 +87,7 @@ const AuthCallback = () => {
     const [debugInfo, setDebugInfo] = useState('');
     const [canRetry, setCanRetry] = useState(false);
     const [retryInSeconds, setRetryInSeconds] = useState(0);
+    const [needsFreshOauth, setNeedsFreshOauth] = useState(false);
 
     useEffect(() => {
         if (retryInSeconds <= 0) return undefined;
@@ -98,6 +118,7 @@ const AuthCallback = () => {
                 setDebugInfo('');
                 setCanRetry(false);
                 setRetryInSeconds(0);
+                setNeedsFreshOauth(false);
 
                 for (let attempt = 1; attempt <= MAX_AUTH_RETRIES; attempt += 1) {
                     if (cancelled) return;
@@ -156,6 +177,16 @@ const AuthCallback = () => {
                             setRetryInSeconds(Math.max(0, Math.ceil(retryAfterSeconds)));
                             return;
                         }
+                        if (isInvalidOauthCodeError(error)) {
+                            setStatus('Discord login code expired');
+                            setDebugInfo(
+                                'OAuth code is no longer valid (expired/used).\n\n' +
+                                'Please press "Login Again" to start a fresh Discord login.'
+                            );
+                            setCanRetry(true);
+                            setNeedsFreshOauth(true);
+                            return;
+                        }
                         if (timeout) {
                             setStatus('Discord login timeout');
                             setDebugInfo('Server took too long to reply. Please press Retry Login.');
@@ -195,10 +226,15 @@ const AuthCallback = () => {
 
     const handleRetry = () => {
         if (inFlight.current || retryInSeconds > 0) return;
+        if (needsFreshOauth) {
+            window.location.href = createOAuthUrl();
+            return;
+        }
         setStatus('Retrying Discord login...');
         setDebugInfo('');
         setCanRetry(false);
         setRetryInSeconds(0);
+        setNeedsFreshOauth(false);
         setNonce((x) => x + 1);
     };
 
@@ -216,7 +252,9 @@ const AuthCallback = () => {
                                 disabled={retryInSeconds > 0}
                                 className="bg-[#5865F2] hover:bg-[#4752C4] disabled:bg-[#39408f] disabled:cursor-not-allowed text-white px-4 py-2 rounded"
                             >
-                                {retryInSeconds > 0 ? `Retry Login (${retryInSeconds}s)` : 'Retry Login'}
+                                {retryInSeconds > 0
+                                    ? `Retry Login (${retryInSeconds}s)`
+                                    : (needsFreshOauth ? 'Login Again' : 'Retry Login')}
                             </button>
                         )}
                         <button
