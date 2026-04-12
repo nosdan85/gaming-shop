@@ -9,7 +9,10 @@ import { ShopProvider } from './context/ShopContext';
 import { AuthProvider } from './context/AuthContext';
 import CartModal from './components/CartModal';
 
-const apiUrl = import.meta.env.VITE_API_URL || '';
+const rawApiUrl = import.meta.env.VITE_API_URL;
+const apiUrl = typeof rawApiUrl === 'string'
+  ? rawApiUrl.trim().replace(/\/+$/, '')
+  : '';
 if (apiUrl) axios.defaults.baseURL = apiUrl;
 
 const savedToken = localStorage.getItem('token');

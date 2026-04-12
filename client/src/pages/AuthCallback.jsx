@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 
-const MAX_AUTH_RETRIES = 3;
+const MAX_AUTH_RETRIES = 2;
 const BASE_RETRY_DELAY_MS = 2000;
 const MAX_RETRY_DELAY_MS = 15000;
 const AUTH_REQUEST_TIMEOUT_MS = 15000;
@@ -111,7 +111,7 @@ const AuthCallback = () => {
                     } catch (error) {
                         const timeout = error?.code === 'ECONNABORTED' || error?.code === 'AUTH_REQUEST_TIMEOUT';
                         const rateLimit = isRateLimitedError(error);
-                        const shouldRetry = attempt < MAX_AUTH_RETRIES && (timeout || rateLimit);
+                        const shouldRetry = attempt < MAX_AUTH_RETRIES && timeout;
 
                         if (shouldRetry) {
                             const delayMs = getRetryDelayMs(error, attempt);
@@ -133,7 +133,7 @@ const AuthCallback = () => {
                                 (retryAfterSeconds > 0
                                     ? `Suggested wait: about ${retryAfterSeconds}s before retry.\n\n`
                                     : '') +
-                                'Please wait a bit and press Retry Login.'
+                                'Please wait a bit, then press Retry Login once.'
                             );
                             setCanRetry(true);
                             return;
