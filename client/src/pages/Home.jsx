@@ -65,7 +65,9 @@ const Home = () => {
       .finally(() => setLoading(false));
   }, []);
 
-  let filteredProducts = products.filter((p) => {
+  const safeProducts = Array.isArray(products) ? products : [];
+
+  let filteredProducts = safeProducts.filter((p) => {
     const matchSearch = !searchTerm.trim() || p.name.toLowerCase().includes(searchTerm.toLowerCase());
     const matchCategory = !searchTerm.trim() ? (activeCategory === 'All' || p.category === activeCategory) : true;
     return matchSearch && matchCategory;
