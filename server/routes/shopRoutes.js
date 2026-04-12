@@ -158,9 +158,9 @@ router.post('/auth/discord', async (req, res) => {
             }),
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
         }, 0, {
-            maxRetries: 3,
-            baseDelayMs: 1200,
-            maxDelayMs: 12000
+            maxRetries: 1,
+            baseDelayMs: 800,
+            maxDelayMs: 2000
         });
 
         const { access_token, refresh_token, expires_in, scope } = tokenResponse.data || {};
@@ -171,9 +171,9 @@ router.post('/auth/discord', async (req, res) => {
             timeout: 12000,
             headers: { Authorization: `Bearer ${access_token}` }
         }, 0, {
-            maxRetries: 3,
-            baseDelayMs: 1200,
-            maxDelayMs: 12000
+            maxRetries: 1,
+            baseDelayMs: 800,
+            maxDelayMs: 2000
         });
 
         const user = userResponse.data || {};

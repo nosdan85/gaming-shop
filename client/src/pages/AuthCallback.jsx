@@ -2,11 +2,31 @@ import { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 
-const MAX_AUTH_RETRIES = 4;
+const MAX_AUTH_RETRIES = 3;
 const BASE_RETRY_DELAY_MS = 2000;
 const MAX_RETRY_DELAY_MS = 15000;
+const AUTH_REQUEST_TIMEOUT_MS = 15000;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const createTimeoutError = () => {
+    const timeoutError = new Error('Auth request timed out');
+    timeoutError.code = 'AUTH_REQUEST_TIMEOUT';
+    return timeoutError;
+};
+
+const postAuthCode = async (code, redirectUri) => {
+    const responsePromise = axios.post('/api/shop/auth/discord', {
+        code,
+        redirect_uri: redirectUri
+    });
+
+    const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(createTimeoutError()), AUTH_REQUEST_TIMEOUT_MS);
+    });
+
+    return Promise.race([responsePromise, timeoutPromise]);
+};
 
 const normalizeRetryAfterToMs = (value) => {
     const n = Number(value);
@@ -71,12 +91,7 @@ const AuthCallback = () => {
                                 : `Retrying Discord login (${attempt}/${MAX_AUTH_RETRIES})...`
                         );
 
-                        const response = await axios.post('/api/shop/auth/discord', {
-                            code,
-                            redirect_uri: redirectUri
-                        }, {
-                            timeout: 30000
-                        });
+                        const response = await postAuthCode(code, redirectUri);
 
                         const userData = response.data?.user;
                         const token = response.data?.token;
@@ -94,14 +109,14 @@ const AuthCallback = () => {
                         }, 400);
                         return;
                     } catch (error) {
-                        const timeout = error?.code === 'ECONNABORTED';
+                        const timeout = error?.code === 'ECONNABORTED' || error?.code === 'AUTH_REQUEST_TIMEOUT';
                         const rateLimit = isRateLimitedError(error);
                         const shouldRetry = attempt < MAX_AUTH_RETRIES && (timeout || rateLimit);
 
                         if (shouldRetry) {
                             const delayMs = getRetryDelayMs(error, attempt);
                             setStatus(
-                                `Discord is busy, retrying in ${Math.ceil(delayMs / 1000)}s... (${attempt}/${MAX_AUTH_RETRIES - 1})`
+                                `Discord is busy, retrying in ${Math.ceil(delayMs / 1000)}s... (${attempt}/${MAX_AUTH_RETRIES})`
                             );
                             await sleep(delayMs);
                             continue;
