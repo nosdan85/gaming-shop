@@ -316,10 +316,9 @@ const createTicketChannel = async ({ channelName, customerId }) => {
         });
     }
     if (inGuild === null) {
-        throw new DiscordBotError('Discord API is temporarily unavailable. Please retry in a moment.', {
-            status: 503,
-            code: 'DISCORD_API_UNAVAILABLE'
-        });
+        // Discord member lookup can intermittently fail on hosted IPs.
+        // Continue ticket flow and let channel creation be the real gate.
+        console.warn(`Ticket guild membership check unavailable for ${customerId}; proceeding with channel create.`);
     }
 
     const guildId = getGuildId();
