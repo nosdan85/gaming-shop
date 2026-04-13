@@ -10,6 +10,7 @@ const ProductCard = ({ product, onOpenDetail }) => {
   const [quantity, setQuantity] = useState(1);
   const [quantityInput, setQuantityInput] = useState('1');
   const displayPrice = formatCardPrice(product.originalPriceString, product.price);
+  const productImageSrc = `/products/${encodeURIComponent(String(product.image || ''))}`;
 
   const normalizeQuantity = (value, fallback = 1) => {
     const parsed = Number(value);
@@ -78,10 +79,10 @@ const ProductCard = ({ product, onOpenDetail }) => {
       <div className="flex-1 flex items-center justify-center my-4 relative z-10">
         <div className="w-[92%] h-[92%] max-w-[180px] max-h-[180px] bg-white rounded-2xl border border-[#dbe1ef] shadow-[0_10px_28px_rgba(255,255,255,0.10)] flex items-center justify-center p-3">
           <img
-            src={`/products/${product.image}`}
+            src={productImageSrc}
             alt={product.name}
-            className="w-full h-full object-contain transition-transform duration-400 group-hover:scale-105"
-            onError={(e) => e.target.src = 'https://via.placeholder.com/150'}
+            className="w-full h-full object-cover transition-transform duration-400 group-hover:scale-105"
+            onError={(e) => { e.currentTarget.src = '/products/aura-chest.png'; }}
           />
         </div>
       </div>

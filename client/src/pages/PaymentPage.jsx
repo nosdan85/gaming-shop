@@ -75,7 +75,6 @@ const PaymentPage = () => {
   const paidFromUrl = params.get('paid') === '1';
   const [ltcData, setLtcData] = useState(null);
   const [ltcLoading, setLtcLoading] = useState(false);
-  const [paypalLoading, setPaypalLoading] = useState(false);
   const [ticketLoading, setTicketLoading] = useState(null);
   const [paid, setPaid] = useState(paidFromUrl);
   const [orderInfo, setOrderInfo] = useState(null);
@@ -256,26 +255,6 @@ const PaymentPage = () => {
   }
 
   const totalNum = Number(orderInfo.totalAmount || 0);
-
-  const handlePayPal = async () => {
-    setPaypalLoading(true);
-    try {
-      const res = await axios.post(
-        '/api/shop/create-payment',
-        { orderId, method: 'paypal' },
-        { timeout: REQUEST_TIMEOUT_MS }
-      );
-      if (res.data.approvalLink) {
-        window.location.href = res.data.approvalLink;
-      } else {
-        alert('PayPal is not available right now.');
-      }
-    } catch (err) {
-      alert(getHttpErrorMessage(err, 'PayPal is not available right now.'));
-    } finally {
-      setPaypalLoading(false);
-    }
-  };
 
   const handleLTC = async () => {
     setLtcLoading(true);
@@ -488,20 +467,6 @@ const PaymentPage = () => {
             {orderInfo.ticketError}
           </div>
         )}
-
-        <button
-          onClick={handlePayPal}
-          disabled={paypalLoading}
-          className="w-full py-3 min-h-[44px] bg-[#0070BA] hover:bg-[#005ea6] active:scale-[0.98] disabled:opacity-50 text-white font-bold rounded-xl transition mb-4 touch-manipulation"
-        >
-          {paypalLoading ? 'Loading...' : 'Pay with PayPal or Card'}
-        </button>
-
-        <div className="flex items-center gap-3 my-6">
-          <div className="flex-1 h-px bg-[#2c2c2e]" />
-          <span className="text-gray-600 text-xs">or</span>
-          <div className="flex-1 h-px bg-[#2c2c2e]" />
-        </div>
 
         <button
           onClick={handlePayPalFF}

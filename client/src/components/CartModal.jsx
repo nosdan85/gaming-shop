@@ -168,7 +168,11 @@ const CartModal = () => {
             ) : (
               cartRows.map(({ item, pricing }) => (
                 <div key={item._id} className="flex gap-3 md:gap-4 p-3 md:p-4 rounded-2xl bg-[#1c1c1e]">
-                  <img src={`/products/${item.image}`} className="w-16 h-16 object-contain bg-[#2c2c2e] rounded-lg" />
+                    <img
+                      src={`/products/${encodeURIComponent(String(item.image || ''))}`}
+                      className="w-16 h-16 object-cover bg-[#2c2c2e] rounded-lg"
+                      onError={(e) => { e.currentTarget.src = '/products/aura-chest.png'; }}
+                    />
                   <div className="flex-1">
                     <h3 className="font-medium text-white text-sm md:text-base line-clamp-1">{item.name}</h3>
                     <div className="flex justify-between mt-2 items-center">

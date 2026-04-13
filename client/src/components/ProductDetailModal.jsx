@@ -21,6 +21,7 @@ const ProductDetailModal = ({ product, onClose }) => {
   const bulkPriceLabel = product.bulkPriceString
     ? formatPriceForSentence(product.bulkPriceString, product.bulkPrice)
     : 'No bulk price available for this item';
+  const productImageSrc = `/products/${encodeURIComponent(String(product.image || ''))}`;
 
   const normalizeQuantity = (value, fallback = 1) => {
     const parsed = Number(value);
@@ -88,10 +89,10 @@ const ProductDetailModal = ({ product, onClose }) => {
         <div className="w-full md:w-1/2 bg-black/45 p-8 flex items-center justify-center">
           <div className="w-full max-w-[300px] aspect-square bg-white rounded-2xl border border-[#dbe1ef] shadow-[0_12px_26px_rgba(255,255,255,0.10)] p-4 flex items-center justify-center">
             <img
-              src={`/products/${product.image}`}
+              src={productImageSrc}
               alt={product.name}
-              className="w-full h-full object-contain"
-              onError={(e) => e.target.src = 'https://via.placeholder.com/300'}
+              className="w-full h-full object-cover"
+              onError={(e) => { e.currentTarget.src = '/products/aura-chest.png'; }}
             />
           </div>
         </div>
