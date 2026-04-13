@@ -5,7 +5,7 @@ import ProductDetailModal from '../components/ProductDetailModal';
 import { MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 
 const GAMES = ['Sailor Piece'];
-const CATEGORIES = ['All', 'Chest', 'Reroll', 'Shard', 'Seal', 'Relic'];
+const CATEGORIES = ['All', 'Chest', 'Reroll', 'Shard', 'Seal', 'Relic', 'Sets', 'Combo'];
 const KNOWN_CATEGORY_LOOKUP = new Map(
   CATEGORIES
     .filter((category) => category !== 'All')

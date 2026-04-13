@@ -29,6 +29,20 @@ const SHOP_DATA = {
         { name: 'Abyss Sigil', oneTimePrice: '$1/100k', bulkPriceString: '', image: 'abyss-sigil.png' },
         { name: 'Dark Grail', oneTimePrice: '$1/100k', bulkPriceString: '', image: 'dark-grail.png' },
         { name: 'Frost Relic', oneTimePrice: '$1/5k', bulkPriceString: '$1/10k', image: 'frost-relic.png' }
+    ],
+    Sets: [
+        { name: 'Cid V2+F', oneTimePrice: '$4/1', bulkPriceString: '', image: 'Cid V2+F.png' },
+        { name: 'Madara+F', oneTimePrice: '$4/1', bulkPriceString: '', image: 'Madara+F.png' },
+        { name: 'Saber Alter+F', oneTimePrice: '$4/1', bulkPriceString: '', image: 'Saber Alter+F.png' },
+        { name: 'Madoka', oneTimePrice: '$4/1', bulkPriceString: '', image: 'Madoka.png' },
+        { name: 'Cartethyia+F', oneTimePrice: '$4/1', bulkPriceString: '', image: 'Cartethyia+F.png' },
+        { name: 'Gilgamesh+F', oneTimePrice: '$4/1', bulkPriceString: '', image: 'Gilgamesh+F.png' },
+        { name: 'Aizen V2+F', oneTimePrice: '$4/1', bulkPriceString: '', image: 'Aizen V2+F.png' },
+        { name: 'Esdeath+F', oneTimePrice: '$4/1', bulkPriceString: '', image: 'Esdeath+F.png' },
+        { name: 'Kokushibou+F', oneTimePrice: '$4/1', bulkPriceString: '', image: 'Kokushibou+F.png' }
+    ],
+    Combo: [
+        { name: 'combo x2 luck+drop', oneTimePrice: '$7.5/1', bulkPriceString: '', image: 'combo x2 luck+drop.png' }
     ]
 };
 

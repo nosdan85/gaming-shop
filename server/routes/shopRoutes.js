@@ -9,11 +9,12 @@ const Counter = require('../models/Counter');
 const {
     createOrderTicket,
     createPayPalFFTicket,
+    createLTCTicket,
     checkUserInGuild,
     checkUserHasOwnerRole,
     DiscordBotError
 } = require('../bot');
-const { createPayPalOrder, createLTCInvoice, capturePayPalOrder } = require('../services/paymentService');
+const { createPayPalOrder, capturePayPalOrder } = require('../services/paymentService');
 const { discordRequest } = require('../utils/discordApi');
 const { authRequired, getBearerToken, verifyAnyJwtToken } = require('../middleware/authMiddleware');
 const { checkoutLimiter, discordAuthLimiter } = require('../middleware/rateLimit');
@@ -35,6 +36,9 @@ const DISCORD_GUILD_CHECK_TIMEOUT_MS = 8000;
 const PAYMENT_PROVIDER_TIMEOUT_MS = 15000;
 const TICKET_LOCK_WINDOW_MS = 30 * 1000;
 const PAYPAL_TICKET_LOCK_WINDOW_MS = 30 * 1000;
+const LTC_TICKET_LOCK_WINDOW_MS = 30 * 1000;
+const DEFAULT_LTC_PAY_ADDRESS = 'ltc1ququ7e6ryccpnu7jgy0l4vukgc3mventxyulyge';
+const DEFAULT_LTC_QR_IMAGE_URL = '/pictures/payments/ltc.png';
 const discordAuthSuccessCache = new Map();
 const discordAuthInFlight = new Map();
 let discordTokenExchangeChain = Promise.resolve();
@@ -102,6 +106,8 @@ const normalizeEnvValue = (value) => {
 const getBackendBaseUrl = () => normalizeEnvValue(process.env.WEBHOOK_BASE_URL || process.env.BACKEND_URL).replace(/\/+$/, '');
 const getClientBaseUrl = () => normalizeEnvValue((process.env.CLIENT_URL || '').split(',')[0] || '').replace(/\/+$/, '');
 const getOriginBaseUrl = (value) => String(value || '').trim().replace(/\/+$/, '');
+const getLtcPayAddress = () => normalizeEnvValue(process.env.LTC_PAY_ADDRESS) || DEFAULT_LTC_PAY_ADDRESS;
+const getLtcQrImageUrl = () => normalizeEnvValue(process.env.LTC_QR_IMAGE_URL) || DEFAULT_LTC_QR_IMAGE_URL;
 const getDiscordOauthClientId = () => normalizeEnvValue(process.env.DISCORD_CLIENT_ID);
 const getDiscordOauthClientSecret = () => normalizeEnvValue(process.env.DISCORD_CLIENT_SECRET);
 const getConfiguredDiscordRedirectUri = () => normalizeEnvValue(process.env.DISCORD_REDIRECT_URI);
@@ -174,6 +180,13 @@ const normalizeTicketStatus = (value) => {
     return 'pending';
 };
 const normalizePayPalTicketStatus = (value) => {
+    const status = String(value || '').trim().toLowerCase();
+    if (status === 'creating') return 'creating';
+    if (status === 'created') return 'created';
+    if (status === 'failed') return 'failed';
+    return 'pending';
+};
+const normalizeLtcTicketStatus = (value) => {
     const status = String(value || '').trim().toLowerCase();
     if (status === 'creating') return 'creating';
     if (status === 'created') return 'created';
@@ -549,6 +562,62 @@ const releasePayPalTicketLockAsFailed = async (orderId, discordId, lockUntil, me
         }
     );
 };
+const acquireLtcTicketLock = async ({ orderId, discordId }) => {
+    const now = new Date();
+    const lockUntil = new Date(Date.now() + LTC_TICKET_LOCK_WINDOW_MS);
+
+    const lockedOrder = await Order.findOneAndUpdate(
+        {
+            orderId,
+            discordId,
+            status: { $ne: 'Cancelled' },
+            $and: [
+                {
+                    $or: [
+                        { ltcTicketChannelId: null },
+                        { ltcTicketChannelId: '' },
+                        { ltcTicketChannelId: { $exists: false } }
+                    ]
+                },
+                {
+                    $or: [
+                        { ltcTicketLockUntil: null },
+                        { ltcTicketLockUntil: { $exists: false } },
+                        { ltcTicketLockUntil: { $lt: now } }
+                    ]
+                }
+            ],
+            $or: [
+                { ltcTicketStatus: { $in: ['pending', 'failed', 'creating'] } },
+                { ltcTicketStatus: null },
+                { ltcTicketStatus: { $exists: false } }
+            ]
+        },
+        {
+            $set: {
+                ltcTicketStatus: 'creating',
+                ltcTicketError: '',
+                ltcTicketLockUntil: lockUntil
+            }
+        },
+        { new: true }
+    );
+
+    return { lockedOrder, lockUntil };
+};
+const releaseLtcTicketLockAsFailed = async (orderId, discordId, lockUntil, message) => {
+    const lockFilter = lockUntil ? { ltcTicketLockUntil: lockUntil } : {};
+    await Order.updateOne(
+        { orderId, discordId, ...lockFilter },
+        {
+            $set: {
+                ltcTicketStatus: 'failed',
+                ltcTicketError: String(message || 'LTC ticket creation failed.')
+            },
+            $unset: { ltcTicketLockUntil: 1 }
+        }
+    );
+};
 
 const canAccessOwnerEndpoints = async (discordId) => {
     if (!discordId) return false;
@@ -871,9 +940,13 @@ router.get('/order-payment-info', authRequired, async (req, res) => {
         if (!order) return res.status(status).json({ error });
         const normalizedTicketStatus = normalizeTicketStatus(order.ticketStatus);
         const normalizedPayPalTicketStatus = normalizePayPalTicketStatus(order.paypalTicketStatus);
+        const normalizedLtcTicketStatus = normalizeLtcTicketStatus(order.ltcTicketStatus);
         const ticketRetryAfterMs = normalizedTicketStatus === 'creating' ? getLockRetryAfterMs(order.ticketLockUntil) : 0;
         const paypalTicketRetryAfterMs = normalizedPayPalTicketStatus === 'creating'
             ? getLockRetryAfterMs(order.paypalTicketLockUntil)
+            : 0;
+        const ltcTicketRetryAfterMs = normalizedLtcTicketStatus === 'creating'
+            ? getLockRetryAfterMs(order.ltcTicketLockUntil)
             : 0;
         return res.json({
             orderId: order.orderId,
@@ -891,6 +964,13 @@ router.get('/order-payment-info', authRequired, async (req, res) => {
             paypalTicketRetryAfterMs,
             paypalTicketRetryAfterSeconds: paypalTicketRetryAfterMs > 0
                 ? Math.ceil(paypalTicketRetryAfterMs / 1000)
+                : 0,
+            ltcTicketChannelId: order.ltcTicketChannelId || null,
+            ltcTicketStatus: normalizedLtcTicketStatus,
+            ltcTicketError: order.ltcTicketError || '',
+            ltcTicketRetryAfterMs,
+            ltcTicketRetryAfterSeconds: ltcTicketRetryAfterMs > 0
+                ? Math.ceil(ltcTicketRetryAfterMs / 1000)
                 : 0,
             ticketMode: isPanelTicketMode() ? 'panel' : 'bot',
             panelUrl: isPanelTicketMode() ? getTicketPanelUrl() : ''
@@ -946,21 +1026,12 @@ router.post('/create-payment', authRequired, async (req, res) => {
         }
 
         if (method === 'ltc') {
-            const ltc = await withTimeout(
-                createLTCInvoice(orderId, order.totalAmount),
-                PAYMENT_PROVIDER_TIMEOUT_MS,
-                null
-            );
-            if (!ltc?.payAddress) {
-                return res.status(503).json({ error: 'LTC payment is temporarily unavailable. Please use another payment option.' });
-            }
-
             await Order.findByIdAndUpdate(order._id, { paymentMethod: 'ltc' });
             return res.json({
                 type: 'ltc',
-                payAddress: ltc.payAddress,
-                payAmount: ltc.payAmount,
-                payCurrency: ltc.payCurrency
+                payAddress: getLtcPayAddress(),
+                payCurrency: 'ltc',
+                qrImageUrl: getLtcQrImageUrl()
             });
         }
 
@@ -1301,6 +1372,162 @@ router.post('/create-ticket-paypal-ff', authRequired, async (req, res) => {
             ...payload,
             email: process.env.PAYPAL_EMAIL || ''
         });
+    }
+});
+
+router.post('/create-ticket-ltc', authRequired, async (req, res) => {
+    let lockAcquiredOrderId = '';
+    let lockAcquiredDiscordId = '';
+    let lockAcquiredUntil = null;
+    try {
+        const { orderId } = req.body || {};
+        if (!orderId) return res.status(400).json({ error: 'Missing orderId' });
+
+        const { order, status, error } = await getOwnedOrder(orderId, req.user.discordId);
+        if (!order) return res.status(status).json({ error });
+
+        if (isPanelTicketMode()) {
+            await Order.findByIdAndUpdate(order._id, { paymentMethod: 'ltc' });
+            return res.json({
+                mode: 'panel',
+                panelUrl: getTicketPanelUrl(),
+                orderId: order.orderId
+            });
+        }
+
+        const ticketConfigError = getDiscordTicketConfigError();
+        if (ticketConfigError) {
+            return res.status(500).json({ error: ticketConfigError });
+        }
+
+        if (order.ltcTicketChannelId) {
+            return res.json({
+                success: true,
+                alreadyExists: true,
+                channelId: order.ltcTicketChannelId
+            });
+        }
+
+        const { lockedOrder, lockUntil } = await acquireLtcTicketLock({
+            orderId,
+            discordId: req.user.discordId
+        });
+        if (!lockedOrder) {
+            const fresh = await Order.findOne({ orderId, discordId: req.user.discordId }).lean();
+            if (!fresh) {
+                return res.status(404).json({ error: 'Order not found' });
+            }
+            if (fresh?.ltcTicketChannelId) {
+                return res.json({
+                    success: true,
+                    alreadyExists: true,
+                    channelId: fresh.ltcTicketChannelId
+                });
+            }
+
+            if (normalizeLtcTicketStatus(fresh?.ltcTicketStatus) === 'creating') {
+                return res.status(409).json(
+                    buildInProgressPayload(
+                        fresh?.ltcTicketLockUntil,
+                        'LTC ticket is already being created. Please wait a moment.',
+                        'LTC_TICKET_CREATION_IN_PROGRESS'
+                    )
+                );
+            }
+
+            return res.status(409).json({
+                error: 'LTC ticket cannot be created right now. Please retry shortly.',
+                code: 'LTC_TICKET_NOT_READY'
+            });
+        }
+
+        lockAcquiredOrderId = lockedOrder.orderId;
+        lockAcquiredDiscordId = lockedOrder.discordId;
+        lockAcquiredUntil = lockUntil;
+
+        const counter = await Counter.findOneAndUpdate(
+            { id: 'ltcTicket' },
+            { $inc: { seq: 1 } },
+            { new: true, upsert: true }
+        );
+        const ltcSeq = counter.seq;
+        const channelName = `ltc_${ltcSeq}`;
+        const channelId = await Promise.resolve(createLTCTicket(lockedOrder, ltcSeq));
+        if (!channelId) {
+            throw new DiscordBotError('Could not create LTC ticket channel', {
+                status: 503,
+                code: 'DISCORD_TICKET_UNAVAILABLE'
+            });
+        }
+
+        const persistResult = await Order.updateOne(
+            { _id: lockedOrder._id, ltcTicketLockUntil: lockAcquiredUntil },
+            {
+                $set: {
+                    paymentMethod: 'ltc',
+                    ltcTicketChannel: channelName,
+                    ltcTicketChannelId: channelId,
+                    ltcTicketStatus: 'created',
+                    ltcTicketError: ''
+                },
+                $unset: { ltcTicketLockUntil: 1 }
+            }
+        );
+        if (!persistResult?.matchedCount) {
+            const fresh = await Order.findById(lockedOrder._id).lean();
+            if (fresh?.ltcTicketChannelId) {
+                return res.json({
+                    success: true,
+                    alreadyExists: true,
+                    channelId: fresh.ltcTicketChannelId
+                });
+            }
+            await Order.updateOne(
+                {
+                    _id: lockedOrder._id,
+                    $or: [
+                        { ltcTicketChannelId: null },
+                        { ltcTicketChannelId: '' },
+                        { ltcTicketChannelId: { $exists: false } }
+                    ]
+                },
+                {
+                    $set: {
+                        paymentMethod: 'ltc',
+                        ltcTicketChannel: channelName,
+                        ltcTicketChannelId: channelId,
+                        ltcTicketStatus: 'created',
+                        ltcTicketError: ''
+                    },
+                    $unset: { ltcTicketLockUntil: 1 }
+                }
+            );
+        }
+
+        return res.json({
+            success: true,
+            channelId: channelId || null,
+            payAddress: getLtcPayAddress(),
+            qrImageUrl: getLtcQrImageUrl()
+        });
+    } catch (err) {
+        console.error('Create LTC ticket error:', err);
+        const { status, payload } = buildTicketErrorResponse(err);
+        if (lockAcquiredOrderId && lockAcquiredDiscordId) {
+            await releaseLtcTicketLockAsFailed(
+                lockAcquiredOrderId,
+                lockAcquiredDiscordId,
+                lockAcquiredUntil,
+                payload.error || 'LTC ticket creation failed.'
+            ).catch(() => {});
+        }
+        if (payload.code === 'USER_NOT_IN_GUILD') {
+            return res.status(status).json({
+                ...payload,
+                invite_link: process.env.DISCORD_SERVER_INVITE || ''
+            });
+        }
+        return res.status(status).json(payload);
     }
 });
 

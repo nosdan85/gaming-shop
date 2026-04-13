@@ -23,6 +23,11 @@ const orderSchema = new mongoose.Schema({
     paypalTicketStatus: { type: String, enum: ['pending', 'creating', 'created', 'failed'], default: 'pending' },
     paypalTicketLockUntil: { type: Date, default: null },
     paypalTicketError: { type: String, default: '' },
+    ltcTicketChannel: { type: String },
+    ltcTicketChannelId: { type: String },
+    ltcTicketStatus: { type: String, enum: ['pending', 'creating', 'created', 'failed'], default: 'pending' },
+    ltcTicketLockUntil: { type: Date, default: null },
+    ltcTicketError: { type: String, default: '' },
     createdAt: { type: Date, default: Date.now }
 });
 

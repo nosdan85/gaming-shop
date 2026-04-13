@@ -28,7 +28,11 @@ const getRetryAfterMsFromError = (err) => {
 const getHttpErrorMessage = (err, fallback) => {
   if (err?.code === 'ECONNABORTED') return 'Request timeout. Please try again.';
   const data = err?.response?.data || {};
-  if (data?.code === 'TICKET_CREATION_IN_PROGRESS' || data?.code === 'PAYPAL_TICKET_CREATION_IN_PROGRESS') {
+  if (
+    data?.code === 'TICKET_CREATION_IN_PROGRESS'
+    || data?.code === 'PAYPAL_TICKET_CREATION_IN_PROGRESS'
+    || data?.code === 'LTC_TICKET_CREATION_IN_PROGRESS'
+  ) {
     const retryAfterSeconds = Math.max(
       Number(data?.retryAfterSeconds) || 0,
       Math.ceil(normalizeRetryAfterMs(data?.retryAfterMs) / 1000)
@@ -81,8 +85,11 @@ const PaymentPage = () => {
   const [paypalFFLoading, setPaypalFFLoading] = useState(false);
   const [paypalTicketLoading, setPaypalTicketLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [ltcAddressCopied, setLtcAddressCopied] = useState(false);
+  const [ltcTicketLoading, setLtcTicketLoading] = useState(false);
   const [ticketRetryInSeconds, setTicketRetryInSeconds] = useState(0);
   const [paypalTicketRetryInSeconds, setPaypalTicketRetryInSeconds] = useState(0);
+  const [ltcTicketRetryInSeconds, setLtcTicketRetryInSeconds] = useState(0);
   const autoOpenedChannelRef = useRef('');
 
   useEffect(() => {
@@ -119,6 +126,12 @@ const PaymentPage = () => {
         setPaypalTicketRetryInSeconds((prev) => Math.max(prev, Number(next?.paypalTicketRetryAfterSeconds) || 0));
       } else {
         setPaypalTicketRetryInSeconds(0);
+      }
+
+      if (next?.ltcTicketStatus === 'creating') {
+        setLtcTicketRetryInSeconds((prev) => Math.max(prev, Number(next?.ltcTicketRetryAfterSeconds) || 0));
+      } else {
+        setLtcTicketRetryInSeconds(0);
       }
 
       return next;
@@ -167,6 +180,14 @@ const PaymentPage = () => {
     }, 1000);
     return () => clearInterval(timer);
   }, [paypalTicketRetryInSeconds]);
+
+  useEffect(() => {
+    if (ltcTicketRetryInSeconds <= 0) return undefined;
+    const timer = setInterval(() => {
+      setLtcTicketRetryInSeconds((value) => (value > 0 ? value - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [ltcTicketRetryInSeconds]);
 
   const ticketMode = orderInfo?.ticketMode;
   const ticketStatus = orderInfo?.ticketStatus;
@@ -264,8 +285,11 @@ const PaymentPage = () => {
         { orderId, method: 'ltc' },
         { timeout: REQUEST_TIMEOUT_MS }
       );
-      if (res.data.payAddress) setLtcData(res.data);
-      else alert('LTC payment not available.');
+      if (res.data.payAddress) {
+        setLtcData((prev) => ({ ...(prev || {}), ...res.data }));
+      } else {
+        alert('LTC payment not available.');
+      }
     } catch (err) {
       alert(getHttpErrorMessage(err, 'LTC payment not available.'));
     } finally {
@@ -273,7 +297,7 @@ const PaymentPage = () => {
     }
   };
 
-  const handleCashAppRobux = async () => {
+  const handleCashApp = async () => {
     if (orderInfo?.channelId) {
       openTicketChannel(orderInfo.channelId);
       return;
@@ -304,6 +328,7 @@ const PaymentPage = () => {
           ticketError: ''
         } : prev));
         setTicketRetryInSeconds(0);
+        autoOpenedChannelRef.current = data.channelId;
         openTicketChannel(data.channelId);
         await fetchOrderInfo().catch(() => {});
       } else if (data.mode === 'panel' && data.panelUrl) {
@@ -379,6 +404,55 @@ const PaymentPage = () => {
       navigator.clipboard.writeText(paypalFFData.email);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const copyLtcAddress = () => {
+    if (!ltcData?.payAddress) return;
+    navigator.clipboard.writeText(ltcData.payAddress);
+    setLtcAddressCopied(true);
+    setTimeout(() => setLtcAddressCopied(false), 2000);
+  };
+
+  const handleOpenLtcTicket = async () => {
+    const existingChannelId = orderInfo?.ltcTicketChannelId || ltcData?.channelId;
+    if (existingChannelId) {
+      openTicketChannel(existingChannelId);
+      return;
+    }
+    if (ltcTicketRetryInSeconds > 0) {
+      alert(`Please wait about ${ltcTicketRetryInSeconds}s before retrying.`);
+      return;
+    }
+
+    setLtcTicketLoading(true);
+    try {
+      const res = await axios.post(
+        '/api/shop/create-ticket-ltc',
+        { orderId },
+        { timeout: TICKET_REQUEST_TIMEOUT_MS }
+      );
+      const channelId = res.data?.channelId || null;
+      setLtcData((prev) => ({ ...(prev || {}), ...res.data, channelId }));
+      setOrderInfo((prev) => (prev ? {
+        ...prev,
+        ltcTicketChannelId: channelId,
+        ltcTicketStatus: channelId ? 'created' : (prev.ltcTicketStatus || 'pending'),
+        ltcTicketError: ''
+      } : prev));
+      setLtcTicketRetryInSeconds(0);
+      if (channelId) {
+        openTicketChannel(channelId);
+      }
+      await fetchOrderInfo().catch(() => {});
+    } catch (err) {
+      const retryAfterMs = getRetryAfterMsFromError(err);
+      if (retryAfterMs > 0) {
+        setLtcTicketRetryInSeconds(Math.ceil(retryAfterMs / 1000));
+      }
+      alert(getHttpErrorMessage(err, 'Could not create LTC ticket. Try again.'));
+    } finally {
+      setLtcTicketLoading(false);
     }
   };
 
@@ -467,7 +541,7 @@ const PaymentPage = () => {
         )}
 
         <button
-          onClick={handleCashAppRobux}
+          onClick={handleCashApp}
           disabled={
             ticketLoading !== null
             || ticketRetryInSeconds > 0
@@ -483,7 +557,7 @@ const PaymentPage = () => {
               ? 'Creating Discord Ticket...'
               : orderInfo?.channelId
                 ? 'Open Discord Ticket'
-                : 'Pay with CashApp or Robux'}
+                : 'Pay with CashApp'}
         </button>
 
         <div className="flex items-center gap-3 my-6">
@@ -501,11 +575,35 @@ const PaymentPage = () => {
             <button onClick={() => setLtcData(null)} className="text-gray-400 hover:text-white text-xs mb-3 flex items-center gap-1">
               &larr; Back
             </button>
-            <p className="text-gray-400 text-xs mb-1">Send exactly:</p>
-            <p className="text-white font-mono font-bold text-lg mb-2">{ltcData.payAmount} {ltcData.payCurrency?.toUpperCase()}</p>
             <p className="text-gray-400 text-xs mb-1">To address:</p>
-            <p className="text-white font-mono text-xs break-all bg-[#1a1a1c] p-2 rounded mb-2">{ltcData.payAddress}</p>
-            <p className="text-yellow-400 text-[10px]">Payment confirms automatically.</p>
+            <div className="bg-[#1a1a1c] rounded p-2 mb-2">
+              <p className="text-white font-mono text-xs break-all">{ltcData.payAddress}</p>
+            </div>
+            <button
+              onClick={copyLtcAddress}
+              className="w-full mb-3 py-2 bg-[#2c2c2e] hover:bg-[#3f3f46] text-white text-xs font-medium rounded-lg transition"
+            >
+              {ltcAddressCopied ? 'Address Copied!' : 'Copy LTC Address'}
+            </button>
+            <img
+              src={ltcData.qrImageUrl || '/pictures/payments/ltc.png'}
+              alt="LTC QR"
+              className="w-full rounded-xl border border-[#2c2c2e] mb-3"
+            />
+            <p className="text-gray-400 text-xs mb-3">Send payment, then open ticket and upload proof screenshot.</p>
+            <button
+              onClick={handleOpenLtcTicket}
+              disabled={ltcTicketLoading || ltcTicketRetryInSeconds > 0}
+              className="w-full py-2.5 bg-[#5865F2] hover:bg-[#4752C4] disabled:opacity-50 text-white font-bold rounded-xl transition text-sm"
+            >
+              {ltcTicketLoading
+                ? 'Creating...'
+                : ltcTicketRetryInSeconds > 0
+                  ? `Retry in ${ltcTicketRetryInSeconds}s`
+                  : (orderInfo?.ltcTicketChannelId || ltcData?.channelId)
+                    ? 'Open LTC Ticket'
+                    : 'Create LTC Ticket'}
+            </button>
           </div>
         )}
 

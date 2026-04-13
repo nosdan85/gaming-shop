@@ -400,7 +400,8 @@ const findOrderByTicketChannelId = async (channelId) => {
     return Order.findOne({
         $or: [
             { channelId },
-            { paypalTicketChannelId: channelId }
+            { paypalTicketChannelId: channelId },
+            { ltcTicketChannelId: channelId }
         ]
     }).sort({ createdAt: -1 });
 };
@@ -412,7 +413,8 @@ const findOrderByTicketChannelName = async (channelNameRaw) => {
     return Order.findOne({
         $or: [
             { orderId: channelName },
-            { paypalTicketChannel: channelName }
+            { paypalTicketChannel: channelName },
+            { ltcTicketChannel: channelName }
         ]
     }).sort({ createdAt: -1 });
 };
@@ -520,6 +522,14 @@ const resetOrderTicketStateByChannel = async (order, channelId) => {
         update.paypalTicketStatus = 'pending';
         update.paypalTicketError = '';
         update.paypalTicketLockUntil = null;
+    }
+
+    if (String(order.ltcTicketChannelId || '') === channelId) {
+        update.ltcTicketChannelId = '';
+        update.ltcTicketChannel = '';
+        update.ltcTicketStatus = 'pending';
+        update.ltcTicketError = '';
+        update.ltcTicketLockUntil = null;
     }
 
     if (Object.keys(update).length > 0) {
@@ -736,6 +746,32 @@ const createPayPalFFTicket = async (order, paypalSeq) => {
     return channelId;
 };
 
+const createLTCTicket = async (order, ltcSeq) => {
+    const safeSeq = Number.isInteger(Number(ltcSeq)) ? Number(ltcSeq) : Date.now();
+    const channelId = await createTicketChannel({
+        channelName: `ltc_${safeSeq}`,
+        customerId: order.discordId
+    });
+
+    const embed = new EmbedBuilder()
+        .setColor(0x345D9D)
+        .setTitle(`LTC Payment - Order ${order.orderId}`)
+        .setDescription(`Hello <@${order.discordId}>. Please upload your LTC payment proof screenshot here.`);
+
+    try {
+        await sendTicketMessage({
+            channelId,
+            content: buildOrderMention(order.discordId),
+            embed
+        });
+    } catch (error) {
+        // Channel is already created; do not force duplicate channel attempts.
+        console.error('LTC ticket message error:', error?.message || error);
+    }
+
+    return channelId;
+};
+
 const createOrderTicket = async (order) => {
     const channelId = await createTicketChannel({
         channelName: `${order.orderId}`,
@@ -748,8 +784,8 @@ const createOrderTicket = async (order) => {
         .setTitle(`Order: ${order.orderId}`)
         .setDescription(
             gatewayDisabled
-                ? `Hello <@${order.discordId}>. Please reply with your payment method: CashApp or Robux.`
-                : `Hello <@${order.discordId}>. Choose CashApp or Robux.`
+                ? `Hello <@${order.discordId}>. Please reply with your payment method: CashApp.`
+                : `Hello <@${order.discordId}>. Choose CashApp.`
         )
         .addFields(
             { name: 'Customer', value: order.discordUsername || `<@${order.discordId}>`, inline: true },
@@ -763,10 +799,6 @@ const createOrderTicket = async (order) => {
         new ButtonBuilder()
             .setCustomId(`pay_cashapp_${order.orderId}`)
             .setLabel('CashApp')
-            .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-            .setCustomId(`pay_robux_${order.orderId}`)
-            .setLabel('Robux')
             .setStyle(ButtonStyle.Secondary)
     );
 
@@ -789,7 +821,7 @@ client.on('interactionCreate', async (interaction) => {
     if (!interaction.isButton()) return;
 
     const customId = String(interaction.customId || '');
-    const match = customId.match(/^pay_(cashapp|robux)_(.+)$/);
+    const match = customId.match(/^pay_(cashapp)_(.+)$/);
     if (!match) return;
 
     const method = match[1];
@@ -811,7 +843,7 @@ client.on('interactionCreate', async (interaction) => {
 
         const payEmbed = new EmbedBuilder()
             .setColor(0x000000)
-            .setTitle(`Pay via ${method === 'cashapp' ? 'CashApp' : 'Robux'}`)
+            .setTitle('Pay via CashApp')
             .setDescription(
                 `Amount: $${Number(order.totalAmount || 0).toFixed(2)}\nUpload your payment proof screenshot here.`
             );
@@ -930,6 +962,7 @@ module.exports = {
     DiscordBotError,
     createOrderTicket,
     createPayPalFFTicket,
+    createLTCTicket,
     checkUserInGuild,
     checkUserHasOwnerRole,
     getOwnerId
