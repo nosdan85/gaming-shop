@@ -9,6 +9,11 @@ import { ShopProvider } from './context/ShopContext';
 import { AuthProvider } from './context/AuthContext';
 import CartModal from './components/CartModal';
 
+const configuredApiBaseUrl = String(import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
+if (configuredApiBaseUrl) {
+  axios.defaults.baseURL = configuredApiBaseUrl;
+}
+
 const savedToken = localStorage.getItem('token');
 if (savedToken) {
   axios.defaults.headers.common.Authorization = `Bearer ${savedToken}`;
