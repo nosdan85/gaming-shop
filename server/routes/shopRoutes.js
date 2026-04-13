@@ -17,6 +17,7 @@ const { createPayPalOrder, createLTCInvoice, capturePayPalOrder } = require('../
 const { discordRequest } = require('../utils/discordApi');
 const { authRequired } = require('../middleware/authMiddleware');
 const { checkoutLimiter } = require('../middleware/rateLimit');
+const { getDiscordGatewayStatus } = require('../config/discordGateway');
 
 const router = express.Router();
 const OBJECT_ID_PATTERN = /^[a-fA-F0-9]{24}$/;
@@ -1032,12 +1033,19 @@ router.get('/bot-status', (req, res) => {
     const hasGuildId = Boolean(String(process.env.DISCORD_GUILD_ID || '').trim());
     const hasCategoryId = Boolean(String(process.env.DISCORD_TICKET_CATEGORY_ID || '').trim());
     const hasOwnerRoleId = Boolean(String(process.env.DISCORD_OWNER_ROLE_ID || '').trim());
+    const hasVouchChannelId = Boolean(String(process.env.DISCORD_VOUCH_CHANNEL_ID || '').trim());
+    const { isVercelRuntime, gatewayFlag, gatewayEnabled } = getDiscordGatewayStatus();
+
     return res.json({
         ok: hasBotToken && hasGuildId,
         hasBotToken,
         hasGuildId,
         hasCategoryId,
-        hasOwnerRoleId
+        hasOwnerRoleId,
+        hasVouchChannelId,
+        runtime: isVercelRuntime ? 'vercel-serverless' : 'node-service',
+        gatewayFlag: gatewayFlag || '(unset)',
+        gatewayWillRun: gatewayEnabled
     });
 });
 
