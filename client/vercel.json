@@ -1,14 +1,6 @@
 {
   "routes": [
     {
-      "src": "^/api/shop/(.*)$",
-      "dest": "https://gaming-shop-2.onrender.com/api/shop/$1"
-    },
-    {
-      "src": "^/api/admin/(.*)$",
-      "dest": "https://gaming-shop-2.onrender.com/api/admin/$1"
-    },
-    {
       "handle": "filesystem"
     },
     {

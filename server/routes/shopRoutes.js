@@ -22,7 +22,7 @@ const router = express.Router();
 const OBJECT_ID_PATTERN = /^[a-fA-F0-9]{24}$/;
 const MAX_QUANTITY_PER_PRODUCT = 100000;
 const AUTH_CODE_CACHE_TTL_MS = 2 * 60 * 1000;
-const AUTH_RATE_LIMIT_DEFAULT_RETRY_SECONDS = 30;
+const AUTH_RATE_LIMIT_DEFAULT_RETRY_SECONDS = 15;
 const AUTH_RATE_LIMIT_MAX_RETRY_SECONDS = 120;
 const DISCORD_TOKEN_MIN_GAP_MS = 1500;
 const BRIDGE_REQUEST_MAX_AGE_MS = 5 * 60 * 1000;
@@ -182,13 +182,23 @@ const buildClientPayUrl = (orderId, extraQuery = '') => {
     return `/pay?orderId=${encodedOrderId}${query}`;
 };
 
-const isDiscordTemporaryBlock = (status, data) => {
-    if (status === 429) return true;
-    if (status >= 500 && status < 600) return true;
+const isDiscordCloudflareBlock = (status, data) => {
     if (status !== 403) return false;
     const text = typeof data === 'string' ? data.toLowerCase() : JSON.stringify(data || {}).toLowerCase();
     return text.includes('cloudflare') || text.includes('1015') || text.includes('temporarily blocked');
 };
+const isDiscordTemporaryBlock = (status, data) => {
+    if (status === 429) return true;
+    if (status >= 500 && status < 600) return true;
+    return isDiscordCloudflareBlock(status, data);
+};
+const shouldApplyDiscordAuthCooldown = (status, data) => status === 429 || isDiscordCloudflareBlock(status, data);
+const buildDiscordAuthUnavailablePayload = (step = 'unknown', providerStatus = null) => ({
+    error: 'Discord authentication is temporarily unavailable. Please retry shortly.',
+    code: 'DISCORD_AUTH_UNAVAILABLE',
+    step,
+    providerStatus
+});
 
 const getDiscordErrorMessage = (data) => {
     if (!data) return '';
@@ -215,7 +225,7 @@ const getDiscordAuthCooldownFromError = (error) => {
     const step = error?.discordStep || 'unknown';
     // Token endpoint rate limit is usually stricter; cool down longer to avoid hammering.
     if (step === 'oauth_token') {
-        return Math.max(baseRetry, 60);
+        return Math.max(baseRetry, 30);
     }
     return baseRetry;
 };
@@ -589,14 +599,20 @@ router.post('/auth/discord', async (req, res) => {
             const message = getDiscordErrorMessage(data);
             const step = error.discordStep || 'unknown';
             if (isDiscordTemporaryBlock(status, data)) {
-                const retryAfter = getDiscordAuthCooldownFromError(error);
-                const cooldown = setDiscordAuthCooldownSeconds(retryAfter) || retryAfter;
-                return res.status(503).json(buildDiscordRateLimitPayload(cooldown, step, status || 503));
+                if (shouldApplyDiscordAuthCooldown(status, data)) {
+                    const retryAfter = getDiscordAuthCooldownFromError(error);
+                    const cooldown = setDiscordAuthCooldownSeconds(retryAfter) || retryAfter;
+                    return res.status(503).json(buildDiscordRateLimitPayload(cooldown, step, status || 503));
+                }
+                return res.status(503).json(buildDiscordAuthUnavailablePayload(step, status || 503));
             }
             if (status >= 400 && status < 500) {
                 return res.status(400).json({
                     error: message || 'Discord authentication failed. Check app credentials and redirect URI.'
                 });
+            }
+            if (!status) {
+                return res.status(503).json(buildDiscordAuthUnavailablePayload(step));
             }
             return res.status(500).json({ error: 'Authentication failed' });
         }
@@ -625,15 +641,21 @@ router.post('/auth/discord', async (req, res) => {
         });
 
         if (isDiscordTemporaryBlock(status, data)) {
-            const retryAfter = getDiscordAuthCooldownFromError(error);
-            const cooldown = setDiscordAuthCooldownSeconds(retryAfter) || retryAfter;
-            return res.status(503).json(buildDiscordRateLimitPayload(cooldown, step, status || 503));
+            if (shouldApplyDiscordAuthCooldown(status, data)) {
+                const retryAfter = getDiscordAuthCooldownFromError(error);
+                const cooldown = setDiscordAuthCooldownSeconds(retryAfter) || retryAfter;
+                return res.status(503).json(buildDiscordRateLimitPayload(cooldown, step, status || 503));
+            }
+            return res.status(503).json(buildDiscordAuthUnavailablePayload(step, status || 503));
         }
 
         if (status >= 400 && status < 500) {
             return res.status(400).json({
                 error: message || 'Discord authentication failed. Check app credentials and redirect URI.'
             });
+        }
+        if (!status) {
+            return res.status(503).json(buildDiscordAuthUnavailablePayload(step));
         }
 
         if (error.message === 'Discord user payload is invalid' || error.message === 'JWT_SECRET is not configured') {

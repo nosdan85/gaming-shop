@@ -3,10 +3,33 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const { client } = require('./bot');
+const { getDiscordGatewayStatus } = require('./config/discordGateway');
 const { apiLimiter } = require('./middleware/rateLimit');
 
 const app = express();
-app.set('trust proxy', 1);
+const normalizeEnvValue = (value) => {
+    const text = String(value || '').trim();
+    if (!text) return '';
+    if (
+        (text.startsWith('"') && text.endsWith('"'))
+        || (text.startsWith("'") && text.endsWith("'"))
+    ) {
+        return text.slice(1, -1).trim();
+    }
+    return text;
+};
+const trustProxyRaw = String(process.env.TRUST_PROXY || '').trim().toLowerCase();
+if (/^\d+$/.test(trustProxyRaw)) {
+    app.set('trust proxy', Number(trustProxyRaw));
+} else if (trustProxyRaw === 'true') {
+    app.set('trust proxy', true);
+} else if (trustProxyRaw === 'false') {
+    app.set('trust proxy', false);
+} else {
+    app.set('trust proxy', 1);
+}
+const { isVercelRuntime, gatewayEnabled: shouldEnableBotGateway } = getDiscordGatewayStatus();
+const forceHttpListen = String(process.env.FORCE_HTTP_LISTEN || '').trim().toLowerCase() === 'true';
 
 const configuredOrigins = (process.env.CLIENT_URL || '')
     .split(',')
@@ -89,14 +112,24 @@ if (!process.env.MONGO_URI) {
         .catch((err) => console.error('MongoDB connection error:', err.message));
 }
 
-if (process.env.DISCORD_BOT_TOKEN) {
-    client.login(process.env.DISCORD_BOT_TOKEN).catch((err) => {
+const normalizedBotToken = normalizeEnvValue(process.env.DISCORD_BOT_TOKEN);
+if (normalizedBotToken && shouldEnableBotGateway) {
+    client.login(normalizedBotToken).catch((err) => {
         console.error('Bot login failed:', err.message);
     });
     client.on('error', (err) => console.error('Bot error:', err.message));
+} else if (normalizedBotToken && !shouldEnableBotGateway) {
+    console.warn(
+        'Discord gateway login disabled (DISCORD_ENABLE_GATEWAY=false or serverless runtime). ' +
+        'Ticket message commands (!close) and auto-vouch from images will not run.'
+    );
 } else {
     console.warn('DISCORD_BOT_TOKEN missing - bot disabled');
 }
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+if (!isVercelRuntime || forceHttpListen) {
+    app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+}
+
+module.exports = app;

@@ -6,6 +6,9 @@ const MAX_AUTH_RETRIES = 2;
 const BASE_RETRY_DELAY_MS = 2000;
 const MAX_RETRY_DELAY_MS = 15000;
 const AUTH_REQUEST_TIMEOUT_MS = 15000;
+const OAUTH_REDIRECT_STORAGE_KEY = 'discordOauthRedirectUri';
+const CONFIGURED_API_BASE_URL = String(import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
+const CAN_USE_VERCEL_EXCHANGE_FALLBACK = !CONFIGURED_API_BASE_URL;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -15,12 +18,55 @@ const createTimeoutError = () => {
     return timeoutError;
 };
 
+const withTimeout = (promise, timeoutMs = AUTH_REQUEST_TIMEOUT_MS) => {
+    const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(createTimeoutError()), timeoutMs);
+    });
+    return Promise.race([promise, timeoutPromise]);
+};
+
+const getConfiguredRedirectUri = () => {
+    const rawRedirectUri = import.meta.env.VITE_DISCORD_REDIRECT_URI;
+    return typeof rawRedirectUri === 'string' ? rawRedirectUri.trim() : '';
+};
+
+const getStoredRedirectUri = () => {
+    try {
+        return String(localStorage.getItem(OAUTH_REDIRECT_STORAGE_KEY) || '').trim();
+    } catch {
+        return '';
+    }
+};
+
+const saveRedirectUri = (redirectUri) => {
+    try {
+        if (!redirectUri) return;
+        localStorage.setItem(OAUTH_REDIRECT_STORAGE_KEY, redirectUri);
+    } catch {
+        // Ignore storage failures.
+    }
+};
+
+const clearStoredRedirectUri = () => {
+    try {
+        localStorage.removeItem(OAUTH_REDIRECT_STORAGE_KEY);
+    } catch {
+        // Ignore storage failures.
+    }
+};
+
+const resolveRedirectUri = () => {
+    const configured = getConfiguredRedirectUri();
+    if (configured) return configured;
+    const stored = getStoredRedirectUri();
+    if (stored) return stored;
+    return `${window.location.origin}/auth/discord/callback`;
+};
+
 const createOAuthUrl = () => {
     const clientId = import.meta.env.VITE_DISCORD_CLIENT_ID || '';
-    const rawRedirectUri = import.meta.env.VITE_DISCORD_REDIRECT_URI;
-    const redirectUri = typeof rawRedirectUri === 'string' && rawRedirectUri.trim()
-        ? rawRedirectUri.trim()
-        : `${window.location.origin}/auth/discord/callback`;
+    const redirectUri = resolveRedirectUri();
+    saveRedirectUri(redirectUri);
     const params = new URLSearchParams({
         client_id: clientId,
         redirect_uri: redirectUri,
@@ -31,23 +77,33 @@ const createOAuthUrl = () => {
 };
 
 const postAuthCode = async (code, redirectUri) => {
-    const responsePromise = axios.post(
-        '/api/discord-exchange',
-        {
-            code,
-            redirect_uri: redirectUri
-        },
-        {
-            // Force same-origin Vercel function instead of axios global baseURL (Render).
-            baseURL: window.location.origin
+    const payload = { code, redirect_uri: redirectUri };
+
+    try {
+        return await withTimeout(axios.post('/api/shop/auth/discord', payload));
+    } catch (error) {
+        if (!CAN_USE_VERCEL_EXCHANGE_FALLBACK) {
+            throw error;
         }
-    );
 
-    const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(createTimeoutError()), AUTH_REQUEST_TIMEOUT_MS);
-    });
+        const status = Number(error?.response?.status) || 0;
+        const networkCode = String(error?.code || '').toUpperCase();
+        const isNotFound = status === 404 || status === 405 || status === 501;
+        const isNetworkPathIssue = !error?.response
+            && networkCode !== 'AUTH_REQUEST_TIMEOUT'
+            && networkCode !== 'ECONNABORTED';
+        const shouldFallbackToVercelExchange = isNotFound || isNetworkPathIssue;
 
-    return Promise.race([responsePromise, timeoutPromise]);
+        if (!shouldFallbackToVercelExchange) {
+            throw error;
+        }
+
+        // Fallback path for environments without /api/shop rewrite.
+        return withTimeout(axios.post('/api/discord-exchange', payload, {
+            // Force same-origin Vercel function instead of axios global baseURL.
+            baseURL: window.location.origin
+        }));
+    }
 };
 
 const normalizeRetryAfterToMs = (value) => {
@@ -72,8 +128,9 @@ const getRetryDelayMs = (error, attempt) => {
 const isRateLimitedError = (error) => {
     const data = error?.response?.data || {};
     const statusCode = error?.response?.status;
-    return data?.code === 'DISCORD_RATE_LIMIT' || statusCode === 503 || statusCode === 429;
+    return data?.code === 'DISCORD_RATE_LIMIT' || statusCode === 429;
 };
+const isServiceUnavailableError = (error) => Number(error?.response?.status) === 503;
 
 const isInvalidOauthCodeError = (error) => {
     const statusCode = error?.response?.status;
@@ -122,10 +179,8 @@ const AuthCallback = () => {
             inFlight.current = true;
 
             try {
-                const rawRedirectUri = import.meta.env.VITE_DISCORD_REDIRECT_URI;
-                const redirectUri = typeof rawRedirectUri === 'string' && rawRedirectUri.trim()
-                    ? rawRedirectUri.trim()
-                    : `${window.location.origin}/auth/discord/callback`;
+                const redirectUri = resolveRedirectUri();
+                saveRedirectUri(redirectUri);
                 setDebugInfo('');
                 setCanRetry(false);
                 setRetryInSeconds(0);
@@ -152,6 +207,7 @@ const AuthCallback = () => {
                         }
 
                         loginDiscordRef.current(userData, token);
+                        clearStoredRedirectUri();
                         setStatus('Success! Redirecting...');
                         setTimeout(() => {
                             if (!cancelled) window.location.href = '/';
@@ -160,6 +216,7 @@ const AuthCallback = () => {
                     } catch (error) {
                         const timeout = error?.code === 'ECONNABORTED' || error?.code === 'AUTH_REQUEST_TIMEOUT';
                         const rateLimit = isRateLimitedError(error);
+                        const serviceUnavailable = isServiceUnavailableError(error);
                         const shouldRetry = attempt < MAX_AUTH_RETRIES && timeout;
 
                         if (shouldRetry) {
@@ -173,6 +230,17 @@ const AuthCallback = () => {
 
                         const data = error.response?.data || {};
                         const statusCode = error.response?.status;
+                        const normalizedErrorText = String(data?.error || '').toLowerCase();
+
+                        if (normalizedErrorText.includes('invalid_client')) {
+                            setStatus('Discord app credentials are invalid');
+                            setDebugInfo(
+                                'Server OAuth credentials are invalid (DISCORD_CLIENT_ID / DISCORD_CLIENT_SECRET).\n\n' +
+                                'Ask admin to update Vercel environment variables, then retry login.'
+                            );
+                            setCanRetry(true);
+                            return;
+                        }
 
                         if (rateLimit) {
                             const retryAfterSeconds = Number(data?.retryAfterSeconds) || 0;
@@ -186,6 +254,19 @@ const AuthCallback = () => {
                             );
                             setCanRetry(true);
                             setRetryInSeconds(Math.max(0, Math.ceil(retryAfterSeconds)));
+                            return;
+                        }
+                        if (serviceUnavailable) {
+                            const backendHint = CAN_USE_VERCEL_EXCHANGE_FALLBACK
+                                ? 'Check backend env/proxy routing (Vercel bridge or BACKEND_URL).'
+                                : `Check VITE_API_URL (${CONFIGURED_API_BASE_URL}) and backend OAuth env.`;
+                            setStatus('Discord login temporarily unavailable');
+                            setDebugInfo(
+                                `${data?.error || 'Backend auth endpoint is unavailable.'}\n\n` +
+                                `Code: ${data?.code || 'none'}\n\n` +
+                                `${backendHint}`
+                            );
+                            setCanRetry(true);
                             return;
                         }
                         if (isInvalidOauthCodeError(error)) {

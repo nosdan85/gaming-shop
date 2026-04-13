@@ -8,21 +8,46 @@ const {
 } = require('discord.js');
 const { discordRequest } = require('./utils/discordApi');
 const Order = require('./models/Order');
+const { getDiscordGatewayStatus } = require('./config/discordGateway');
 
 const DISCORD_API_BASE = 'https://discord.com/api/v10';
 const SNOWFLAKE_PATTERN = /^\d{16,22}$/;
 const BOT_SELF_CACHE_TTL_MS = 10 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 8000;
 const REQUEST_TIMEOUT_CREATE_CHANNEL_MS = 8000;
-const TICKET_CREATE_MIN_GAP_MS = 1200;
+const TICKET_CREATE_MIN_GAP_MS = (() => {
+    const n = Number(process.env.DISCORD_TICKET_CREATE_MIN_GAP_MS);
+    if (!Number.isFinite(n) || n < 500) return 3500;
+    return Math.floor(n);
+})();
+const TICKET_CREATE_QUEUE_MAX_COOLDOWN_MS = 2 * 60 * 1000;
+const TICKET_CREATE_RETRY_MAX_RETRIES = 2;
+const TICKET_CREATE_RETRY_BASE_DELAY_MS = 900;
+const TICKET_CREATE_RETRY_MAX_DELAY_MS = 5000;
+const CLOSE_COMMANDS = new Set(['!close', '/close', '!dong', '/dong']);
+const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.tiff', '.svg'];
 
-const PERM_VIEW_CHANNEL = String(1n << 10n);
-const PERM_VIEW_SEND_HISTORY = String((1n << 10n) | (1n << 11n) | (1n << 16n));
+const PERM_VIEW_CHANNEL = 1n << 10n;
+const PERM_SEND_MESSAGES = 1n << 11n;
+const PERM_EMBED_LINKS = 1n << 14n;
+const PERM_ATTACH_FILES = 1n << 15n;
+const PERM_READ_MESSAGE_HISTORY = 1n << 16n;
+const PERM_ADD_REACTIONS = 1n << 6n;
+const PERM_VIEW_CHANNEL_ONLY = String(PERM_VIEW_CHANNEL);
+const PERM_TICKET_CHAT = String(
+    PERM_VIEW_CHANNEL
+    | PERM_SEND_MESSAGES
+    | PERM_EMBED_LINKS
+    | PERM_ATTACH_FILES
+    | PERM_READ_MESSAGE_HISTORY
+    | PERM_ADD_REACTIONS
+);
 
 let cachedBotSelfId = '';
 let cachedBotSelfAt = 0;
 let ticketCreateChain = Promise.resolve();
 let lastTicketCreateAt = 0;
+let ticketCreateBlockedUntilAt = 0;
 
 class DiscordBotError extends Error {
     constructor(message, { status = 500, code = 'DISCORD_BOT_ERROR', data = null, retryAfterSeconds = 0 } = {}) {
@@ -38,15 +63,33 @@ class DiscordBotError extends Error {
 }
 
 const client = new Client({
-    intents: [GatewayIntentBits.Guilds]
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent
+    ]
 });
+const { gatewayEnabled: discordGatewayEnabled } = getDiscordGatewayStatus();
+
+const normalizeEnvValue = (value) => {
+    const text = String(value || '').trim();
+    if (!text) return '';
+    if (
+        (text.startsWith('"') && text.endsWith('"'))
+        || (text.startsWith("'") && text.endsWith("'"))
+    ) {
+        return text.slice(1, -1).trim();
+    }
+    return text;
+};
 
 const isSnowflake = (value) => SNOWFLAKE_PATTERN.test(String(value || '').trim());
-const getBotToken = () => String(process.env.DISCORD_BOT_TOKEN || '').trim();
-const getGuildId = () => String(process.env.DISCORD_GUILD_ID || '').trim();
-const getOwnerRoleId = () => String(process.env.DISCORD_OWNER_ROLE_ID || '').trim();
-const getTicketCategoryId = () => String(process.env.DISCORD_TICKET_CATEGORY_ID || '').trim();
-const getOwnerId = () => String(process.env.DISCORD_OWNER_ID || '').trim();
+const getBotToken = () => normalizeEnvValue(process.env.DISCORD_BOT_TOKEN);
+const getGuildId = () => normalizeEnvValue(process.env.DISCORD_GUILD_ID);
+const getOwnerRoleId = () => normalizeEnvValue(process.env.DISCORD_OWNER_ROLE_ID);
+const getTicketCategoryId = () => normalizeEnvValue(process.env.DISCORD_TICKET_CATEGORY_ID);
+const getOwnerId = () => normalizeEnvValue(process.env.DISCORD_OWNER_ID);
+const getVouchChannelId = () => normalizeEnvValue(process.env.DISCORD_VOUCH_CHANNEL_ID);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const normalizeRetryAfterSeconds = (value) => {
@@ -59,7 +102,9 @@ const normalizeRetryAfterSeconds = (value) => {
 const runTicketCreateQueued = async (runner) => {
     const run = async () => {
         const elapsed = Date.now() - lastTicketCreateAt;
-        const waitMs = Math.max(0, TICKET_CREATE_MIN_GAP_MS - elapsed);
+        const gapWaitMs = Math.max(0, TICKET_CREATE_MIN_GAP_MS - elapsed);
+        const cooldownWaitMs = Math.max(0, ticketCreateBlockedUntilAt - Date.now());
+        const waitMs = Math.max(gapWaitMs, cooldownWaitMs);
         if (waitMs > 0) {
             await sleep(waitMs);
         }
@@ -75,6 +120,18 @@ const runTicketCreateQueued = async (runner) => {
     return queued;
 };
 
+const setTicketCreateCooldownSeconds = (seconds) => {
+    const n = Number(seconds);
+    if (!Number.isFinite(n) || n <= 0) return 0;
+
+    const clampedSeconds = Math.min(
+        Math.ceil(TICKET_CREATE_QUEUE_MAX_COOLDOWN_MS / 1000),
+        Math.max(1, Math.ceil(n))
+    );
+    ticketCreateBlockedUntilAt = Math.max(ticketCreateBlockedUntilAt, Date.now() + (clampedSeconds * 1000));
+    return clampedSeconds;
+};
+
 const truncateText = (value, max = 300) => String(value || '').slice(0, Math.max(0, Number(max) || 0));
 
 const formatDiscordApiMessage = (data) => {
@@ -83,6 +140,16 @@ const formatDiscordApiMessage = (data) => {
     return truncateText(
         data.message || data.error || data.error_description || JSON.stringify(data),
         300
+    );
+};
+const isTemporaryCloudflareBlock = (status, data) => {
+    if (status !== 403) return false;
+    const text = typeof data === 'string' ? data.toLowerCase() : JSON.stringify(data || {}).toLowerCase();
+    return (
+        text.includes('cloudflare')
+        || text.includes('1015')
+        || text.includes('temporarily blocked')
+        || text.includes('temporarily unavailable')
     );
 };
 
@@ -139,6 +206,14 @@ const toDiscordBotError = (error, { defaultMessage = 'Discord API request failed
             status: 500,
             code: 'DISCORD_BOT_UNAUTHORIZED',
             data
+        });
+    }
+    if (isTemporaryCloudflareBlock(status, data)) {
+        return new DiscordBotError('Discord is temporarily rate limited. Please retry shortly.', {
+            status: 429,
+            code: 'DISCORD_RATE_LIMITED',
+            data,
+            retryAfterSeconds: Math.max(retryAfterSeconds, 30)
         });
     }
     if (status === 403) {
@@ -303,21 +378,184 @@ const checkUserHasOwnerRole = async (discordId) => {
     }
 };
 
+const isImageAttachment = (attachment) => {
+    if (!attachment) return false;
+    const contentType = String(attachment.contentType || '').toLowerCase();
+    if (contentType.startsWith('image/')) return true;
+
+    const fileName = String(attachment.name || attachment.filename || '').toLowerCase();
+    return IMAGE_EXTENSIONS.some((ext) => fileName.endsWith(ext));
+};
+
+const getFirstImageAttachment = (message) => {
+    if (!message?.attachments || typeof message.attachments.values !== 'function') return null;
+    for (const attachment of message.attachments.values()) {
+        if (isImageAttachment(attachment)) return attachment;
+    }
+    return null;
+};
+
+const findOrderByTicketChannelId = async (channelId) => {
+    if (!isSnowflake(channelId)) return null;
+    return Order.findOne({
+        $or: [
+            { channelId },
+            { paypalTicketChannelId: channelId }
+        ]
+    }).sort({ createdAt: -1 });
+};
+
+const findOrderByTicketChannelName = async (channelNameRaw) => {
+    const channelName = String(channelNameRaw || '').trim().toLowerCase();
+    if (!channelName) return null;
+
+    return Order.findOne({
+        $or: [
+            { orderId: channelName },
+            { paypalTicketChannel: channelName }
+        ]
+    }).sort({ createdAt: -1 });
+};
+
+const findOrderByTicketChannel = async (message) => {
+    const channelId = String(message?.channelId || '').trim();
+    const byId = await findOrderByTicketChannelId(channelId);
+    if (byId) return byId;
+
+    const channelName = String(message?.channel?.name || '').trim();
+    if (!channelName) return null;
+    return findOrderByTicketChannelName(channelName);
+};
+
+const isConfiguredTicketCategoryChannel = (message) => {
+    const ticketCategoryId = getTicketCategoryId();
+    if (!isSnowflake(ticketCategoryId)) return false;
+    const parentId = String(message?.channel?.parentId || '').trim();
+    return parentId === ticketCategoryId;
+};
+
+const isTicketOwnerOrStaff = async (discordId, order) => {
+    const userId = String(discordId || '').trim();
+    if (!isSnowflake(userId)) return false;
+
+    if (String(order?.discordId || '') === userId) {
+        return true;
+    }
+
+    const ownerId = getOwnerId();
+    if (ownerId && ownerId === userId) {
+        return true;
+    }
+
+    return checkUserHasOwnerRole(userId);
+};
+
+const isStaffUser = async (discordId) => {
+    const userId = String(discordId || '').trim();
+    if (!isSnowflake(userId)) return false;
+
+    const ownerId = getOwnerId();
+    if (ownerId && ownerId === userId) {
+        return true;
+    }
+
+    return checkUserHasOwnerRole(userId);
+};
+
+const formatVouchItems = (items) => {
+    if (!Array.isArray(items) || items.length === 0) return '**1X UNKNOWN ITEM**';
+    return items
+        .map((item) => {
+            const quantity = Math.max(1, Number(item?.quantity) || 1);
+            const name = String(item?.name || 'UNKNOWN ITEM').trim().toUpperCase();
+            return `**${quantity}X ${name}**`;
+        })
+        .join('\n')
+        .slice(0, 1500);
+};
+
+const buildVouchContent = (order) => {
+    const mention = `<@${order?.discordId || ''}>`;
+    const itemsText = formatVouchItems(order?.items);
+    return truncateText(`${mention}\n${itemsText}\nPlease leave us a vouch ❤️`, 1900);
+};
+
+const sendAutoVouchFromTicketImage = async ({ order, imageUrl }) => {
+    const vouchChannelId = getVouchChannelId();
+    if (!isSnowflake(vouchChannelId) || !imageUrl) return false;
+
+    const embed = new EmbedBuilder()
+        .setColor(0x00D632)
+        .setImage(imageUrl);
+
+    await botRequest({
+        method: 'post',
+        path: `/channels/${vouchChannelId}/messages`,
+        data: {
+            content: buildVouchContent(order),
+            embeds: [embed.toJSON()]
+        },
+        timeout: REQUEST_TIMEOUT_MS,
+        retry: true,
+        defaultCode: 'DISCORD_VOUCH_SEND_FAILED'
+    });
+
+    return true;
+};
+
+const resetOrderTicketStateByChannel = async (order, channelId) => {
+    if (!order || !channelId) return;
+
+    const update = {};
+    if (String(order.channelId || '') === channelId) {
+        update.channelId = '';
+        update.ticketStatus = 'pending';
+        update.ticketError = '';
+        update.ticketLockUntil = null;
+    }
+
+    if (String(order.paypalTicketChannelId || '') === channelId) {
+        update.paypalTicketChannelId = '';
+        update.paypalTicketChannel = '';
+        update.paypalTicketStatus = 'pending';
+        update.paypalTicketError = '';
+        update.paypalTicketLockUntil = null;
+    }
+
+    if (Object.keys(update).length > 0) {
+        await Order.updateOne({ _id: order._id }, { $set: update });
+    }
+};
+
+const closeTicketChannel = async ({ order, channelId }) => {
+    await resetOrderTicketStateByChannel(order, channelId).catch((error) => {
+        console.error('Reset ticket state error:', error?.message || error);
+    });
+
+    await botRequest({
+        method: 'delete',
+        path: `/channels/${channelId}`,
+        timeout: REQUEST_TIMEOUT_MS,
+        retry: false,
+        defaultCode: 'DISCORD_CHANNEL_CLOSE_FAILED'
+    });
+};
+
 const buildPermissionOverwrites = ({ customerId, includeOwnerRole, botSelfId }) => {
     const guildId = getGuildId();
     const ownerRoleId = getOwnerRoleId();
 
     const overwrites = [
-        { id: guildId, type: 0, deny: PERM_VIEW_CHANNEL },
-        { id: customerId, type: 1, allow: PERM_VIEW_SEND_HISTORY }
+        { id: guildId, type: 0, deny: PERM_VIEW_CHANNEL_ONLY },
+        { id: customerId, type: 1, allow: PERM_TICKET_CHAT }
     ];
 
     if (includeOwnerRole && isSnowflake(ownerRoleId)) {
-        overwrites.push({ id: ownerRoleId, type: 0, allow: PERM_VIEW_SEND_HISTORY });
+        overwrites.push({ id: ownerRoleId, type: 0, allow: PERM_TICKET_CHAT });
     }
 
     if (isSnowflake(botSelfId)) {
-        overwrites.push({ id: botSelfId, type: 1, allow: PERM_VIEW_SEND_HISTORY });
+        overwrites.push({ id: botSelfId, type: 1, allow: PERM_TICKET_CHAT });
     }
 
     return overwrites;
@@ -391,7 +629,12 @@ const createTicketChannel = async ({ channelName, customerId }) => {
                     path: `/guilds/${guildId}/channels`,
                     data: payload,
                     timeout: REQUEST_TIMEOUT_CREATE_CHANNEL_MS,
-                    retry: false,
+                    retry: true,
+                    retryOptions: {
+                        maxRetries: TICKET_CREATE_RETRY_MAX_RETRIES,
+                        baseDelayMs: TICKET_CREATE_RETRY_BASE_DELAY_MS,
+                        maxDelayMs: TICKET_CREATE_RETRY_MAX_DELAY_MS
+                    },
                     defaultCode: 'DISCORD_CHANNEL_CREATE_FAILED'
                 });
                 const channelId = String(res?.data?.id || '').trim();
@@ -406,8 +649,17 @@ const createTicketChannel = async ({ channelName, customerId }) => {
                 if (!(error instanceof DiscordBotError)) {
                     throw error;
                 }
-                // Hard fail: config/permission/rate-limit/unavailable
-                if (error.status === 429 || error.status === 500 || error.status === 503) {
+                if (error.status === 429) {
+                    const cooldownSeconds = setTicketCreateCooldownSeconds(
+                        Math.max(Number(error.retryAfterSeconds) || 0, 2)
+                    );
+                    if (cooldownSeconds > 0) {
+                        error.retryAfterSeconds = Math.max(Number(error.retryAfterSeconds) || 0, cooldownSeconds);
+                    }
+                    throw error;
+                }
+                // Hard fail: config/permission/unavailable
+                if (error.status === 500 || error.status === 503) {
                     throw error;
                 }
                 // Recoverable candidate mismatch (bad category/role/payload), keep trying fallback payloads
@@ -489,11 +741,16 @@ const createOrderTicket = async (order) => {
         channelName: `${order.orderId}`,
         customerId: order.discordId
     });
+    const gatewayDisabled = !discordGatewayEnabled;
 
     const embed = new EmbedBuilder()
         .setColor(0xFFFFFF)
         .setTitle(`Order: ${order.orderId}`)
-        .setDescription(`Hello <@${order.discordId}>. Choose CashApp or Robux.`)
+        .setDescription(
+            gatewayDisabled
+                ? `Hello <@${order.discordId}>. Please reply with your payment method: CashApp or Robux.`
+                : `Hello <@${order.discordId}>. Choose CashApp or Robux.`
+        )
         .addFields(
             { name: 'Customer', value: order.discordUsername || `<@${order.discordId}>`, inline: true },
             { name: 'Total', value: `$${Number(order.totalAmount || 0).toFixed(2)}`, inline: true },
@@ -518,7 +775,7 @@ const createOrderTicket = async (order) => {
             channelId,
             content: buildOrderMention(order.discordId),
             embed,
-            components: [row]
+            components: gatewayDisabled ? [] : [row]
         });
     } catch (error) {
         // Channel is already created; do not force duplicate channel attempts.
@@ -570,6 +827,92 @@ client.on('interactionCreate', async (interaction) => {
             } catch (replyError) {
                 console.error('Button reply error:', replyError?.message || replyError);
             }
+        }
+    }
+});
+
+client.on('messageCreate', async (message) => {
+    if (!message || message.author?.bot) return;
+    if (!message.guildId) return;
+
+    const channelId = String(message.channelId || '').trim();
+    if (!isSnowflake(channelId)) return;
+
+    const normalizedContent = String(message.content || '').trim().toLowerCase();
+    const isCloseCommand = CLOSE_COMMANDS.has(normalizedContent);
+    const imageAttachment = getFirstImageAttachment(message);
+    if (!isCloseCommand && !imageAttachment) return;
+
+    let order = null;
+    try {
+        order = await findOrderByTicketChannel(message);
+    } catch (error) {
+        console.error('Ticket channel order lookup failed:', error?.message || error);
+        return;
+    }
+
+    if (isCloseCommand) {
+        try {
+            let canClose = false;
+            if (order) {
+                canClose = await isTicketOwnerOrStaff(message.author.id, order);
+            } else if (isConfiguredTicketCategoryChannel(message)) {
+                // Fallback for legacy tickets missing channelId mapping in DB.
+                canClose = await isStaffUser(message.author.id);
+            }
+
+            if (!canClose) {
+                await message.reply('You do not have permission to close this ticket.');
+                return;
+            }
+
+            await message.reply('Closing ticket in 3 seconds...');
+            await sleep(3000);
+            await closeTicketChannel({ order, channelId });
+            return;
+        } catch (error) {
+            console.error('Close ticket command error:', error?.message || error);
+            try {
+                await message.reply('Failed to close ticket. Please try again.');
+            } catch {
+                // Ignore reply failures.
+            }
+            return;
+        }
+    }
+
+    if (!order) {
+        if (imageAttachment?.url) {
+            console.warn(`No order mapped for ticket channel ${channelId}`);
+        }
+        return;
+    }
+    if (!imageAttachment?.url) return;
+
+    try {
+        const canSendVouch = await isStaffUser(message.author.id);
+        if (!canSendVouch) {
+            console.warn(`Auto-vouch denied for user ${message.author.id} in channel ${channelId}`);
+            return;
+        }
+
+        const sent = await sendAutoVouchFromTicketImage({
+            order,
+            imageUrl: imageAttachment.url
+        });
+
+        if (sent) {
+            await message.reply('Vouch posted successfully.');
+            return;
+        }
+
+        console.warn(`Auto-vouch skipped for channel ${channelId}: DISCORD_VOUCH_CHANNEL_ID missing/invalid or bot cannot send.`);
+    } catch (error) {
+        console.error('Auto vouch send error:', error?.message || error);
+        try {
+            await message.reply('Could not post vouch. Check DISCORD_VOUCH_CHANNEL_ID and bot permissions.');
+        } catch {
+            // Ignore reply failures.
         }
     }
 });
