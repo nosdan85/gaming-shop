@@ -23,7 +23,6 @@ const OBJECT_ID_PATTERN = /^[a-fA-F0-9]{24}$/;
 const MAX_QUANTITY_PER_PRODUCT = 100000;
 const AUTH_CODE_CACHE_TTL_MS = 2 * 60 * 1000;
 const AUTH_RATE_LIMIT_DEFAULT_RETRY_SECONDS = 15;
-const AUTH_RATE_LIMIT_MAX_RETRY_SECONDS = 120;
 const DISCORD_TOKEN_MIN_GAP_MS = 1500;
 const BRIDGE_REQUEST_MAX_AGE_MS = 5 * 60 * 1000;
 const DISCORD_GUILD_CHECK_TIMEOUT_MS = 8000;
@@ -32,7 +31,6 @@ const TICKET_LOCK_WINDOW_MS = 30 * 1000;
 const PAYPAL_TICKET_LOCK_WINDOW_MS = 30 * 1000;
 const discordAuthSuccessCache = new Map();
 const discordAuthInFlight = new Map();
-let discordAuthBlockedUntilMs = 0;
 let discordTokenExchangeChain = Promise.resolve();
 let lastDiscordTokenExchangeAtMs = 0;
 
@@ -44,14 +42,6 @@ const cleanupAuthSuccessCache = () => {
             discordAuthSuccessCache.delete(key);
         }
     }
-};
-const getDiscordAuthCooldownSeconds = () => Math.max(0, Math.ceil((discordAuthBlockedUntilMs - Date.now()) / 1000));
-const setDiscordAuthCooldownSeconds = (seconds) => {
-    const n = Number(seconds);
-    if (!Number.isFinite(n) || n <= 0) return 0;
-    const clamped = Math.min(AUTH_RATE_LIMIT_MAX_RETRY_SECONDS, Math.max(1, Math.ceil(n)));
-    discordAuthBlockedUntilMs = Math.max(discordAuthBlockedUntilMs, Date.now() + clamped * 1000);
-    return clamped;
 };
 const buildDiscordRateLimitPayload = (retryAfterSeconds, step = 'unknown', providerStatus = null) => ({
     error: 'Discord temporarily limiting requests. Please try again in a few minutes.',
@@ -576,11 +566,6 @@ router.post('/auth/discord', async (req, res) => {
     if (!code) return res.status(400).json({ error: 'Missing authorization code' });
     if (!redirectUri) return res.status(400).json({ error: 'redirect_uri required' });
 
-    const blockedSeconds = getDiscordAuthCooldownSeconds();
-    if (blockedSeconds > 0) {
-        return res.status(503).json(buildDiscordRateLimitPayload(blockedSeconds, 'cooldown', 503));
-    }
-
     cleanupAuthSuccessCache();
     const cacheKey = getAuthCodeCacheKey(code);
     const cached = discordAuthSuccessCache.get(cacheKey);
@@ -601,8 +586,7 @@ router.post('/auth/discord', async (req, res) => {
             if (isDiscordTemporaryBlock(status, data)) {
                 if (shouldApplyDiscordAuthCooldown(status, data)) {
                     const retryAfter = getDiscordAuthCooldownFromError(error);
-                    const cooldown = setDiscordAuthCooldownSeconds(retryAfter) || retryAfter;
-                    return res.status(503).json(buildDiscordRateLimitPayload(cooldown, step, status || 503));
+                    return res.status(503).json(buildDiscordRateLimitPayload(retryAfter, step, status || 503));
                 }
                 return res.status(503).json(buildDiscordAuthUnavailablePayload(step, status || 503));
             }
@@ -643,8 +627,7 @@ router.post('/auth/discord', async (req, res) => {
         if (isDiscordTemporaryBlock(status, data)) {
             if (shouldApplyDiscordAuthCooldown(status, data)) {
                 const retryAfter = getDiscordAuthCooldownFromError(error);
-                const cooldown = setDiscordAuthCooldownSeconds(retryAfter) || retryAfter;
-                return res.status(503).json(buildDiscordRateLimitPayload(cooldown, step, status || 503));
+                return res.status(503).json(buildDiscordRateLimitPayload(retryAfter, step, status || 503));
             }
             return res.status(503).json(buildDiscordAuthUnavailablePayload(step, status || 503));
         }
