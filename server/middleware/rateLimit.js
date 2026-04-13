@@ -5,7 +5,7 @@ const apiLimiter = rateLimit({
     max: 100,
     standardHeaders: true,
     legacyHeaders: false,
-    message: { message: 'Too many requests from this IP. Please try again later.' }
+    message: { error: 'Too many requests from this IP. Please try again later.' }
 });
 
 const checkoutLimiter = rateLimit({
@@ -13,7 +13,28 @@ const checkoutLimiter = rateLimit({
     max: 10,
     standardHeaders: true,
     legacyHeaders: false,
-    message: { message: 'Too many checkout attempts. Please try again later.' }
+    message: { error: 'Too many checkout attempts. Please try again later.' }
 });
 
-module.exports = { apiLimiter, checkoutLimiter };
+const discordAuthLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 20,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many Discord login attempts. Please try again later.' }
+});
+
+const adminLoginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 5,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many admin login attempts. Please try again later.' }
+});
+
+module.exports = {
+    apiLimiter,
+    checkoutLimiter,
+    discordAuthLimiter,
+    adminLoginLimiter
+};

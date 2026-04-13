@@ -3,15 +3,24 @@
  */
 const axios = require('axios');
 
-const PAYPAL_CLIENT_ID = process.env.PAYPAL_CLIENT_ID || '';
-const PAYPAL_CLIENT_SECRET = process.env.PAYPAL_CLIENT_SECRET || '';
+const normalizeValue = (value) => String(value || '').trim();
+const isPlaceholderValue = (value) => /^<[^>]+>$/.test(normalizeValue(value));
+const PAYPAL_CLIENT_ID = normalizeValue(process.env.PAYPAL_CLIENT_ID);
+const PAYPAL_CLIENT_SECRET = normalizeValue(process.env.PAYPAL_CLIENT_SECRET);
 const PAYPAL_IS_LIVE = process.env.PAYPAL_MODE === 'live';
 const PAYPAL_BASE = PAYPAL_IS_LIVE ? 'https://api-m.paypal.com' : 'https://api-m.sandbox.paypal.com';
 
 const getBackendBaseUrl = () => process.env.WEBHOOK_BASE_URL || process.env.BACKEND_URL || '';
 
 const getPayPalAccessToken = async () => {
-    if (!PAYPAL_CLIENT_ID || !PAYPAL_CLIENT_SECRET) return null;
+    if (
+        !PAYPAL_CLIENT_ID
+        || !PAYPAL_CLIENT_SECRET
+        || isPlaceholderValue(PAYPAL_CLIENT_ID)
+        || isPlaceholderValue(PAYPAL_CLIENT_SECRET)
+    ) {
+        return null;
+    }
     const auth = Buffer.from(`${PAYPAL_CLIENT_ID}:${PAYPAL_CLIENT_SECRET}`).toString('base64');
     const tokenRes = await axios.post(
         `${PAYPAL_BASE}/v1/oauth2/token`,

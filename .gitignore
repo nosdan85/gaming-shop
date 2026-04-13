@@ -8,3 +8,6 @@ client/.env
 dist/
 client/preview.out.txt
 client/preview.err.txt
+.vercel/
+client/.vercel/
+server/.vercel/

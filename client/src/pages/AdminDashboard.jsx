@@ -1,23 +1,33 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
+import { Navigate } from 'react-router-dom';
+import { isAdminToken } from '../utils/jwt';
 
 const AdminDashboard = () => {
     const { token } = useAuth();
     const [stats, setStats] = useState(null);
     const [orders, setOrders] = useState([]);
+    const [failed, setFailed] = useState(false);
+
+    const hasAdminToken = isAdminToken(token);
 
     useEffect(() => {
         const fetchData = async () => {
-            if (!token) return;
-            const config = { headers: { Authorization: `Bearer ${token}` } };
-            const statsRes = await axios.get('/api/admin/stats', config);
-            const ordersRes = await axios.get('/api/admin/orders', config);
-            setStats(statsRes.data);
-            setOrders(ordersRes.data);
+            if (!token || !hasAdminToken) return;
+            try {
+                const config = { headers: { Authorization: `Bearer ${token}` } };
+                const statsRes = await axios.get('/api/admin/stats', config);
+                const ordersRes = await axios.get('/api/admin/orders', config);
+                setStats(statsRes.data);
+                setOrders(ordersRes.data);
+                setFailed(false);
+            } catch {
+                setFailed(true);
+            }
         };
         fetchData();
-    }, [token]);
+    }, [token, hasAdminToken]);
 
     const updateStatus = async (id, status) => {
         await axios.put(`/api/admin/order/${id}`, { status }, {
@@ -29,6 +39,8 @@ const AdminDashboard = () => {
         setOrders(refreshed.data);
     };
 
+    if (!token || !hasAdminToken) return <Navigate to="/admin/login" replace />;
+    if (failed) return <div className="text-white p-8">Could not load dashboard.</div>;
     if (!stats) return <div className="text-white p-8">Loading...</div>;
 
     return (

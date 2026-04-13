@@ -15,16 +15,21 @@ const {
 } = require('../bot');
 const { createPayPalOrder, createLTCInvoice, capturePayPalOrder } = require('../services/paymentService');
 const { discordRequest } = require('../utils/discordApi');
-const { authRequired } = require('../middleware/authMiddleware');
-const { checkoutLimiter } = require('../middleware/rateLimit');
+const { authRequired, getBearerToken, verifyAnyJwtToken } = require('../middleware/authMiddleware');
+const { checkoutLimiter, discordAuthLimiter } = require('../middleware/rateLimit');
 const { getDiscordGatewayStatus } = require('../config/discordGateway');
+const { encryptSecret } = require('../utils/tokenCrypto');
 
 const router = express.Router();
 const OBJECT_ID_PATTERN = /^[a-fA-F0-9]{24}$/;
 const MAX_QUANTITY_PER_PRODUCT = 100000;
 const AUTH_CODE_CACHE_TTL_MS = 2 * 60 * 1000;
 const AUTH_RATE_LIMIT_DEFAULT_RETRY_SECONDS = 15;
-const DISCORD_TOKEN_MIN_GAP_MS = 1500;
+const DISCORD_TOKEN_MIN_GAP_MS = (() => {
+    const n = Number(process.env.DISCORD_TOKEN_MIN_GAP_MS);
+    if (!Number.isFinite(n) || n < 500) return 1500;
+    return Math.floor(n);
+})();
 const BRIDGE_REQUEST_MAX_AGE_MS = 5 * 60 * 1000;
 const DISCORD_GUILD_CHECK_TIMEOUT_MS = 8000;
 const PAYMENT_PROVIDER_TIMEOUT_MS = 15000;
@@ -82,12 +87,37 @@ const withTimeout = (promise, timeoutMs, fallbackValue = null) => Promise.race([
     new Promise((resolve) => setTimeout(() => resolve(fallbackValue), timeoutMs))
 ]);
 
-const getBackendBaseUrl = () => (process.env.WEBHOOK_BASE_URL || process.env.BACKEND_URL || '').replace(/\/+$/, '');
-const getClientBaseUrl = () => ((process.env.CLIENT_URL || '').split(',')[0] || '').trim().replace(/\/+$/, '');
+const normalizeEnvValue = (value) => {
+    const text = String(value || '').trim();
+    if (!text) return '';
+    if (
+        (text.startsWith('"') && text.endsWith('"'))
+        || (text.startsWith("'") && text.endsWith("'"))
+    ) {
+        return text.slice(1, -1).trim();
+    }
+    return text;
+};
+
+const getBackendBaseUrl = () => normalizeEnvValue(process.env.WEBHOOK_BASE_URL || process.env.BACKEND_URL).replace(/\/+$/, '');
+const getClientBaseUrl = () => normalizeEnvValue((process.env.CLIENT_URL || '').split(',')[0] || '').replace(/\/+$/, '');
 const getOriginBaseUrl = (value) => String(value || '').trim().replace(/\/+$/, '');
+const getDiscordOauthClientId = () => normalizeEnvValue(process.env.DISCORD_CLIENT_ID);
+const getDiscordOauthClientSecret = () => normalizeEnvValue(process.env.DISCORD_CLIENT_SECRET);
+const getConfiguredDiscordRedirectUri = () => normalizeEnvValue(process.env.DISCORD_REDIRECT_URI);
+const getDiscordOauthConfigError = () => {
+    if (!getDiscordOauthClientId()) return 'DISCORD_CLIENT_ID is missing';
+    if (!getDiscordOauthClientSecret()) return 'DISCORD_CLIENT_SECRET is missing';
+    return '';
+};
+const resolveDiscordAuthRedirectUri = (frontendRedirectUri) => {
+    const configured = getConfiguredDiscordRedirectUri();
+    if (configured) return configured;
+    return String(frontendRedirectUri || '').trim();
+};
 const getDiscordTicketConfigError = () => {
-    if (!String(process.env.DISCORD_BOT_TOKEN || '').trim()) return 'DISCORD_BOT_TOKEN is missing';
-    if (!String(process.env.DISCORD_GUILD_ID || '').trim()) return 'DISCORD_GUILD_ID is missing';
+    if (!normalizeEnvValue(process.env.DISCORD_BOT_TOKEN)) return 'DISCORD_BOT_TOKEN is missing';
+    if (!normalizeEnvValue(process.env.DISCORD_GUILD_ID)) return 'DISCORD_GUILD_ID is missing';
     return '';
 };
 const getTicketMode = () => String(process.env.DISCORD_TICKET_MODE || 'bot').trim().toLowerCase();
@@ -313,8 +343,8 @@ const upsertDiscordUserAndBuildAuthPayload = async ({
     const scopes = normalizeDiscordScopes(scope);
     const expiresInSeconds = Number(expiresIn);
 
-    if (safeAccessToken) dbUser.accessToken = safeAccessToken;
-    if (safeRefreshToken) dbUser.refreshToken = safeRefreshToken;
+    if (safeAccessToken) dbUser.accessToken = encryptSecret(safeAccessToken);
+    if (safeRefreshToken) dbUser.refreshToken = encryptSecret(safeRefreshToken);
     if (Number.isFinite(expiresInSeconds) && expiresInSeconds > 0) {
         dbUser.tokenExpiresAt = new Date(Date.now() + expiresInSeconds * 1000);
     }
@@ -527,20 +557,50 @@ const canAccessOwnerEndpoints = async (discordId) => {
     return checkUserHasOwnerRole(discordId);
 };
 
+const getOptionalRequestUser = (req) => {
+    const token = getBearerToken(req);
+    if (!token) return null;
+    return verifyAnyJwtToken(token);
+};
+
 const exchangeDiscordAuthCode = async (code, redirectUri) => {
-    const tokenResponse = await withDiscordStep('oauth_token', () => runDiscordTokenExchangeQueued(() => discordRequest({
-        method: 'post',
-        url: 'https://discord.com/api/oauth2/token',
-        timeout: 12000,
-        data: qs.stringify({
-            client_id: process.env.DISCORD_CLIENT_ID,
-            client_secret: process.env.DISCORD_CLIENT_SECRET,
-            grant_type: 'authorization_code',
-            code,
-            redirect_uri: redirectUri
-        }),
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-    }, 0, { noRetry: true })));
+    const oauthClientId = getDiscordOauthClientId();
+    const oauthClientSecret = getDiscordOauthClientSecret();
+    if (!oauthClientId || !oauthClientSecret) {
+        const configError = new Error(getDiscordOauthConfigError() || 'Discord OAuth credentials are not configured');
+        configError.code = 'DISCORD_OAUTH_CONFIG_ERROR';
+        throw configError;
+    }
+
+    const waitFor = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    let tokenResponse = null;
+    const maxTokenRetries = 1;
+    for (let attempt = 0; attempt <= maxTokenRetries; attempt += 1) {
+        try {
+            tokenResponse = await withDiscordStep('oauth_token', () => runDiscordTokenExchangeQueued(() => discordRequest({
+                method: 'post',
+                url: 'https://discord.com/api/oauth2/token',
+                timeout: 12000,
+                data: qs.stringify({
+                    client_id: oauthClientId,
+                    client_secret: oauthClientSecret,
+                    grant_type: 'authorization_code',
+                    code,
+                    redirect_uri: redirectUri
+                }),
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+            }, 0, { noRetry: true })));
+            break;
+        } catch (error) {
+            const status = Number(error?.response?.status) || 0;
+            const retryAfterSeconds = getDiscordRetryAfterSeconds(error);
+            const shouldRetry = attempt < maxTokenRetries && status === 429 && retryAfterSeconds > 0;
+            if (!shouldRetry) {
+                throw error;
+            }
+            await waitFor(Math.min(15000, retryAfterSeconds * 1000));
+        }
+    }
 
     const { access_token, refresh_token, expires_in, scope } = tokenResponse.data || {};
 
@@ -560,12 +620,14 @@ const exchangeDiscordAuthCode = async (code, redirectUri) => {
     });
 };
 
-router.post('/auth/discord', async (req, res) => {
+router.post('/auth/discord', discordAuthLimiter, async (req, res) => {
     const { code: rawCode, redirect_uri: frontendRedirectUri } = req.body || {};
     const code = typeof rawCode === 'string' ? rawCode.trim() : '';
-    const redirectUri = frontendRedirectUri || process.env.DISCORD_REDIRECT_URI;
+    const redirectUri = resolveDiscordAuthRedirectUri(frontendRedirectUri);
     if (!code) return res.status(400).json({ error: 'Missing authorization code' });
     if (!redirectUri) return res.status(400).json({ error: 'redirect_uri required' });
+    const oauthConfigError = getDiscordOauthConfigError();
+    if (oauthConfigError) return res.status(500).json({ error: oauthConfigError });
 
     cleanupAuthSuccessCache();
     const cacheKey = getAuthCodeCacheKey(code);
@@ -580,6 +642,9 @@ router.post('/auth/discord', async (req, res) => {
             const payload = await inFlightPromise;
             return res.json(payload);
         } catch (error) {
+            if (error?.code === 'DISCORD_OAUTH_CONFIG_ERROR') {
+                return res.status(500).json({ error: error.message });
+            }
             const status = error.response?.status;
             const data = error.response?.data;
             const message = getDiscordErrorMessage(data);
@@ -614,6 +679,9 @@ router.post('/auth/discord', async (req, res) => {
         });
         return res.json(payload);
     } catch (error) {
+        if (error?.code === 'DISCORD_OAUTH_CONFIG_ERROR') {
+            return res.status(500).json({ error: error.message });
+        }
         const status = error.response?.status;
         const data = error.response?.data;
         const message = getDiscordErrorMessage(data);
@@ -983,13 +1051,17 @@ router.get('/paypal/capture', async (req, res) => {
 router.post('/webhook/nowpayments', async (req, res) => {
     try {
         const signature = req.headers['x-nowpayments-sig'];
-        const secret = process.env.NOWPAYMENTS_IPN_SECRET;
+        const secret = normalizeEnvValue(process.env.NOWPAYMENTS_IPN_SECRET);
+        if (!secret) {
+            return res.status(503).json({ error: 'NOWPayments webhook is disabled (missing NOWPAYMENTS_IPN_SECRET)' });
+        }
+        if (!signature) {
+            return res.status(401).json({ error: 'Missing webhook signature' });
+        }
 
-        if (secret) {
-            const expected = crypto.createHmac('sha512', secret).update(req.rawBody || '').digest('hex');
-            if (!timingSafeEqualHex(String(signature || ''), expected)) {
-                return res.status(401).json({ error: 'Invalid webhook signature' });
-            }
+        const expected = crypto.createHmac('sha512', secret).update(req.rawBody || '').digest('hex');
+        if (!timingSafeEqualHex(String(signature || ''), expected)) {
+            return res.status(401).json({ error: 'Invalid webhook signature' });
         }
 
         const paymentStatus = String(req.body?.payment_status || '').toLowerCase();
@@ -1016,7 +1088,7 @@ router.post('/link-discord', async (req, res) => {
     });
 });
 
-router.get('/paypal-email', (req, res) => {
+router.get('/paypal-email', authRequired, (req, res) => {
     return res.json({ email: process.env.PAYPAL_EMAIL || '' });
 });
 
@@ -1028,25 +1100,43 @@ router.get('/create-ticket-paypal-ff', (req, res) => {
     return res.status(405).json({ error: 'Use POST /api/shop/create-ticket-paypal-ff' });
 });
 
-router.get('/bot-status', (req, res) => {
+router.get('/bot-status', async (req, res) => {
     const hasBotToken = Boolean(String(process.env.DISCORD_BOT_TOKEN || '').trim());
     const hasGuildId = Boolean(String(process.env.DISCORD_GUILD_ID || '').trim());
     const hasCategoryId = Boolean(String(process.env.DISCORD_TICKET_CATEGORY_ID || '').trim());
     const hasOwnerRoleId = Boolean(String(process.env.DISCORD_OWNER_ROLE_ID || '').trim());
     const hasVouchChannelId = Boolean(String(process.env.DISCORD_VOUCH_CHANNEL_ID || '').trim());
-    const { isVercelRuntime, gatewayFlag, gatewayEnabled } = getDiscordGatewayStatus();
+    const basePayload = { ok: hasBotToken && hasGuildId };
 
-    return res.json({
-        ok: hasBotToken && hasGuildId,
-        hasBotToken,
-        hasGuildId,
-        hasCategoryId,
-        hasOwnerRoleId,
-        hasVouchChannelId,
-        runtime: isVercelRuntime ? 'vercel-serverless' : 'node-service',
-        gatewayFlag: gatewayFlag || '(unset)',
-        gatewayWillRun: gatewayEnabled
-    });
+    try {
+        const viewer = getOptionalRequestUser(req);
+        let canViewDetails = false;
+        if (viewer?.role === 'admin') {
+            canViewDetails = true;
+        } else if (viewer?.discordId) {
+            canViewDetails = await canAccessOwnerEndpoints(viewer.discordId);
+        }
+
+        if (!canViewDetails) {
+            return res.json(basePayload);
+        }
+
+        const { isVercelRuntime, gatewayFlag, gatewayEnabled } = getDiscordGatewayStatus();
+        return res.json({
+            ...basePayload,
+            hasBotToken,
+            hasGuildId,
+            hasCategoryId,
+            hasOwnerRoleId,
+            hasVouchChannelId,
+            runtime: isVercelRuntime ? 'vercel-serverless' : 'node-service',
+            gatewayFlag: gatewayFlag || '(unset)',
+            gatewayWillRun: gatewayEnabled
+        });
+    } catch (error) {
+        console.error('bot-status error:', error?.message || error);
+        return res.json(basePayload);
+    }
 });
 
 router.post('/create-ticket-paypal-ff', authRequired, async (req, res) => {

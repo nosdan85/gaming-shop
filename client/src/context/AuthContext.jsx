@@ -1,5 +1,12 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import axios from 'axios';
+import {
+    readAuthState,
+    writeAuthState,
+    clearAuthState,
+    emitAuthStateChanged,
+    subscribeAuthStateChanges
+} from '../utils/authSync';
 
 export const AuthContext = createContext();
 
@@ -11,51 +18,44 @@ const applyAxiosAuthHeader = (token) => {
     }
 };
 
-const parseUser = (rawUser) => {
-    if (!rawUser) return null;
-    try {
-        return JSON.parse(rawUser);
-    } catch {
-        return null;
-    }
-};
-
 export const AuthProvider = ({ children }) => {
-    const [user, setUser] = useState(() => parseUser(localStorage.getItem('user')));
-    const [token, setToken] = useState(() => localStorage.getItem('token') || '');
+    const [user, setUser] = useState(() => readAuthState().user);
+    const [token, setToken] = useState(() => readAuthState().token);
 
     useEffect(() => {
         applyAxiosAuthHeader(token);
     }, [token]);
 
-    const loginDiscord = (userData, jwtToken) => {
-        setUser(userData || null);
-        if (userData) {
-            localStorage.setItem('user', JSON.stringify(userData));
-            localStorage.setItem('discordUser', JSON.stringify(userData));
-        } else {
-            localStorage.removeItem('user');
-            localStorage.removeItem('discordUser');
-        }
+    useEffect(() => {
+        const syncFromStorage = () => {
+            const next = readAuthState();
+            setUser(next.user);
+            setToken(next.token);
+        };
+        return subscribeAuthStateChanges(syncFromStorage);
+    }, []);
 
-        if (jwtToken) {
-            setToken(jwtToken);
-            localStorage.setItem('token', jwtToken);
-        }
+    const loginDiscord = (userData, jwtToken) => {
+        const nextUser = userData || null;
+        const nextToken = jwtToken || '';
+        setUser(nextUser);
+        setToken(nextToken);
+        writeAuthState({ user: nextUser, token: nextToken });
+        emitAuthStateChanged();
     };
 
     const login = (jwtToken) => {
         if (!jwtToken) return;
         setToken(jwtToken);
-        localStorage.setItem('token', jwtToken);
+        writeAuthState({ user, token: jwtToken });
+        emitAuthStateChanged();
     };
 
     const logout = () => {
         setUser(null);
         setToken('');
-        localStorage.removeItem('user');
-        localStorage.removeItem('discordUser');
-        localStorage.removeItem('token');
+        clearAuthState();
+        emitAuthStateChanged();
         window.location.href = '/';
     };
 

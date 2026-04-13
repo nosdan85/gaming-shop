@@ -167,7 +167,20 @@ const AuthCallback = () => {
 
         const handleAuth = async () => {
             const params = new URLSearchParams(window.location.search);
+            const oauthError = String(params.get('error') || '').trim();
+            const oauthErrorDescription = String(params.get('error_description') || '').trim();
             const code = params.get('code');
+
+            if (oauthError) {
+                setStatus('Discord authorization was not completed');
+                setDebugInfo(
+                    `${oauthErrorDescription || oauthError}\n\n` +
+                    'Please press "Login Again" to start a fresh Discord login.'
+                );
+                setCanRetry(true);
+                setNeedsFreshOauth(true);
+                return;
+            }
 
             if (!code) {
                 setStatus('Error: no authorization code found.');

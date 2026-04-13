@@ -101,16 +101,16 @@ app.use((err, req, res, next) => {
     if (err?.message === 'CORS_NOT_ALLOWED') {
         return res.status(403).json({ error: 'Origin is not allowed by CORS policy' });
     }
-    return next(err);
+    console.error('Unhandled server error:', err?.message || err);
+    if (res.headersSent) {
+        return next(err);
+    }
+    const status = Number(err?.status);
+    const safeStatus = Number.isFinite(status) && status >= 400 && status <= 599 ? status : 500;
+    return res.status(safeStatus).json({
+        error: safeStatus >= 500 ? 'Internal server error' : String(err?.message || 'Request failed')
+    });
 });
-
-if (!process.env.MONGO_URI) {
-    console.error('MONGO_URI is not configured');
-} else {
-    mongoose.connect(process.env.MONGO_URI)
-        .then(() => console.log('MongoDB connected'))
-        .catch((err) => console.error('MongoDB connection error:', err.message));
-}
 
 const normalizedBotToken = normalizeEnvValue(process.env.DISCORD_BOT_TOKEN);
 if (normalizedBotToken && shouldEnableBotGateway) {
@@ -128,8 +128,34 @@ if (normalizedBotToken && shouldEnableBotGateway) {
 }
 
 const PORT = process.env.PORT || 5000;
-if (!isVercelRuntime || forceHttpListen) {
-    app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-}
+const shouldStartHttpServer = !isVercelRuntime || forceHttpListen;
+const connectMongo = async () => {
+    if (!process.env.MONGO_URI) {
+        console.error('MONGO_URI is not configured');
+        return false;
+    }
+    try {
+        await mongoose.connect(process.env.MONGO_URI);
+        console.log('MongoDB connected');
+        return true;
+    } catch (err) {
+        console.error('MongoDB connection error:', err?.message || err);
+        return false;
+    }
+};
+
+const bootstrap = async () => {
+    const mongoConnected = await connectMongo();
+    if (shouldStartHttpServer) {
+        const requireDbBeforeListen = String(process.env.REQUIRE_DB_BEFORE_LISTEN || 'true').trim().toLowerCase() !== 'false';
+        if (requireDbBeforeListen && !mongoConnected) {
+            process.exit(1);
+            return;
+        }
+        app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+    }
+};
+
+void bootstrap();
 
 module.exports = app;

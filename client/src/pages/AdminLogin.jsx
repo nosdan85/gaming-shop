@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import axios from 'axios';
-import { useNavigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { isAdminToken } from '../utils/jwt';
 
 const AdminLogin = () => {
     const [password, setPassword] = useState('');
-    const { login } = useAuth();
+    const { login, token } = useAuth();
     const navigate = useNavigate();
 
     const handleSubmit = async (e) => {
@@ -18,6 +19,10 @@ const AdminLogin = () => {
             alert(err.response?.data?.message || 'Wrong password');
         }
     };
+
+    if (isAdminToken(token)) {
+        return <Navigate to="/admin/dashboard" replace />;
+    }
 
     return (
         <div className="flex items-center justify-center h-screen bg-[#050B1E]">

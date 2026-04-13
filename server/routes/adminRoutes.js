@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { getStats, getAllOrders, updateOrderStatus } = require('../controllers/adminController');
 const jwt = require('jsonwebtoken');
+const { adminLoginLimiter } = require('../middleware/rateLimit');
 
 const getToken = (req) => {
     const authHeader = req.headers.authorization || '';
@@ -11,31 +12,40 @@ const getToken = (req) => {
     return req.header('x-auth-token');
 };
 
-// Middleware Auth
+const getAdminJwtSecret = () => process.env.JWT_ADMIN_SECRET || process.env.JWT_SECRET || '';
+
 const adminAuth = (req, res, next) => {
     const token = getToken(req);
     if (!token) return res.status(401).json({ message: 'No token' });
-    if (!process.env.JWT_SECRET) return res.status(500).json({ message: 'JWT secret missing' });
+
+    const adminJwtSecret = getAdminJwtSecret();
+    if (!adminJwtSecret) return res.status(500).json({ message: 'JWT admin secret missing' });
+
     try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        if(decoded.role !== 'admin') throw new Error();
-        next();
-    } catch (e) { res.status(401).json({ message: 'Token invalid' }); }
+        const decoded = jwt.verify(token, adminJwtSecret);
+        if (decoded.role !== 'admin') throw new Error('Not admin');
+        req.user = decoded;
+        return next();
+    } catch {
+        return res.status(401).json({ message: 'Token invalid' });
+    }
 };
 
-// Login Route
-router.post('/login', (req, res) => {
+router.post('/login', adminLoginLimiter, (req, res) => {
     const { password } = req.body;
-    if (!process.env.JWT_SECRET) return res.status(500).json({ message: 'JWT secret missing' });
-    if (password === process.env.ADMIN_PASSWORD) {
-        const token = jwt.sign({ role: 'admin' }, process.env.JWT_SECRET, { expiresIn: '1d' });
-        res.json({ token });
-    } else {
-        res.status(400).json({ message: "Wrong Password" });
+    const adminJwtSecret = getAdminJwtSecret();
+    if (!adminJwtSecret) return res.status(500).json({ message: 'JWT admin secret missing' });
+    if (!process.env.ADMIN_PASSWORD) return res.status(500).json({ message: 'ADMIN_PASSWORD missing' });
+
+    if (password !== process.env.ADMIN_PASSWORD) {
+        return res.status(400).json({ message: 'Wrong Password' });
     }
+
+    const token = jwt.sign({ role: 'admin', type: 'admin' }, adminJwtSecret, { expiresIn: '1d' });
+    return res.json({ token });
 });
 
-router.use(adminAuth); // Bảo vệ các route dưới
+router.use(adminAuth);
 router.get('/stats', getStats);
 router.get('/orders', getAllOrders);
 router.put('/order/:id', updateOrderStatus);

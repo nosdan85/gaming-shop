@@ -6,7 +6,11 @@ import { MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 
 const GAMES = ['Sailor Piece'];
 const CATEGORIES = ['All', 'Chest', 'Reroll', 'Shard', 'Seal', 'Relic'];
-const VALID_CACHE_CATEGORIES = new Set(CATEGORIES.filter((category) => category !== 'All'));
+const KNOWN_CATEGORY_LOOKUP = new Map(
+  CATEGORIES
+    .filter((category) => category !== 'All')
+    .map((category) => [category.toLowerCase(), category])
+);
 const SORT_OPTIONS = [
   { id: 'none', label: 'Default' },
   { id: 'low-high', label: 'Price: Low -> High' },
@@ -15,9 +19,20 @@ const SORT_OPTIONS = [
 
 const CACHE_KEY = 'productsCache';
 const DISCORD_INVITE_URL = import.meta.env.VITE_DISCORD_INVITE_URL || 'https://discord.gg/T4A4ANp9';
+const normalizeCategory = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return 'Other';
+  const knownCategory = KNOWN_CATEGORY_LOOKUP.get(raw.toLowerCase());
+  return knownCategory || raw;
+};
 const normalizeProducts = (value) => {
   if (!Array.isArray(value)) return [];
-  return value.filter((item) => VALID_CACHE_CATEGORIES.has(item?.category));
+  return value
+    .filter((item) => item && typeof item === 'object')
+    .map((item) => ({
+      ...item,
+      category: normalizeCategory(item.category),
+    }));
 };
 const getCachedProducts = () => {
   if (typeof window === 'undefined') return [];
@@ -37,6 +52,7 @@ const Home = () => {
   const [activeCategory, setActiveCategory] = useState('All');
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [loading, setLoading] = useState(() => getCachedProducts().length === 0);
+  const [loadError, setLoadError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('none');
 
@@ -53,6 +69,7 @@ const Home = () => {
       .then((res) => {
         const nextProducts = normalizeProducts(res.data);
         setProducts(nextProducts);
+        setLoadError('');
         try {
           localStorage.setItem(CACHE_KEY, JSON.stringify({ data: nextProducts, ts: Date.now() }));
         } catch (_) {
@@ -60,7 +77,9 @@ const Home = () => {
         }
       })
       .catch(() => {
-        // Product API error is handled by empty state UI.
+        if (cachedProducts.length === 0) {
+          setLoadError('Could not load products from server. Please refresh in a moment.');
+        }
       })
       .finally(() => setLoading(false));
   }, []);
@@ -151,6 +170,10 @@ const Home = () => {
             ))}
           </select>
         </div>
+
+        {loadError && (
+          <div className="text-center mb-6 text-red-400 text-sm">{loadError}</div>
+        )}
 
         {loading && filteredProducts.length === 0 ? (
           <div className="text-center py-20 text-[#86868b]">Loading products...</div>

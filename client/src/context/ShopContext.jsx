@@ -1,5 +1,12 @@
 import { createContext, useState, useEffect } from 'react';
 import axios from 'axios';
+import {
+  readAuthState,
+  writeAuthState,
+  clearAuthState,
+  emitAuthStateChanged,
+  subscribeAuthStateChanges
+} from '../utils/authSync';
 
 export const ShopContext = createContext();
 
@@ -22,36 +29,15 @@ export const ShopProvider = ({ children }) => {
       return [];
     }
   });
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(() => readAuthState().user);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [notification, setNotification] = useState(null);
 
   useEffect(() => {
-    const u = localStorage.getItem('discordUser') || localStorage.getItem('user');
-    if (u) {
-      try {
-        setUser(JSON.parse(u));
-      } catch {
-        setUser(null);
-      }
-    }
-
-    const onStorage = (e) => {
-      if (e.key === 'user' || e.key === 'discordUser') {
-        const stored = localStorage.getItem('discordUser') || localStorage.getItem('user');
-        if (stored) {
-          try {
-            setUser(JSON.parse(stored));
-          } catch {
-            setUser(null);
-          }
-        } else {
-          setUser(null);
-        }
-      }
+    const syncUser = () => {
+      setUser(readAuthState().user);
     };
-    window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
+    return subscribeAuthStateChanges(syncUser);
   }, []);
 
   useEffect(() => {
@@ -88,16 +74,16 @@ export const ShopProvider = ({ children }) => {
   const clearCart = () => setCart([]);
 
   const loginDiscord = (userData) => {
-    setUser(userData);
-    localStorage.setItem('discordUser', JSON.stringify(userData));
-    localStorage.setItem('user', JSON.stringify(userData));
+    const currentToken = readAuthState().token;
+    setUser(userData || null);
+    writeAuthState({ user: userData || null, token: currentToken });
+    emitAuthStateChanged();
   };
 
   const logoutDiscord = () => {
     setUser(null);
-    localStorage.removeItem('discordUser');
-    localStorage.removeItem('user');
-    localStorage.removeItem('token');
+    clearAuthState();
+    emitAuthStateChanged();
     delete axios.defaults.headers.common.Authorization;
   };
 
@@ -108,7 +94,7 @@ export const ShopProvider = ({ children }) => {
       {notification && (
         <div className="fixed bottom-8 left-1/2 transform -translate-x-1/2 z-[100] toast-animate">
           <div className="bg-[#333333]/90 backdrop-blur-md text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 border border-[#444]">
-            <span className="text-[#00D632] bg-white/10 rounded-full p-1 text-xs">✓</span>
+            <span className="text-[#00D632] bg-white/10 rounded-full p-1 text-xs">OK</span>
             <span className="text-sm font-medium">{notification}</span>
           </div>
         </div>
