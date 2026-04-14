@@ -25,7 +25,8 @@ const parsePriceString = (priceString) => {
   if (!match) return null;
 
   const usd = match[1];
-  return { usd };
+  const quantity = match[2];
+  return { usd, quantity };
 };
 
 export const formatCardPrice = (priceString, fallbackPrice) => {

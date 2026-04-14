@@ -77,7 +77,7 @@ const ProductCard = ({ product, onOpenDetail }) => {
       </div>
 
       <div className="flex-1 flex items-center justify-center my-3 md:my-4 relative z-10">
-        <div className="w-[90%] h-[90%] max-w-[150px] max-h-[150px] md:max-w-[180px] md:max-h-[180px] bg-white rounded-2xl border border-[#dbe1ef] shadow-[0_10px_28px_rgba(255,255,255,0.10)] flex items-center justify-center p-2 md:p-3">
+        <div className="relative w-[90%] h-[90%] max-w-[150px] max-h-[150px] md:max-w-[180px] md:max-h-[180px] bg-white rounded-2xl border border-[#dbe1ef] shadow-[0_10px_28px_rgba(255,255,255,0.10)] flex items-center justify-center p-2 md:p-3">
           <img
             src={productImageSrc}
             alt={product.name}

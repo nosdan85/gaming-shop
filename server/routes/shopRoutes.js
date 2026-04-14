@@ -429,10 +429,15 @@ const applyPriceOverridesForClient = (product) => {
         ? forced
         : (shouldForceOneDollar ? 1 : null);
     if (!Number.isFinite(finalPrice) || finalPrice <= 0) return product;
+
+    const nextOriginalPriceString = Number.isFinite(forced) && forced > 0
+        ? `$${finalPrice}/1`
+        : product?.originalPriceString;
+
     return {
         ...product,
         price: finalPrice,
-        originalPriceString: `$${finalPrice}/1`,
+        originalPriceString: nextOriginalPriceString,
         bulkPrice: null,
         bulkPriceString: ''
     };
