@@ -490,7 +490,7 @@ const PaymentPage = () => {
         <button
           onClick={handlePayPalFF}
           disabled={paypalFFLoading}
-          className="w-full py-3 min-h-[44px] bg-[#003087] hover:bg-[#002766] active:scale-[0.98] disabled:opacity-50 text-white font-bold rounded-xl transition mb-2 touch-manipulation"
+          className="btn-press w-full py-3 min-h-[44px] bg-[#003087] hover:bg-[#002766] active:scale-[0.98] disabled:opacity-50 text-white font-bold rounded-xl transition mb-2 touch-manipulation"
         >
           {paypalFFLoading ? 'Loading...' : 'Pay with PayPal (Friends & Family)'}
         </button>
@@ -504,7 +504,7 @@ const PaymentPage = () => {
               <button
                 onClick={copyEmail}
                 disabled={!paypalFFData.email}
-                className="flex-shrink-0 px-3 py-1.5 bg-[#2c2c2e] hover:bg-[#3f3f46] text-white text-xs font-medium rounded-lg transition"
+                className="btn-press flex-shrink-0 px-3 py-1.5 bg-[#2c2c2e] hover:bg-[#3f3f46] text-white text-xs font-medium rounded-lg transition"
               >
                 {copied ? 'Copied!' : 'Copy'}
               </button>
@@ -513,7 +513,7 @@ const PaymentPage = () => {
             <button
               onClick={handleOpenPayPalTicket}
               disabled={paypalTicketLoading || paypalTicketRetryInSeconds > 0}
-              className="w-full mt-3 py-2.5 bg-[#5865F2] hover:bg-[#4752C4] disabled:opacity-50 text-white font-bold rounded-xl transition text-sm"
+              className="btn-press w-full mt-3 py-2.5 bg-[#5865F2] hover:bg-[#4752C4] disabled:opacity-50 text-white font-bold rounded-xl transition text-sm"
             >
               {paypalTicketLoading
                 ? 'Creating...'
@@ -531,7 +531,7 @@ const PaymentPage = () => {
             || ticketRetryInSeconds > 0
             || (orderInfo?.ticketMode === 'bot' && orderInfo?.ticketStatus === 'creating' && !orderInfo?.channelId)
           }
-          className="w-full py-3 min-h-[44px] bg-[#00D632] hover:bg-[#00b329] active:scale-[0.98] disabled:opacity-50 text-black font-bold rounded-xl transition mb-4 touch-manipulation"
+          className="btn-press w-full py-3 min-h-[44px] bg-[#00D632] hover:bg-[#00b329] active:scale-[0.98] disabled:opacity-50 text-black font-bold rounded-xl transition mb-4 touch-manipulation"
         >
           {ticketLoading === 'ticket'
             ? 'Loading...'
@@ -551,12 +551,12 @@ const PaymentPage = () => {
         </div>
 
         {!ltcData ? (
-          <button onClick={handleLTC} disabled={ltcLoading} className="w-full py-3 min-h-[44px] bg-[#333] hover:bg-[#444] active:scale-[0.98] disabled:opacity-50 text-white font-bold rounded-xl transition touch-manipulation">
+          <button onClick={handleLTC} disabled={ltcLoading} className="btn-press w-full py-3 min-h-[44px] bg-[#333] hover:bg-[#444] active:scale-[0.98] disabled:opacity-50 text-white font-bold rounded-xl transition touch-manipulation">
             {ltcLoading ? 'Loading...' : 'Pay with LTC (Litecoin)'}
           </button>
         ) : (
           <div className="bg-[#0a0a0c] rounded-xl p-4 border border-[#2c2c2e]">
-            <button onClick={() => setLtcData(null)} className="text-gray-400 hover:text-white text-xs mb-3 flex items-center gap-1">
+            <button onClick={() => setLtcData(null)} className="btn-press text-gray-400 hover:text-white text-xs mb-3 flex items-center gap-1">
               &larr; Back
             </button>
             <p className="text-gray-400 text-xs mb-1">To address:</p>
@@ -565,7 +565,7 @@ const PaymentPage = () => {
             </div>
             <button
               onClick={copyLtcAddress}
-              className="w-full mb-3 py-2 bg-[#2c2c2e] hover:bg-[#3f3f46] text-white text-xs font-medium rounded-lg transition"
+              className="btn-press w-full mb-3 py-2 bg-[#2c2c2e] hover:bg-[#3f3f46] text-white text-xs font-medium rounded-lg transition"
             >
               {ltcAddressCopied ? 'Address Copied!' : 'Copy LTC Address'}
             </button>
@@ -578,7 +578,7 @@ const PaymentPage = () => {
             <button
               onClick={handleOpenLtcTicket}
               disabled={ltcTicketLoading || ltcTicketRetryInSeconds > 0}
-              className="w-full py-2.5 bg-[#5865F2] hover:bg-[#4752C4] disabled:opacity-50 text-white font-bold rounded-xl transition text-sm"
+              className="btn-press w-full py-2.5 bg-[#5865F2] hover:bg-[#4752C4] disabled:opacity-50 text-white font-bold rounded-xl transition text-sm"
             >
               {ltcTicketLoading
                 ? 'Creating...'

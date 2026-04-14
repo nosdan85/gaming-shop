@@ -121,3 +121,32 @@ body {
   font-weight: 500;
   letter-spacing: 0.02em;
 }
+
+.btn-press {
+  transition: transform 0.14s ease, filter 0.2s ease, box-shadow 0.2s ease;
+}
+
+.btn-press:active {
+  transform: scale(0.96);
+  filter: brightness(0.96);
+}
+
+@media (max-width: 768px) {
+  .products-loader {
+    padding: 56px 0;
+    gap: 12px;
+  }
+
+  .products-loader-track {
+    width: min(320px, 84vw);
+    height: 14px;
+  }
+
+  .products-loader-dog {
+    font-size: 28px;
+  }
+
+  .products-loader-text {
+    font-size: 13px;
+  }
+}

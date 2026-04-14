@@ -62,7 +62,7 @@ const ProductCard = ({ product, onOpenDetail }) => {
 
   return (
     <div
-      className="card-apple p-5 flex flex-col h-full group cursor-pointer border border-[#2b2f3f] hover:border-[#8f96aa]/45 transition-all duration-300 relative overflow-hidden rounded-3xl bg-[linear-gradient(180deg,#111427_0%,#0e1221_100%)]"
+      className="card-apple p-4 md:p-5 flex flex-col h-full group cursor-pointer border border-[#2b2f3f] hover:border-[#8f96aa]/45 transition-all duration-300 relative overflow-hidden rounded-3xl bg-[linear-gradient(180deg,#111427_0%,#0e1221_100%)]"
       onClick={() => {
         if (onOpenDetail) onOpenDetail(product);
       }}
@@ -76,12 +76,12 @@ const ProductCard = ({ product, onOpenDetail }) => {
         </h3>
       </div>
 
-      <div className="flex-1 flex items-center justify-center my-4 relative z-10">
-        <div className="w-[92%] h-[92%] max-w-[180px] max-h-[180px] bg-white rounded-2xl border border-[#dbe1ef] shadow-[0_10px_28px_rgba(255,255,255,0.10)] flex items-center justify-center p-3">
+      <div className="flex-1 flex items-center justify-center my-3 md:my-4 relative z-10">
+        <div className="w-[90%] h-[90%] max-w-[150px] max-h-[150px] md:max-w-[180px] md:max-h-[180px] bg-white rounded-2xl border border-[#dbe1ef] shadow-[0_10px_28px_rgba(255,255,255,0.10)] flex items-center justify-center p-2 md:p-3">
           <img
             src={productImageSrc}
             alt={product.name}
-            className="w-full h-full object-cover transition-transform duration-400 group-hover:scale-105"
+            className="w-full h-full object-contain transition-transform duration-400 group-hover:scale-105"
             onError={(e) => { e.currentTarget.src = '/products/aura-chest.png'; }}
           />
         </div>
@@ -96,7 +96,7 @@ const ProductCard = ({ product, onOpenDetail }) => {
               <button
                 type="button"
                 onClick={() => updateQuantity(quantity - 1)}
-                className="w-7 h-7 rounded-full text-gray-200 hover:text-white flex items-center justify-center"
+                className="btn-press w-7 h-7 rounded-full text-gray-200 hover:text-white flex items-center justify-center"
                 aria-label="Decrease quantity"
               >
                 <MinusIcon className="w-4 h-4" />
@@ -114,7 +114,7 @@ const ProductCard = ({ product, onOpenDetail }) => {
               <button
                 type="button"
                 onClick={() => updateQuantity(quantity + 1)}
-                className="w-7 h-7 rounded-full text-gray-200 hover:text-white flex items-center justify-center"
+                className="btn-press w-7 h-7 rounded-full text-gray-200 hover:text-white flex items-center justify-center"
                 aria-label="Increase quantity"
               >
                 <PlusIcon className="w-4 h-4" />
@@ -124,7 +124,7 @@ const ProductCard = ({ product, onOpenDetail }) => {
             <button
               type="button"
               onClick={handleAddToCart}
-              className="bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white p-2 rounded-full transition-all transform hover:scale-105 active:scale-90 shadow-lg shadow-cyan-500/25 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-cyan-400"
+              className="btn-press bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white p-2 rounded-full transition-all transform hover:scale-105 active:scale-90 shadow-lg shadow-cyan-500/25 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-cyan-400"
               title="Add to Cart"
             >
               <PlusIcon className="w-5 h-5" />

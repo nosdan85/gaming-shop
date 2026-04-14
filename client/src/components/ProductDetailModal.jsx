@@ -1,7 +1,6 @@
 import { useContext, useEffect, useState } from 'react';
 import { ShopContext } from '../context/ShopContext';
 import { XMarkIcon, CheckCircleIcon, PlusIcon, MinusIcon } from '@heroicons/react/24/outline';
-import { formatPriceForSentence } from '../utils/priceFormatting';
 
 const MAX_UI_QUANTITY = 100000;
 
@@ -16,11 +15,6 @@ const ProductDetailModal = ({ product, onClose }) => {
   }, [product?._id]);
 
   if (!product) return null;
-
-  const oneTimePriceLabel = formatPriceForSentence(product.originalPriceString, product.price);
-  const bulkPriceLabel = product.bulkPriceString
-    ? formatPriceForSentence(product.bulkPriceString, product.bulkPrice)
-    : 'No bulk price available for this item';
   const productImageSrc = `/products/${encodeURIComponent(String(product.image || ''))}`;
 
   const normalizeQuantity = (value, fallback = 1) => {
@@ -81,7 +75,7 @@ const ProductDetailModal = ({ product, onClose }) => {
       <div className="relative bg-[var(--color-bg-secondary)] w-full max-w-3xl rounded-3xl shadow-2xl overflow-hidden border border-gray-800 animate-pop-in flex flex-col md:flex-row">
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 z-10 p-2 bg-black/50 rounded-full text-white hover:bg-black/80 transition"
+          className="btn-press absolute top-4 right-4 z-10 p-2 bg-black/50 rounded-full text-white hover:bg-black/80 transition"
         >
           <XMarkIcon className="w-6 h-6" />
         </button>
@@ -91,7 +85,7 @@ const ProductDetailModal = ({ product, onClose }) => {
             <img
               src={productImageSrc}
               alt={product.name}
-              className="w-full h-full object-cover"
+              className="w-full h-full object-contain"
               onError={(e) => { e.currentTarget.src = '/products/aura-chest.png'; }}
             />
           </div>
@@ -104,11 +98,6 @@ const ProductDetailModal = ({ product, onClose }) => {
           <h2 className="text-2xl md:text-3xl font-bold text-white mb-4 leading-tight">
             {product.name}
           </h2>
-
-          <div className="rounded-2xl border border-white/10 bg-black/35 p-4 mb-5">
-            <p className="text-sm text-white font-semibold">One-time: <span className="font-normal text-gray-300">{oneTimePriceLabel}</span></p>
-            <p className="text-sm text-white font-semibold mt-2">Bulk: <span className="font-normal text-gray-300">{bulkPriceLabel}</span></p>
-          </div>
 
           <div className="space-y-2 mb-6">
             <div className="flex items-center gap-2 text-sm text-gray-300">
@@ -126,7 +115,7 @@ const ProductDetailModal = ({ product, onClose }) => {
               <button
                 type="button"
                 onClick={() => updateQuantity(quantity - 1)}
-                className="w-8 h-8 text-gray-200 hover:text-white flex items-center justify-center"
+                className="btn-press w-8 h-8 text-gray-200 hover:text-white flex items-center justify-center"
                 aria-label="Decrease quantity"
               >
                 <MinusIcon className="w-4 h-4" />
@@ -143,7 +132,7 @@ const ProductDetailModal = ({ product, onClose }) => {
               <button
                 type="button"
                 onClick={() => updateQuantity(quantity + 1)}
-                className="w-8 h-8 text-gray-200 hover:text-white flex items-center justify-center"
+                className="btn-press w-8 h-8 text-gray-200 hover:text-white flex items-center justify-center"
                 aria-label="Increase quantity"
               >
                 <PlusIcon className="w-4 h-4" />
@@ -154,7 +143,7 @@ const ProductDetailModal = ({ product, onClose }) => {
 
           <button
             onClick={handleAddToCart}
-            className="w-full bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white py-4 rounded-2xl text-lg font-bold shadow-lg shadow-cyan-500/20 active:scale-95 transition-all mt-auto"
+            className="btn-press w-full bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white py-4 rounded-2xl text-lg font-bold shadow-lg shadow-cyan-500/20 active:scale-95 transition-all mt-auto"
           >
             Add {quantity} to Cart
           </button>

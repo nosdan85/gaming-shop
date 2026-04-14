@@ -37,7 +37,7 @@ const DISCORD_TOKEN_MIN_GAP_MS = (() => {
     return Math.floor(n);
 })();
 const BRIDGE_REQUEST_MAX_AGE_MS = 5 * 60 * 1000;
-const DISCORD_GUILD_CHECK_TIMEOUT_MS = 8000;
+const DISCORD_GUILD_CHECK_TIMEOUT_MS = 5000;
 const PAYMENT_PROVIDER_TIMEOUT_MS = 15000;
 const TICKET_LOCK_WINDOW_MS = 30 * 1000;
 const PAYPAL_TICKET_LOCK_WINDOW_MS = 30 * 1000;
@@ -409,18 +409,32 @@ const getForcedSetPrice = (product) => {
     const name = normalizeText(product?.name);
     return name === 'madoka' ? 8 : 2;
 };
+const normalizeBasePrice = (value) => {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    return n;
+};
 const getEffectiveProductPrice = (product) => {
     const forced = getForcedSetPrice(product);
     if (Number.isFinite(forced) && forced > 0) return forced;
-    return Number(product?.price) || 0;
+    const base = normalizeBasePrice(product?.price);
+    if (base > 0 && base < 1) return 1;
+    return base;
 };
 const applyPriceOverridesForClient = (product) => {
     const forced = getForcedSetPrice(product);
-    if (!Number.isFinite(forced) || forced <= 0) return product;
+    const base = normalizeBasePrice(product?.price);
+    const shouldForceOneDollar = !Number.isFinite(forced) && base > 0 && base < 1;
+    const finalPrice = Number.isFinite(forced) && forced > 0
+        ? forced
+        : (shouldForceOneDollar ? 1 : null);
+    if (!Number.isFinite(finalPrice) || finalPrice <= 0) return product;
     return {
         ...product,
-        price: forced,
-        originalPriceString: `$${forced}/1`
+        price: finalPrice,
+        originalPriceString: `$${finalPrice}/1`,
+        bulkPrice: null,
+        bulkPriceString: ''
     };
 };
 
@@ -466,12 +480,14 @@ const validateCouponCode = async (couponCodeRaw) => {
 
 const getLinePricing = (product, quantity) => {
     const qty = Number(quantity) || 0;
+    const rawRegularUnitPrice = normalizeBasePrice(product?.price);
     const regularUnitPrice = getEffectiveProductPrice(product);
+    const forcedToOneDollar = rawRegularUnitPrice > 0 && rawRegularUnitPrice < 1;
     if (!Number.isFinite(regularUnitPrice) || regularUnitPrice <= 0 || qty <= 0) {
         return { lineTotal: 0, effectiveUnitPrice: 0, bulkUnits: 0 };
     }
 
-    const bulkUnitPrice = Number(product.bulkPrice);
+    const bulkUnitPrice = forcedToOneDollar ? null : Number(product.bulkPrice);
     const hasBulkPrice = Number.isFinite(bulkUnitPrice) && bulkUnitPrice > 0;
     if (!hasBulkPrice) {
         const lineTotal = roundMoney(regularUnitPrice * qty);
@@ -973,29 +989,44 @@ router.post('/checkout', authRequired, checkoutLimiter, async (req, res) => {
             : 0;
         const totalAmount = roundMoney(Math.max(0, subtotalAmount - discountAmount));
 
-        const counter = await Counter.findOneAndUpdate(
-            { id: 'orderId' },
-            { $inc: { seq: 1 } },
-            { new: true, upsert: true }
-        );
-
-        const orderId = `nm_${counter.seq}`;
         const ticketMode = isPanelTicketMode() ? 'panel' : 'bot';
-        const newOrder = new Order({
-            orderId,
-            discordId,
-            discordUsername: dbUser.discordUsername || '',
-            items,
-            subtotalAmount,
-            discountAmount,
-            discountPercent,
-            couponCode: couponValidation.couponCode || '',
-            totalAmount,
-            status: ticketMode === 'panel' ? 'Waiting Payment' : 'Pending',
-            ticketStatus: ticketMode === 'panel' ? 'panel' : 'pending',
-            ticketError: ''
-        });
-        await newOrder.save();
+        let newOrder = null;
+        let orderId = '';
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+            const counter = await Counter.findOneAndUpdate(
+                { id: 'orderId' },
+                { $inc: { seq: 1 } },
+                { new: true, upsert: true }
+            );
+            orderId = `nm_${counter.seq}`;
+
+            try {
+                newOrder = new Order({
+                    orderId,
+                    discordId,
+                    discordUsername: dbUser.discordUsername || '',
+                    items,
+                    subtotalAmount,
+                    discountAmount,
+                    discountPercent,
+                    couponCode: couponValidation.couponCode || '',
+                    totalAmount,
+                    status: ticketMode === 'panel' ? 'Waiting Payment' : 'Pending',
+                    ticketStatus: ticketMode === 'panel' ? 'panel' : 'pending',
+                    ticketError: ''
+                });
+                await newOrder.save();
+                break;
+            } catch (saveError) {
+                const duplicateOrderId = Number(saveError?.code) === 11000 && saveError?.keyPattern?.orderId;
+                if (!duplicateOrderId || attempt >= 2) {
+                    throw saveError;
+                }
+            }
+        }
+        if (!newOrder) {
+            return res.status(503).json({ error: 'Could not create order right now. Please retry.' });
+        }
 
         const panelUrl = isPanelTicketMode() ? getTicketPanelUrl() : '';
 

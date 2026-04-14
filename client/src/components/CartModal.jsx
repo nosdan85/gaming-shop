@@ -11,7 +11,8 @@ const roundMoney = (value) => Math.round((Number(value) + Number.EPSILON) * 100)
 
 const getItemPricing = (item) => {
   const quantity = Number(item?.quantity) || 0;
-  const regularUnitPrice = Number(item?.price) || 0;
+  const basePrice = Number(item?.price) || 0;
+  const regularUnitPrice = basePrice > 0 && basePrice < 1 ? 1 : basePrice;
   if (!Number.isFinite(regularUnitPrice) || regularUnitPrice <= 0 || quantity <= 0) {
     return {
       displayUnitPrice: '$0',
@@ -22,7 +23,7 @@ const getItemPricing = (item) => {
   }
 
   const regularDisplayPrice = formatCardPrice(item?.originalPriceString, regularUnitPrice);
-  const bulkUnitPrice = Number(item?.bulkPrice);
+  const bulkUnitPrice = basePrice > 0 && basePrice < 1 ? null : Number(item?.bulkPrice);
   const hasBulkPrice = Number.isFinite(bulkUnitPrice) && bulkUnitPrice > 0;
   if (!hasBulkPrice) {
     return {
@@ -117,19 +118,34 @@ const CartModal = () => {
   };
 
   const handleCheckout = async () => {
+    if (isProcessing) return;
     if (!user || !user.discordId) return alert('Please link Discord first!');
     if (isBelowMinimumCheckout) return alert('Checkout total must be above $1.00.');
 
     setIsProcessing(true);
     try {
-      const res = await axios.post(
-        '/api/shop/checkout',
-        {
-          cartItems: cart,
-          couponCode: normalizedCouponCode || undefined
-        },
-        { timeout: CHECKOUT_TIMEOUT_MS }
-      );
+      let res = null;
+      try {
+        res = await axios.post(
+          '/api/shop/checkout',
+          {
+            cartItems: cart,
+            couponCode: normalizedCouponCode || undefined
+          },
+          { timeout: CHECKOUT_TIMEOUT_MS }
+        );
+      } catch (firstError) {
+        const retryable = firstError.code === 'ECONNABORTED' || !firstError.response;
+        if (!retryable) throw firstError;
+        res = await axios.post(
+          '/api/shop/checkout',
+          {
+            cartItems: cart,
+            couponCode: normalizedCouponCode || undefined
+          },
+          { timeout: CHECKOUT_TIMEOUT_MS }
+        );
+      }
       const { orderId } = res.data || {};
       if (!orderId) {
         throw new Error('Invalid checkout response: missing orderId');
@@ -162,7 +178,7 @@ const CartModal = () => {
       <div className="absolute inset-0 bg-black/80 backdrop-blur-xl transition-opacity" onClick={() => setIsCartOpen(false)} />
 
       <div className="relative bg-[#09090b] w-full h-full md:h-[85vh] md:max-w-4xl md:rounded-[32px] shadow-2xl flex flex-col md:flex-row overflow-hidden border border-[#2c2c2e] animate-pop-in">
-        <button onClick={() => setIsCartOpen(false)} className="md:hidden absolute top-4 right-4 z-50 p-2 bg-[#2c2c2e] rounded-full text-white">
+        <button onClick={() => setIsCartOpen(false)} className="btn-press md:hidden absolute top-4 right-4 z-50 p-2 bg-[#2c2c2e] rounded-full text-white">
           <XMarkIcon className="w-6 h-6" />
         </button>
 
@@ -191,7 +207,7 @@ const CartModal = () => {
                         )}
                         <p className="text-[10px] text-gray-500 mt-1">Line total: ${pricing.lineTotal.toFixed(2)}</p>
                       </div>
-                      <button onClick={() => removeFromCart(item._id)} className="text-[#ff3b30] text-xs md:text-sm font-medium">Remove</button>
+                      <button onClick={() => removeFromCart(item._id)} className="btn-press text-[#ff3b30] text-xs md:text-sm font-medium">Remove</button>
                     </div>
                   </div>
                 </div>
@@ -205,7 +221,7 @@ const CartModal = () => {
         </div>
 
         <div className="w-full md:w-2/5 bg-[#1c1c1e] p-4 md:p-6 flex flex-col min-h-0 h-2/5 md:h-full relative overflow-y-auto">
-          <button onClick={() => setIsCartOpen(false)} className="hidden md:block self-end p-2 bg-[#2c2c2e] rounded-full text-white mb-2">
+          <button onClick={() => setIsCartOpen(false)} className="btn-press hidden md:block self-end p-2 bg-[#2c2c2e] rounded-full text-white mb-2">
             <XMarkIcon className="w-5 h-5" />
           </button>
 
@@ -222,15 +238,15 @@ const CartModal = () => {
               <div className="text-center space-y-3">
                 <p className="text-gray-400 text-xs">Login to process order</p>
                 {isMobile ? (
-                  <button onClick={handleLinkWeb} className="w-full bg-[#5865F2] hover:bg-[#4752C4] text-white py-2.5 rounded-xl font-bold text-sm transition flex items-center justify-center gap-2">
-                    <UserCircleIcon className="w-5 h-5" /> Link Discord
-                  </button>
+                    <button onClick={handleLinkWeb} className="btn-press w-full bg-[#5865F2] hover:bg-[#4752C4] text-white py-2.5 rounded-xl font-bold text-sm transition flex items-center justify-center gap-2">
+                      <UserCircleIcon className="w-5 h-5" /> Link Discord
+                    </button>
                 ) : (
                   <>
-                    <button onClick={handleLinkWeb} className="w-full bg-[#5865F2] hover:bg-[#4752C4] text-white py-2.5 rounded-xl font-bold text-sm transition flex items-center justify-center gap-2">
+                    <button onClick={handleLinkWeb} className="btn-press w-full bg-[#5865F2] hover:bg-[#4752C4] text-white py-2.5 rounded-xl font-bold text-sm transition flex items-center justify-center gap-2">
                       <UserCircleIcon className="w-5 h-5" /> Link via Discord Web
                     </button>
-                    <button onClick={handleLinkApp} className="w-full bg-[#2c2c2e] hover:bg-[#3f3f46] text-white py-2.5 rounded-xl font-bold text-xs transition flex items-center justify-center gap-2">
+                    <button onClick={handleLinkApp} className="btn-press w-full bg-[#2c2c2e] hover:bg-[#3f3f46] text-white py-2.5 rounded-xl font-bold text-xs transition flex items-center justify-center gap-2">
                       Link via Discord App
                     </button>
                   </>
@@ -299,7 +315,7 @@ const CartModal = () => {
           <button
             onClick={handleCheckout}
             disabled={!user || cart.length === 0 || isProcessing || isBelowMinimumCheckout}
-            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white py-3 md:py-4 rounded-xl text-base md:text-lg font-bold shadow-lg shadow-blue-900/20 active:scale-95 transition-transform mt-auto"
+            className="btn-press w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white py-3 md:py-4 rounded-xl text-base md:text-lg font-bold shadow-lg shadow-blue-900/20 active:scale-95 transition-transform mt-auto"
           >
             {isProcessing ? 'Processing...' : 'Check Out'}
           </button>
@@ -311,8 +327,8 @@ const CartModal = () => {
           <div className="bg-[#1c1c1e] rounded-2xl p-8 max-w-sm text-center w-full border border-[#2c2c2e]">
             <h2 className="text-2xl font-bold text-white mb-2">Join Discord</h2>
             <p className="text-gray-400 mb-6 text-sm">Required to process your order.</p>
-            <a href={inviteLink} target="_blank" rel="noreferrer" className="block w-full py-3 bg-[#5865F2] text-white font-bold rounded-xl mb-3 hover:bg-[#4752C4] transition">Join Server Now</a>
-            <button onClick={() => setShowJoinModal(false)} className="text-gray-500 hover:text-white transition">Close</button>
+            <a href={inviteLink} target="_blank" rel="noreferrer" className="btn-press block w-full py-3 bg-[#5865F2] text-white font-bold rounded-xl mb-3 hover:bg-[#4752C4] transition text-center">Join Server Now</a>
+            <button onClick={() => setShowJoinModal(false)} className="btn-press text-gray-500 hover:text-white transition">Close</button>
           </div>
         </div>
       )}

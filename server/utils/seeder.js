@@ -7,9 +7,9 @@ const connectDB = require('../config/db');
 
 const SHOP_DATA = {
     Chest: [
-        { name: 'Aura Crate', oneTimePrice: '$0.02/1', bulkPriceString: '$0.015/1', image: 'aura-chest.png' },
-        { name: 'Secret Chest', oneTimePrice: '$0.02/1', bulkPriceString: '$0.015/1', image: 'secret-chest.png' },
-        { name: 'Cosmetic Crate', oneTimePrice: '$0.015/1', bulkPriceString: '$0.01/1', image: 'cosmetic-chest.png' },
+        { name: 'Aura Crate', oneTimePrice: '$1/1', bulkPriceString: '', image: 'aura-chest.png' },
+        { name: 'Secret Chest', oneTimePrice: '$1/1', bulkPriceString: '', image: 'secret-chest.png' },
+        { name: 'Cosmetic Crate', oneTimePrice: '$1/1', bulkPriceString: '', image: 'cosmetic-chest.png' },
         { name: 'Mythic Chest', oneTimePrice: '$1/8k', bulkPriceString: '$1/9k', image: 'mythic-chest.png' }
     ],
     Reroll: [
