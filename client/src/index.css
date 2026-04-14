@@ -63,3 +63,61 @@ body {
 .tap-bounce {
   animation: tapBounce 0.18s ease-out;
 }
+
+@keyframes dogRunTrack {
+  0% {
+    left: 0%;
+    transform: translate(-10%, -55%) scaleX(1);
+  }
+  49% {
+    left: 100%;
+    transform: translate(-90%, -55%) scaleX(1);
+  }
+  50% {
+    left: 100%;
+    transform: translate(-90%, -55%) scaleX(-1);
+  }
+  99% {
+    left: 0%;
+    transform: translate(-10%, -55%) scaleX(-1);
+  }
+  100% {
+    left: 0%;
+    transform: translate(-10%, -55%) scaleX(1);
+  }
+}
+
+.products-loader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 84px 0;
+}
+
+.products-loader-track {
+  position: relative;
+  width: min(460px, 88vw);
+  height: 16px;
+  background: #ffffff;
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.45), 0 12px 30px rgba(255, 255, 255, 0.18);
+}
+
+.products-loader-dog {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  font-size: 34px;
+  line-height: 1;
+  animation: dogRunTrack 2.2s linear infinite;
+  user-select: none;
+}
+
+.products-loader-text {
+  color: #b6b7bf;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}

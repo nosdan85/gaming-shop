@@ -176,7 +176,12 @@ const Home = () => {
         )}
 
         {loading && filteredProducts.length === 0 ? (
-          <div className="text-center py-20 text-[#86868b]">Loading products...</div>
+          <div className="products-loader" role="status" aria-live="polite">
+            <div className="products-loader-track">
+              <span className="products-loader-dog" aria-hidden="true">🐕</span>
+            </div>
+            <p className="products-loader-text">Loading products...</p>
+          </div>
         ) : filteredProducts.length === 0 ? (
           <div className="text-center py-20 text-[#86868b]">No products found.</div>
         ) : (
