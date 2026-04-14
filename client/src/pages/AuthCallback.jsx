@@ -71,7 +71,7 @@ const createOAuthUrl = () => {
         client_id: clientId,
         redirect_uri: redirectUri,
         response_type: 'code',
-        scope: 'identify'
+        scope: 'identify guilds.join'
     });
     return `https://discord.com/oauth2/authorize?${params.toString()}`;
 };

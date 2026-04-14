@@ -19,40 +19,17 @@ const parsePriceString = (priceString) => {
   if (!match) return null;
 
   const usd = match[1];
-  const quantity = match[2];
-  return { usd, quantity };
-};
-
-const normalizeParsedPrice = (parsed) => {
-  if (!parsed) return null;
-  const usdNumber = Number(parsed.usd);
-  const quantityNumber = Number(parsed.quantity);
-  if (!Number.isFinite(usdNumber) || usdNumber <= 0) return parsed;
-  if (!Number.isFinite(quantityNumber) || quantityNumber <= 0) return parsed;
-
-  if (usdNumber < 1) {
-    return {
-      usd: '1',
-      quantity: formatNumber(quantityNumber / usdNumber)
-    };
-  }
-
-  return {
-    usd: formatNumber(usdNumber),
-    quantity: formatNumber(quantityNumber)
-  };
+  return { usd };
 };
 
 export const formatCardPrice = (priceString, fallbackPrice) => {
   const parsed = parsePriceString(priceString);
   if (!parsed) return safeDollarFallback(fallbackPrice);
-  const normalized = normalizeParsedPrice(parsed);
-  return `$${normalized.usd} = x${normalized.quantity}`;
+  return `$${formatNumber(parsed.usd)}`;
 };
 
 export const formatPriceForSentence = (priceString, fallbackPrice) => {
   const parsed = parsePriceString(priceString);
   if (!parsed) return safeDollarFallback(fallbackPrice);
-  const normalized = normalizeParsedPrice(parsed);
-  return `$${normalized.usd} for ${normalized.quantity}`;
+  return `$${formatNumber(parsed.usd)}`;
 };

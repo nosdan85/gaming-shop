@@ -10,6 +10,10 @@ const orderSchema = new mongoose.Schema({
         quantity: Number,
         price: Number
     }],
+    subtotalAmount: { type: Number, default: 0 },
+    discountAmount: { type: Number, default: 0 },
+    discountPercent: { type: Number, default: 0 },
+    couponCode: { type: String, default: '' },
     totalAmount: { type: Number, required: true },
     status: { type: String, enum: ['Pending', 'Waiting Payment', 'Completed', 'Cancelled'], default: 'Pending' },
     paymentMethod: { type: String, default: null },

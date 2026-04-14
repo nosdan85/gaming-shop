@@ -56,6 +56,7 @@ const CartModal = () => {
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [inviteLink, setInviteLink] = useState('');
   const [localUser, setLocalUser] = useState(null);
+  const [couponCode, setCouponCode] = useState('');
   const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
   useEffect(() => {
@@ -77,6 +78,7 @@ const CartModal = () => {
   const totalValue = roundMoney(cartRows.reduce((acc, row) => acc + row.pricing.lineTotal, 0));
   const total = totalValue.toFixed(2);
   const isBelowMinimumCheckout = totalValue <= MIN_CHECKOUT_TOTAL;
+  const normalizedCouponCode = couponCode.trim().toUpperCase();
 
   const getOAuthUrl = () => {
     const clientId = import.meta.env.VITE_DISCORD_CLIENT_ID || '';
@@ -88,7 +90,7 @@ const CartModal = () => {
       client_id: clientId,
       redirect_uri: redirectUri,
       response_type: 'code',
-      scope: 'identify'
+      scope: 'identify guilds.join'
     });
     return `https://discord.com/oauth2/authorize?${params.toString()}`;
   };
@@ -122,7 +124,10 @@ const CartModal = () => {
     try {
       const res = await axios.post(
         '/api/shop/checkout',
-        { cartItems: cart },
+        {
+          cartItems: cart,
+          couponCode: normalizedCouponCode || undefined
+        },
         { timeout: CHECKOUT_TIMEOUT_MS }
       );
       const { orderId } = res.data || {};
@@ -131,6 +136,7 @@ const CartModal = () => {
       }
 
       clearCart();
+      setCouponCode('');
       setIsCartOpen(false);
       window.location.href = `/pay?orderId=${orderId}`;
     } catch (err) {
@@ -278,6 +284,18 @@ const CartModal = () => {
           {isBelowMinimumCheckout && cart.length > 0 && (
             <p className="text-[11px] text-red-400 mb-2">Total must be above $1.00 to checkout.</p>
           )}
+          <div className="mb-3">
+            <label className="block text-gray-400 text-xs uppercase font-bold mb-1 tracking-wider">
+              Coupon Code (10% off)
+            </label>
+            <input
+              type="text"
+              value={couponCode}
+              onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+              placeholder="Enter coupon"
+              className="w-full bg-[#0f0f12] border border-[#2c2c2e] rounded-xl px-3 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-[#4f8cff]"
+            />
+          </div>
           <button
             onClick={handleCheckout}
             disabled={!user || cart.length === 0 || isProcessing || isBelowMinimumCheckout}

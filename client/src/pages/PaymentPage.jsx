@@ -237,7 +237,12 @@ const PaymentPage = () => {
   if (orderInfoLoading) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center text-white p-4">
-        <p>Loading order...</p>
+        <div className="products-loader" role="status" aria-live="polite">
+          <div className="products-loader-track">
+            <span className="products-loader-dog" aria-hidden="true">🐕</span>
+          </div>
+          <p className="products-loader-text">Loading order...</p>
+        </div>
       </div>
     );
   }
@@ -255,6 +260,9 @@ const PaymentPage = () => {
   }
 
   const totalNum = Number(orderInfo.totalAmount || 0);
+  const subtotalNum = Number(orderInfo.subtotalAmount || totalNum || 0);
+  const discountAmountNum = Number(orderInfo.discountAmount || 0);
+  const discountPercentNum = Number(orderInfo.discountPercent || 0);
 
   const handleLTC = async () => {
     setLtcLoading(true);
@@ -453,7 +461,18 @@ const PaymentPage = () => {
       <div className="bg-[#1c1c1e] rounded-2xl p-6 max-w-md w-full border border-[#2c2c2e] overflow-hidden">
         <h2 className="text-xl font-bold text-white mb-1">Complete Payment</h2>
         <p className="text-gray-400 text-sm mb-1">Order: <span className="text-white font-bold">{orderId}</span></p>
-        <p className="text-gray-400 text-sm mb-6">Total: <span className="text-white font-bold">${totalNum.toFixed(2)}</span></p>
+        {discountAmountNum > 0 ? (
+          <div className="mb-6 text-sm">
+            <p className="text-gray-400">Subtotal: <span className="text-white font-bold">${subtotalNum.toFixed(2)}</span></p>
+            <p className="text-gray-400">
+              Discount ({discountPercentNum}%):
+              <span className="text-green-400 font-bold"> -${discountAmountNum.toFixed(2)}</span>
+            </p>
+            <p className="text-gray-400">Total: <span className="text-white font-bold">${totalNum.toFixed(2)}</span></p>
+          </div>
+        ) : (
+          <p className="text-gray-400 text-sm mb-6">Total: <span className="text-white font-bold">${totalNum.toFixed(2)}</span></p>
+        )}
 
         {orderInfo?.ticketMode === 'bot' && orderInfo?.ticketStatus === 'creating' && !orderInfo?.channelId && (
           <div className="mb-4 rounded-xl border border-[#2c2c2e] bg-[#111114] px-4 py-3 text-sm text-yellow-300">

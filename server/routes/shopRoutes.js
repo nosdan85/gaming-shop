@@ -20,6 +20,11 @@ const { authRequired, getBearerToken, verifyAnyJwtToken } = require('../middlewa
 const { checkoutLimiter, discordAuthLimiter } = require('../middleware/rateLimit');
 const { getDiscordGatewayStatus } = require('../config/discordGateway');
 const { encryptSecret } = require('../utils/tokenCrypto');
+const {
+    DEFAULT_DISCOUNT_PERCENT,
+    normalizeCouponCode,
+    isSupportedCouponCode
+} = require('../utils/couponCodes');
 
 const router = express.Router();
 const OBJECT_ID_PATTERN = /^[a-fA-F0-9]{24}$/;
@@ -396,10 +401,72 @@ const amountsMatch = (left, right) => Math.abs(Number(left) - Number(right)) < 0
 const BULK_DISCOUNT_THRESHOLD = 10;
 const MIN_CHECKOUT_TOTAL = 1;
 const roundMoney = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+const COUPON_DISCOUNT_PERCENT = Number(DEFAULT_DISCOUNT_PERCENT) || 10;
+const normalizeText = (value) => String(value || '').trim().toLowerCase();
+const getForcedSetPrice = (product) => {
+    const category = normalizeText(product?.category);
+    if (category !== 'sets') return null;
+    const name = normalizeText(product?.name);
+    return name === 'madoka' ? 8 : 2;
+};
+const getEffectiveProductPrice = (product) => {
+    const forced = getForcedSetPrice(product);
+    if (Number.isFinite(forced) && forced > 0) return forced;
+    return Number(product?.price) || 0;
+};
+const applyPriceOverridesForClient = (product) => {
+    const forced = getForcedSetPrice(product);
+    if (!Number.isFinite(forced) || forced <= 0) return product;
+    return {
+        ...product,
+        price: forced,
+        originalPriceString: `$${forced}/1`
+    };
+};
+
+const validateCouponCode = async (couponCodeRaw) => {
+    const couponCode = normalizeCouponCode(couponCodeRaw);
+    if (!couponCode) {
+        return {
+            couponCode: '',
+            discountPercent: 0,
+            discountAmount: 0
+        };
+    }
+
+    if (!isSupportedCouponCode(couponCode)) {
+        return {
+            couponCode: '',
+            discountPercent: 0,
+            discountAmount: 0,
+            error: 'Coupon code is invalid.'
+        };
+    }
+
+    const existingOrder = await Order.findOne({
+        couponCode,
+        status: { $ne: 'Cancelled' }
+    }).select('_id').lean();
+
+    if (existingOrder) {
+        return {
+            couponCode: '',
+            discountPercent: 0,
+            discountAmount: 0,
+            error: 'Coupon code has already been used.'
+        };
+    }
+
+    return {
+        couponCode,
+        discountPercent: COUPON_DISCOUNT_PERCENT,
+        discountAmount: 0
+    };
+};
 
 const getLinePricing = (product, quantity) => {
     const qty = Number(quantity) || 0;
-    const regularUnitPrice = Number(product.price) || 0;
+    const regularUnitPrice = getEffectiveProductPrice(product);
     if (!Number.isFinite(regularUnitPrice) || regularUnitPrice <= 0 || qty <= 0) {
         return { lineTotal: 0, effectiveUnitPrice: 0, bulkUnits: 0 };
     }
@@ -819,8 +886,9 @@ router.post('/auth/discord-bridge', async (req, res) => {
 router.get('/products', async (req, res) => {
     try {
         const products = await Product.find().lean();
+        const normalizedProducts = products.map((product) => applyPriceOverridesForClient(product));
         res.set('Cache-Control', 'public, max-age=120, stale-while-revalidate=600');
-        return res.json(products);
+        return res.json(normalizedProducts);
     } catch (err) {
         return res.status(500).json({ error: err.message });
     }
@@ -830,6 +898,7 @@ router.post('/checkout', authRequired, checkoutLimiter, async (req, res) => {
     try {
         const discordId = req.user?.discordId;
         const cartItems = Array.isArray(req.body?.cartItems) ? req.body.cartItems : [];
+        const couponCodeRaw = req.body?.couponCode;
         if (!discordId || cartItems.length === 0) {
             return res.status(400).json({ error: 'Invalid request payload' });
         }
@@ -886,13 +955,23 @@ router.post('/checkout', authRequired, checkoutLimiter, async (req, res) => {
         });
 
         const items = pricedItems.map(({ lineTotal, ...rest }) => rest);
-        const totalAmount = roundMoney(pricedItems.reduce((sum, item) => sum + item.lineTotal, 0));
-        if (totalAmount <= 0) {
+        const subtotalAmount = roundMoney(pricedItems.reduce((sum, item) => sum + item.lineTotal, 0));
+        if (subtotalAmount <= 0) {
             return res.status(400).json({ error: 'Invalid cart total' });
         }
-        if (totalAmount <= MIN_CHECKOUT_TOTAL) {
+        if (subtotalAmount <= MIN_CHECKOUT_TOTAL) {
             return res.status(400).json({ error: 'Minimum checkout total must be greater than $1.00' });
         }
+
+        const couponValidation = await validateCouponCode(couponCodeRaw);
+        if (couponValidation.error) {
+            return res.status(400).json({ error: couponValidation.error });
+        }
+        const discountPercent = Number(couponValidation.discountPercent) || 0;
+        const discountAmount = discountPercent > 0
+            ? roundMoney(subtotalAmount * discountPercent / 100)
+            : 0;
+        const totalAmount = roundMoney(Math.max(0, subtotalAmount - discountAmount));
 
         const counter = await Counter.findOneAndUpdate(
             { id: 'orderId' },
@@ -907,6 +986,10 @@ router.post('/checkout', authRequired, checkoutLimiter, async (req, res) => {
             discordId,
             discordUsername: dbUser.discordUsername || '',
             items,
+            subtotalAmount,
+            discountAmount,
+            discountPercent,
+            couponCode: couponValidation.couponCode || '',
             totalAmount,
             status: ticketMode === 'panel' ? 'Waiting Payment' : 'Pending',
             ticketStatus: ticketMode === 'panel' ? 'panel' : 'pending',
@@ -919,6 +1002,10 @@ router.post('/checkout', authRequired, checkoutLimiter, async (req, res) => {
         return res.json({
             success: true,
             orderId,
+            subtotalAmount: newOrder.subtotalAmount,
+            discountAmount: newOrder.discountAmount || 0,
+            discountPercent: newOrder.discountPercent || 0,
+            couponCode: newOrder.couponCode || '',
             totalAmount: newOrder.totalAmount,
             ticketMode,
             channelId: null,
@@ -950,6 +1037,10 @@ router.get('/order-payment-info', authRequired, async (req, res) => {
             : 0;
         return res.json({
             orderId: order.orderId,
+            subtotalAmount: Number(order.subtotalAmount || order.totalAmount || 0),
+            discountAmount: Number(order.discountAmount || 0),
+            discountPercent: Number(order.discountPercent || 0),
+            couponCode: order.couponCode || '',
             totalAmount: order.totalAmount,
             status: order.status,
             isPaid: order.status === 'Completed',

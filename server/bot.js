@@ -8,7 +8,9 @@ const {
 } = require('discord.js');
 const { discordRequest } = require('./utils/discordApi');
 const Order = require('./models/Order');
+const User = require('./models/User');
 const { getDiscordGatewayStatus } = require('./config/discordGateway');
+const { encryptSecret, decryptSecret } = require('./utils/tokenCrypto');
 
 const DISCORD_API_BASE = 'https://discord.com/api/v10';
 const SNOWFLAKE_PATTERN = /^\d{16,22}$/;
@@ -25,6 +27,8 @@ const TICKET_CREATE_RETRY_MAX_RETRIES = 2;
 const TICKET_CREATE_RETRY_BASE_DELAY_MS = 900;
 const TICKET_CREATE_RETRY_MAX_DELAY_MS = 5000;
 const CLOSE_COMMANDS = new Set(['!close', '/close', '!dong', '/dong']);
+const DONE_COMMANDS = new Set(['!done', '/done']);
+const READD_ALL_COMMANDS = new Set(['!addall', '/addall', '!readdall', '/readdall']);
 const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.tiff', '.svg'];
 
 const PERM_VIEW_CHANNEL = 1n << 10n;
@@ -90,6 +94,8 @@ const getOwnerRoleId = () => normalizeEnvValue(process.env.DISCORD_OWNER_ROLE_ID
 const getTicketCategoryId = () => normalizeEnvValue(process.env.DISCORD_TICKET_CATEGORY_ID);
 const getOwnerId = () => normalizeEnvValue(process.env.DISCORD_OWNER_ID);
 const getVouchChannelId = () => normalizeEnvValue(process.env.DISCORD_VOUCH_CHANNEL_ID);
+const getOauthClientId = () => normalizeEnvValue(process.env.DISCORD_CLIENT_ID);
+const getOauthClientSecret = () => normalizeEnvValue(process.env.DISCORD_CLIENT_SECRET);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const normalizeRetryAfterSeconds = (value) => {
@@ -462,6 +468,196 @@ const isStaffUser = async (discordId) => {
     }
 
     return checkUserHasOwnerRole(userId);
+};
+
+const formatPurchasedItemsForDm = (items) => {
+    if (!Array.isArray(items) || items.length === 0) return 'Unknown item';
+    return items
+        .map((item) => {
+            const quantity = Math.max(1, Number(item?.quantity) || 1);
+            const name = String(item?.name || 'Unknown item').trim();
+            return `${quantity}x ${name}`;
+        })
+        .join(', ')
+        .slice(0, 800);
+};
+
+const buildPurchaseThankYouDm = (order) => {
+    const purchasedItems = formatPurchasedItemsForDm(order?.items);
+    return [
+        '**✨ Thank You for Your Purchase ✨**',
+        '',
+        'We sincerely appreciate your order and the trust you have placed in our service. It was a pleasure serving you, and we hope that you are completely satisfied with your purchase.',
+        '',
+        `**📦 Purchased Item:** [${purchasedItems}]`,
+        '',
+        'If you require any additional items in the future, please feel free to contact us at any time. We would be delighted to assist you again and continue providing you with reliable service.',
+        '',
+        '**💎 Thank you once again for your support and trust.**',
+        '',
+        '**— Nos Team**'
+    ].join('\n');
+};
+
+const sendPurchaseThankYouDm = async (order) => {
+    const userId = String(order?.discordId || '').trim();
+    if (!isSnowflake(userId)) return false;
+
+    const user = await client.users.fetch(userId, { force: true });
+    if (!user) return false;
+    await user.send(buildPurchaseThankYouDm(order));
+    return true;
+};
+
+const refreshDiscordAccessToken = async (refreshToken) => {
+    const safeRefreshToken = String(refreshToken || '').trim();
+    const clientId = getOauthClientId();
+    const clientSecret = getOauthClientSecret();
+    if (!safeRefreshToken || !clientId || !clientSecret) return null;
+
+    const body = new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        grant_type: 'refresh_token',
+        refresh_token: safeRefreshToken
+    });
+
+    const res = await discordRequest({
+        method: 'post',
+        url: 'https://discord.com/api/oauth2/token',
+        timeout: 12000,
+        data: body.toString(),
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+    }, 0, { noRetry: true });
+
+    return res?.data || null;
+};
+
+const getUsableUserAccessToken = async (dbUser) => {
+    if (!dbUser) return '';
+
+    const now = Date.now();
+    const accessToken = decryptSecret(dbUser.accessToken);
+    const refreshToken = decryptSecret(dbUser.refreshToken);
+    const tokenExpiresAtMs = new Date(dbUser.tokenExpiresAt || 0).getTime();
+
+    if (accessToken && (!Number.isFinite(tokenExpiresAtMs) || tokenExpiresAtMs > now + 60 * 1000)) {
+        return accessToken;
+    }
+
+    if (!refreshToken) return '';
+
+    try {
+        const refreshed = await refreshDiscordAccessToken(refreshToken);
+        const nextAccessToken = String(refreshed?.access_token || '').trim();
+        if (!nextAccessToken) return '';
+
+        const nextRefreshToken = String(refreshed?.refresh_token || '').trim();
+        const expiresIn = Number(refreshed?.expires_in);
+        const scopes = String(refreshed?.scope || '')
+            .split(' ')
+            .map((value) => value.trim())
+            .filter(Boolean);
+
+        dbUser.accessToken = encryptSecret(nextAccessToken);
+        if (nextRefreshToken) {
+            dbUser.refreshToken = encryptSecret(nextRefreshToken);
+        }
+        if (Number.isFinite(expiresIn) && expiresIn > 0) {
+            dbUser.tokenExpiresAt = new Date(Date.now() + expiresIn * 1000);
+        }
+        if (scopes.length > 0) {
+            dbUser.scopes = scopes;
+        }
+        await dbUser.save();
+        return nextAccessToken;
+    } catch (error) {
+        console.warn(`Refresh token failed for user ${dbUser.discordId || 'unknown'}:`, error?.response?.status || error?.message || error);
+        return '';
+    }
+};
+
+const addMemberToGuild = async (discordId, accessToken) => {
+    const guildId = getGuildId();
+    if (!isSnowflake(guildId) || !isSnowflake(discordId) || !accessToken) {
+        throw new DiscordBotError('Missing guild/user/access token for guild join', {
+            status: 400,
+            code: 'DISCORD_JOIN_INPUT_INVALID'
+        });
+    }
+
+    await botRequest({
+        method: 'put',
+        path: `/guilds/${guildId}/members/${discordId}`,
+        data: { access_token: accessToken },
+        timeout: REQUEST_TIMEOUT_MS,
+        retry: false,
+        defaultCode: 'DISCORD_GUILD_JOIN_FAILED'
+    });
+};
+
+const reAddLinkedUsersToGuild = async () => {
+    const guildId = getGuildId();
+    if (!isSnowflake(guildId)) {
+        throw new DiscordBotError('DISCORD_GUILD_ID is missing or invalid', {
+            status: 500,
+            code: 'DISCORD_GUILD_ID_INVALID'
+        });
+    }
+
+    const users = await User.find({
+        discordId: { $exists: true, $ne: '' }
+    }).select('discordId accessToken refreshToken tokenExpiresAt scopes');
+
+    const summary = {
+        totalLinked: users.length,
+        added: 0,
+        alreadyInGuild: 0,
+        skippedNoToken: 0,
+        failed: 0
+    };
+
+    for (const dbUser of users) {
+        const discordId = String(dbUser?.discordId || '').trim();
+        if (!isSnowflake(discordId)) {
+            summary.failed += 1;
+            continue;
+        }
+
+        const inGuild = await checkUserInGuild(discordId);
+        if (inGuild === true) {
+            summary.alreadyInGuild += 1;
+            continue;
+        }
+
+        const accessToken = await getUsableUserAccessToken(dbUser);
+        if (!accessToken) {
+            summary.skippedNoToken += 1;
+            continue;
+        }
+
+        try {
+            await addMemberToGuild(discordId, accessToken);
+            summary.added += 1;
+        } catch (error) {
+            if (error instanceof DiscordBotError && error.status === 429) {
+                const waitMs = Math.max(1000, (Number(error.retryAfterSeconds) || 1) * 1000);
+                await sleep(waitMs);
+                try {
+                    await addMemberToGuild(discordId, accessToken);
+                    summary.added += 1;
+                    continue;
+                } catch {
+                    // fallthrough
+                }
+            }
+            summary.failed += 1;
+        }
+
+        await sleep(250);
+    }
+
+    return summary;
 };
 
 const formatVouchItems = (items) => {
@@ -872,8 +1068,47 @@ client.on('messageCreate', async (message) => {
 
     const normalizedContent = String(message.content || '').trim().toLowerCase();
     const isCloseCommand = CLOSE_COMMANDS.has(normalizedContent);
+    const isDoneCommand = DONE_COMMANDS.has(normalizedContent);
+    const isReAddAllCommand = READD_ALL_COMMANDS.has(normalizedContent);
     const imageAttachment = getFirstImageAttachment(message);
-    if (!isCloseCommand && !imageAttachment) return;
+    if (!isCloseCommand && !isDoneCommand && !isReAddAllCommand && !imageAttachment) return;
+
+    if (isReAddAllCommand) {
+        const canRun = await isStaffUser(message.author.id);
+        if (!canRun) {
+            await message.reply('You do not have permission to run this command.');
+            return;
+        }
+
+        let progressMessage = null;
+        try {
+            progressMessage = await message.reply('Starting to add linked users into this server. Please wait...');
+            const summary = await reAddLinkedUsersToGuild();
+            const summaryText = [
+                'Add-all completed.',
+                `Linked users: ${summary.totalLinked}`,
+                `Added: ${summary.added}`,
+                `Already in server: ${summary.alreadyInGuild}`,
+                `Skipped (missing/expired token): ${summary.skippedNoToken}`,
+                `Failed: ${summary.failed}`
+            ].join('\n');
+
+            if (progressMessage && typeof progressMessage.edit === 'function') {
+                await progressMessage.edit(summaryText);
+            } else {
+                await message.reply(summaryText);
+            }
+        } catch (error) {
+            console.error('Add-all command error:', error?.message || error);
+            const failText = 'Failed to add linked users. Check bot permissions and OAuth config (DISCORD_CLIENT_ID / DISCORD_CLIENT_SECRET).';
+            if (progressMessage && typeof progressMessage.edit === 'function') {
+                await progressMessage.edit(failText).catch(() => {});
+            } else {
+                await message.reply(failText).catch(() => {});
+            }
+        }
+        return;
+    }
 
     let order = null;
     try {
@@ -906,6 +1141,55 @@ client.on('messageCreate', async (message) => {
             console.error('Close ticket command error:', error?.message || error);
             try {
                 await message.reply('Failed to close ticket. Please try again.');
+            } catch {
+                // Ignore reply failures.
+            }
+            return;
+        }
+    }
+
+    if (isDoneCommand) {
+        try {
+            if (!order) {
+                await message.reply('Could not find order for this ticket channel.');
+                return;
+            }
+
+            const canDone = await isStaffUser(message.author.id);
+            if (!canDone) {
+                await message.reply('You do not have permission to mark this order as done.');
+                return;
+            }
+
+            await Order.updateOne(
+                { _id: order._id },
+                {
+                    $set: {
+                        status: 'Completed',
+                        paymentMethod: order.paymentMethod || 'manual'
+                    }
+                }
+            );
+
+            let dmSent = false;
+            try {
+                dmSent = await sendPurchaseThankYouDm(order);
+            } catch (error) {
+                console.error('Send purchase thank-you DM error:', error?.message || error);
+            }
+
+            await message.reply(
+                dmSent
+                    ? 'Order marked as completed. Customer DM sent. Closing ticket in 3 seconds...'
+                    : 'Order marked as completed. Could not send customer DM. Closing ticket in 3 seconds...'
+            );
+            await sleep(3000);
+            await closeTicketChannel({ order, channelId });
+            return;
+        } catch (error) {
+            console.error('Done ticket command error:', error?.message || error);
+            try {
+                await message.reply('Failed to complete this order ticket. Please try again.');
             } catch {
                 // Ignore reply failures.
             }
