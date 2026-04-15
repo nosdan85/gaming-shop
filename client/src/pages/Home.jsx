@@ -190,7 +190,7 @@ const Home = () => {
             {filteredProducts.map((p, index) => (
               <div
                 key={`${p._id}-${categoryAnimKey}`}
-                className="product-reveal"
+                className="product-reveal product-virtualized"
                 style={{ animationDelay: `${Math.min(index, 11) * 45}ms` }}
               >
                 <ProductCard

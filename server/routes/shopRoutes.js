@@ -21,9 +21,9 @@ const { checkoutLimiter, discordAuthLimiter } = require('../middleware/rateLimit
 const { getDiscordGatewayStatus } = require('../config/discordGateway');
 const { encryptSecret } = require('../utils/tokenCrypto');
 const {
-    DEFAULT_DISCOUNT_PERCENT,
     normalizeCouponCode,
-    isSupportedCouponCode
+    isSupportedCouponCode,
+    getCouponDiscountPercent
 } = require('../utils/couponCodes');
 
 const router = express.Router();
@@ -401,13 +401,20 @@ const amountsMatch = (left, right) => Math.abs(Number(left) - Number(right)) < 0
 const BULK_DISCOUNT_THRESHOLD = 10;
 const MIN_CHECKOUT_TOTAL = 1;
 const roundMoney = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
-const COUPON_DISCOUNT_PERCENT = Number(DEFAULT_DISCOUNT_PERCENT) || 10;
 const normalizeText = (value) => String(value || '').trim().toLowerCase();
-const getForcedSetPrice = (product) => {
+const normalizeKeyText = (value) => normalizeText(value).replace(/\s+/g, '');
+const getForcedCatalogPrice = (product) => {
     const category = normalizeText(product?.category);
-    if (category !== 'sets') return null;
     const name = normalizeText(product?.name);
-    return name === 'madoka' ? 8 : 2;
+    const keyName = normalizeKeyText(product?.name);
+
+    if (category === 'sets') {
+        return name === 'madoka' ? 8 : 2;
+    }
+    if (category === 'combo' && (keyName === 'combox2luck+drop' || keyName === 'combox2luckdrop')) {
+        return 6;
+    }
+    return null;
 };
 const normalizeBasePrice = (value) => {
     const n = Number(value);
@@ -415,14 +422,14 @@ const normalizeBasePrice = (value) => {
     return n;
 };
 const getEffectiveProductPrice = (product) => {
-    const forced = getForcedSetPrice(product);
+    const forced = getForcedCatalogPrice(product);
     if (Number.isFinite(forced) && forced > 0) return forced;
     const base = normalizeBasePrice(product?.price);
     if (base > 0 && base < 1) return 1;
     return base;
 };
 const applyPriceOverridesForClient = (product) => {
-    const forced = getForcedSetPrice(product);
+    const forced = getForcedCatalogPrice(product);
     const base = normalizeBasePrice(product?.price);
     const shouldForceOneDollar = !Number.isFinite(forced) && base > 0 && base < 1;
     const finalPrice = Number.isFinite(forced) && forced > 0
@@ -478,7 +485,7 @@ const validateCouponCode = async (couponCodeRaw) => {
 
     return {
         couponCode,
-        discountPercent: COUPON_DISCOUNT_PERCENT,
+        discountPercent: getCouponDiscountPercent(couponCode),
         discountAmount: 0
     };
 };
@@ -511,6 +518,69 @@ const getLinePricing = (product, quantity) => {
     const lineTotal = roundMoney(regularPart + bulkPart);
     const effectiveUnitPrice = roundMoney(lineTotal / qty, 6);
     return { lineTotal, effectiveUnitPrice, bulkUnits };
+};
+
+const buildQuantityMapFromCartItems = (cartItems) => {
+    const quantityByProductId = new Map();
+    for (const item of cartItems) {
+        const productId = typeof item?._id === 'string' ? item._id.trim() : '';
+        const quantity = Number(item?.quantity);
+        if (!OBJECT_ID_PATTERN.test(productId)) continue;
+        if (!Number.isInteger(quantity) || quantity < 1 || quantity > MAX_QUANTITY_PER_PRODUCT) continue;
+        quantityByProductId.set(productId, (quantityByProductId.get(productId) || 0) + quantity);
+    }
+    return quantityByProductId;
+};
+
+const calculateCartSummary = async ({ cartItems, couponCodeRaw = '' }) => {
+    const quantityByProductId = buildQuantityMapFromCartItems(cartItems);
+    if (quantityByProductId.size === 0) {
+        return { error: 'Cart contains invalid products', status: 400 };
+    }
+
+    const productIds = Array.from(quantityByProductId.keys());
+    const products = await Product.find({ _id: { $in: productIds } });
+    if (products.length !== productIds.length) {
+        return { error: 'Some products are invalid or no longer available', status: 400 };
+    }
+
+    const pricedItems = products.map((product) => {
+        const quantity = quantityByProductId.get(String(product._id));
+        const pricing = getLinePricing(product, quantity);
+        return {
+            product: product._id,
+            name: product.name,
+            quantity,
+            price: pricing.effectiveUnitPrice,
+            lineTotal: pricing.lineTotal
+        };
+    });
+
+    const items = pricedItems.map(({ lineTotal, ...rest }) => rest);
+    const subtotalAmount = roundMoney(pricedItems.reduce((sum, item) => sum + item.lineTotal, 0));
+    if (subtotalAmount <= 0) {
+        return { error: 'Invalid cart total', status: 400 };
+    }
+
+    const couponValidation = await validateCouponCode(couponCodeRaw);
+    if (couponValidation.error) {
+        return { error: couponValidation.error, status: 400 };
+    }
+
+    const discountPercent = Number(couponValidation.discountPercent) || 0;
+    const discountAmount = discountPercent > 0
+        ? roundMoney(subtotalAmount * discountPercent / 100)
+        : 0;
+    const totalAmount = roundMoney(Math.max(0, subtotalAmount - discountAmount));
+
+    return {
+        items,
+        subtotalAmount,
+        discountAmount,
+        discountPercent,
+        totalAmount,
+        couponCode: couponValidation.couponCode || ''
+    };
 };
 
 const joinGuildWithAccessToken = async (guildId, userId, accessToken) => {
@@ -915,6 +985,33 @@ router.get('/products', async (req, res) => {
     }
 });
 
+router.post('/coupon/preview', async (req, res) => {
+    try {
+        const cartItems = Array.isArray(req.body?.cartItems) ? req.body.cartItems : [];
+        const couponCodeRaw = req.body?.couponCode;
+        if (cartItems.length === 0) {
+            return res.status(400).json({ error: 'Cart is empty' });
+        }
+
+        const summary = await calculateCartSummary({ cartItems, couponCodeRaw });
+        if (summary.error) {
+            return res.status(summary.status || 400).json({ error: summary.error });
+        }
+
+        return res.json({
+            success: true,
+            couponCode: summary.couponCode || '',
+            discountPercent: summary.discountPercent || 0,
+            discountAmount: summary.discountAmount || 0,
+            subtotalAmount: summary.subtotalAmount || 0,
+            totalAmount: summary.totalAmount || 0
+        });
+    } catch (error) {
+        console.error('Coupon preview error:', error);
+        return res.status(500).json({ error: 'Failed to preview coupon' });
+    }
+});
+
 router.post('/checkout', authRequired, checkoutLimiter, async (req, res) => {
     try {
         const discordId = req.user?.discordId;
@@ -944,55 +1041,23 @@ router.post('/checkout', authRequired, checkoutLimiter, async (req, res) => {
             console.warn(`Checkout guild check unavailable for ${discordId}; continuing checkout.`);
         }
 
-        const quantityByProductId = new Map();
-        for (const item of cartItems) {
-            const productId = typeof item?._id === 'string' ? item._id.trim() : '';
-            const quantity = Number(item?.quantity);
-            if (!OBJECT_ID_PATTERN.test(productId)) continue;
-            if (!Number.isInteger(quantity) || quantity < 1 || quantity > MAX_QUANTITY_PER_PRODUCT) continue;
-            quantityByProductId.set(productId, (quantityByProductId.get(productId) || 0) + quantity);
+        const cartSummary = await calculateCartSummary({ cartItems, couponCodeRaw });
+        if (cartSummary.error) {
+            return res.status(cartSummary.status || 400).json({ error: cartSummary.error });
         }
 
-        if (quantityByProductId.size === 0) {
-            return res.status(400).json({ error: 'Cart contains invalid products' });
-        }
+        const {
+            items,
+            subtotalAmount,
+            discountAmount,
+            discountPercent,
+            totalAmount,
+            couponCode
+        } = cartSummary;
 
-        const productIds = Array.from(quantityByProductId.keys());
-        const products = await Product.find({ _id: { $in: productIds } });
-        if (products.length !== productIds.length) {
-            return res.status(400).json({ error: 'Some products are invalid or no longer available' });
-        }
-
-        const pricedItems = products.map((product) => {
-            const quantity = quantityByProductId.get(String(product._id));
-            const pricing = getLinePricing(product, quantity);
-            return {
-                product: product._id,
-                name: product.name,
-                quantity,
-                price: pricing.effectiveUnitPrice,
-                lineTotal: pricing.lineTotal
-            };
-        });
-
-        const items = pricedItems.map(({ lineTotal, ...rest }) => rest);
-        const subtotalAmount = roundMoney(pricedItems.reduce((sum, item) => sum + item.lineTotal, 0));
-        if (subtotalAmount <= 0) {
-            return res.status(400).json({ error: 'Invalid cart total' });
-        }
         if (subtotalAmount <= MIN_CHECKOUT_TOTAL) {
             return res.status(400).json({ error: 'Minimum checkout total must be greater than $1.00' });
         }
-
-        const couponValidation = await validateCouponCode(couponCodeRaw);
-        if (couponValidation.error) {
-            return res.status(400).json({ error: couponValidation.error });
-        }
-        const discountPercent = Number(couponValidation.discountPercent) || 0;
-        const discountAmount = discountPercent > 0
-            ? roundMoney(subtotalAmount * discountPercent / 100)
-            : 0;
-        const totalAmount = roundMoney(Math.max(0, subtotalAmount - discountAmount));
 
         const ticketMode = isPanelTicketMode() ? 'panel' : 'bot';
         let newOrder = null;
@@ -1014,7 +1079,7 @@ router.post('/checkout', authRequired, checkoutLimiter, async (req, res) => {
                     subtotalAmount,
                     discountAmount,
                     discountPercent,
-                    couponCode: couponValidation.couponCode || '',
+                    couponCode,
                     totalAmount,
                     status: ticketMode === 'panel' ? 'Waiting Payment' : 'Pending',
                     ticketStatus: ticketMode === 'panel' ? 'panel' : 'pending',

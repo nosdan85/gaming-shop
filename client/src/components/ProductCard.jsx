@@ -1,4 +1,4 @@
-import { useContext, useState } from 'react';
+import { useContext, useEffect, useState } from 'react';
 import { ShopContext } from '../context/ShopContext';
 import { PlusIcon, MinusIcon } from '@heroicons/react/24/solid';
 import { formatCardPrice } from '../utils/priceFormatting';
@@ -9,9 +9,14 @@ const ProductCard = ({ product, onOpenDetail }) => {
   const { addToCart } = useContext(ShopContext);
   const [quantity, setQuantity] = useState(1);
   const [quantityInput, setQuantityInput] = useState('1');
+  const [isImageLoaded, setIsImageLoaded] = useState(false);
   const displayPrice = formatCardPrice(product.originalPriceString, product.price);
   const isSetCategory = String(product?.category || '').trim().toLowerCase() === 'sets';
   const productImageSrc = `/products/${encodeURIComponent(String(product.image || ''))}`;
+
+  useEffect(() => {
+    setIsImageLoaded(false);
+  }, [productImageSrc]);
 
   const normalizeQuantity = (value, fallback = 1) => {
     const parsed = Number(value);
@@ -79,11 +84,20 @@ const ProductCard = ({ product, onOpenDetail }) => {
 
       <div className="flex-1 flex items-center justify-center my-3 md:my-4 relative z-10">
         <div className="relative w-[90%] h-[90%] max-w-[150px] max-h-[150px] md:max-w-[180px] md:max-h-[180px] bg-white rounded-2xl border border-[#dbe1ef] shadow-[0_10px_28px_rgba(255,255,255,0.10)] flex items-center justify-center p-2 md:p-3">
+          {!isImageLoaded && (
+            <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-[#f8f8fa] via-white to-[#f1f1f6] animate-pulse" />
+          )}
           <img
             src={productImageSrc}
             alt={product.name}
-            className={`w-full h-full object-contain transition-transform duration-400 ${isSetCategory ? 'scale-[1.10] group-hover:scale-[1.17]' : 'group-hover:scale-105'}`}
-            onError={(e) => { e.currentTarget.src = '/products/aura-chest.png'; }}
+            loading="lazy"
+            decoding="async"
+            className={`relative z-10 w-full h-full object-contain transition-transform duration-400 ${isImageLoaded ? 'opacity-100' : 'opacity-0'} ${isSetCategory ? 'scale-[1.10] group-hover:scale-[1.17]' : 'group-hover:scale-105'}`}
+            onLoad={() => setIsImageLoaded(true)}
+            onError={(e) => {
+              e.currentTarget.src = '/products/aura-chest.png';
+              setIsImageLoaded(true);
+            }}
           />
         </div>
       </div>

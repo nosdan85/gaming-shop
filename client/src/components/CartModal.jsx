@@ -58,6 +58,9 @@ const CartModal = () => {
   const [inviteLink, setInviteLink] = useState('');
   const [localUser, setLocalUser] = useState(null);
   const [couponCode, setCouponCode] = useState('');
+  const [isApplyingCoupon, setIsApplyingCoupon] = useState(false);
+  const [appliedCoupon, setAppliedCoupon] = useState(null);
+  const [couponError, setCouponError] = useState('');
   const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
   useEffect(() => {
@@ -80,6 +83,13 @@ const CartModal = () => {
   const total = totalValue.toFixed(2);
   const isBelowMinimumCheckout = totalValue <= MIN_CHECKOUT_TOTAL;
   const normalizedCouponCode = couponCode.trim().toUpperCase();
+  const appliedDiscountAmount = roundMoney(Number(appliedCoupon?.discountAmount) || 0);
+  const totalAfterDiscountValue = roundMoney(Math.max(0, totalValue - appliedDiscountAmount));
+
+  useEffect(() => {
+    if (!appliedCoupon) return;
+    setAppliedCoupon(null);
+  }, [cart]);
 
   const getOAuthUrl = () => {
     const clientId = import.meta.env.VITE_DISCORD_CLIENT_ID || '';
@@ -117,6 +127,53 @@ const CartModal = () => {
     localStorage.removeItem('discordLinkMethod');
   };
 
+  const handleCouponInputChange = (value) => {
+    const next = String(value || '').toUpperCase();
+    setCouponCode(next);
+    setCouponError('');
+    if (appliedCoupon && next.trim().toUpperCase() !== String(appliedCoupon.couponCode || '').toUpperCase()) {
+      setAppliedCoupon(null);
+    }
+  };
+
+  const handleApplyCoupon = async () => {
+    if (isApplyingCoupon) return;
+    if (cart.length === 0) return;
+
+    const codeToApply = normalizedCouponCode;
+    if (!codeToApply) {
+      setAppliedCoupon(null);
+      setCouponError('');
+      return;
+    }
+
+    setIsApplyingCoupon(true);
+    setCouponError('');
+    try {
+      const { data } = await axios.post(
+        '/api/shop/coupon/preview',
+        {
+          cartItems: cart,
+          couponCode: codeToApply
+        },
+        { timeout: CHECKOUT_TIMEOUT_MS }
+      );
+
+      setAppliedCoupon({
+        couponCode: String(data?.couponCode || codeToApply).toUpperCase(),
+        discountPercent: Number(data?.discountPercent) || 0,
+        discountAmount: roundMoney(Number(data?.discountAmount) || 0),
+        subtotalAmount: roundMoney(Number(data?.subtotalAmount) || totalValue),
+        totalAmount: roundMoney(Number(data?.totalAmount) || totalValue)
+      });
+    } catch (err) {
+      setAppliedCoupon(null);
+      setCouponError(err.response?.data?.error || 'Coupon cannot be applied right now.');
+    } finally {
+      setIsApplyingCoupon(false);
+    }
+  };
+
   const handleCheckout = async () => {
     if (isProcessing) return;
     if (!user || !user.discordId) return alert('Please link Discord first!');
@@ -130,7 +187,7 @@ const CartModal = () => {
           '/api/shop/checkout',
           {
             cartItems: cart,
-            couponCode: normalizedCouponCode || undefined
+            couponCode: appliedCoupon?.couponCode || undefined
           },
           { timeout: CHECKOUT_TIMEOUT_MS }
         );
@@ -141,7 +198,7 @@ const CartModal = () => {
           '/api/shop/checkout',
           {
             cartItems: cart,
-            couponCode: normalizedCouponCode || undefined
+            couponCode: appliedCoupon?.couponCode || undefined
           },
           { timeout: CHECKOUT_TIMEOUT_MS }
         );
@@ -153,6 +210,8 @@ const CartModal = () => {
 
       clearCart();
       setCouponCode('');
+      setAppliedCoupon(null);
+      setCouponError('');
       setIsCartOpen(false);
       window.location.href = `/pay?orderId=${orderId}`;
     } catch (err) {
@@ -302,15 +361,47 @@ const CartModal = () => {
           )}
           <div className="mb-3">
             <label className="block text-gray-400 text-xs uppercase font-bold mb-1 tracking-wider">
-              Coupon Code (10% off)
+              Coupon Code
             </label>
-            <input
-              type="text"
-              value={couponCode}
-              onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
-              placeholder="Enter coupon"
-              className="w-full bg-[#0f0f12] border border-[#2c2c2e] rounded-xl px-3 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-[#4f8cff]"
-            />
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={couponCode}
+                onChange={(e) => handleCouponInputChange(e.target.value)}
+                placeholder="Enter coupon"
+                className="flex-1 bg-[#0f0f12] border border-[#2c2c2e] rounded-xl px-3 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-[#4f8cff]"
+              />
+              <button
+                type="button"
+                onClick={handleApplyCoupon}
+                disabled={isApplyingCoupon || cart.length === 0}
+                className="btn-press px-3 py-2.5 rounded-xl bg-[#2c2c2e] hover:bg-[#3b3b40] disabled:bg-[#232327] disabled:text-gray-500 text-white text-xs font-semibold transition"
+              >
+                {isApplyingCoupon ? 'Applying...' : 'Apply'}
+              </button>
+            </div>
+            {couponError && (
+              <p className="text-[11px] text-red-400 mt-1">{couponError}</p>
+            )}
+            {appliedCoupon && (
+              <p className="text-[11px] text-green-400 mt-1">
+                Applied {appliedCoupon.couponCode} (-{appliedCoupon.discountPercent}%)
+              </p>
+            )}
+          </div>
+          <div className="mb-3 rounded-xl border border-[#2c2c2e] bg-[#0f0f12] p-3 text-xs space-y-1">
+            <div className="flex items-center justify-between text-gray-300">
+              <span>Subtotal</span>
+              <span>${totalValue.toFixed(2)}</span>
+            </div>
+            <div className="flex items-center justify-between text-gray-300">
+              <span>Discount</span>
+              <span>- ${appliedDiscountAmount.toFixed(2)}</span>
+            </div>
+            <div className="flex items-center justify-between text-white font-bold text-sm pt-1 border-t border-[#2c2c2e]">
+              <span>Total after discount</span>
+              <span>${totalAfterDiscountValue.toFixed(2)}</span>
+            </div>
           </div>
           <button
             onClick={handleCheckout}

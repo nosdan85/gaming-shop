@@ -1,16 +1,11 @@
 const DEFAULT_DISCOUNT_PERCENT = 10;
-const DEFAULT_COUPON_CODES = [
-    '8945271630', '1738409625', '6209541837', '4172963058', '9501384267',
-    '2865407193', '7319046258', '5648231907', '1083756429', '3427591860',
-    '6792084315', '2159637804', '4861750293', '9035612748', '1284073596',
-    '7541093628', '2975318046', '8406721953', '3652149780', '5198037624',
-    '7426803159', '1369542087', '6083195472', '9750318264', '2641805739',
-    '8214736509', '3579021468', '6902847315', '1408962735', '5836174092',
-    '7193250486', '2506749183', '9681437205', '4029186751', '8347052961',
-    '1763928405', '5470813269', '6905132784', '2398741605', '8051279346',
-    '4137602985', '9285017364', '3741968205', '6519402378', '2807369145',
-    '7045192836', '1682037594', '5927481306', '8361705249', '2419058736'
+const DEFAULT_COUPON_TIERS = [
+    { count: 30, discountPercent: 5 },
+    { count: 20, discountPercent: 10 },
+    { count: 10, discountPercent: 20 },
+    { count: 5, discountPercent: 35 }
 ];
+const DEFAULT_TOTAL_CODES = DEFAULT_COUPON_TIERS.reduce((sum, tier) => sum + tier.count, 0);
 
 const parseCouponCodesFromEnv = () => {
     const raw = String(process.env.COUPON_CODES || '').trim();
@@ -23,18 +18,69 @@ const parseCouponCodesFromEnv = () => {
 
 const normalizeCouponCode = (value) => String(value || '').trim().toUpperCase();
 
-const ALL_COUPON_CODES = (() => {
-    const envCodes = parseCouponCodesFromEnv();
-    const source = envCodes.length > 0 ? envCodes : DEFAULT_COUPON_CODES;
-    return source.map((code) => normalizeCouponCode(code));
-})();
-const DEFAULT_COUPON_SET = new Set(ALL_COUPON_CODES);
+const buildDeterministicNumericCodes = (count) => {
+    let state = 246813579;
+    const codes = new Set();
+    while (codes.size < count) {
+        state = (state * 1664525 + 1013904223) >>> 0;
+        const next = String(state).padStart(10, '0').slice(0, 10);
+        codes.add(next);
+    }
+    return Array.from(codes);
+};
 
-const isSupportedCouponCode = (value) => DEFAULT_COUPON_SET.has(normalizeCouponCode(value));
+const parseEnvCouponEntry = (entry) => {
+    const [codeRaw, percentRaw = ''] = String(entry || '').split(':');
+    const couponCode = normalizeCouponCode(codeRaw);
+    if (!couponCode) return null;
+
+    const parsedPercent = Number(percentRaw);
+    const discountPercent = Number.isFinite(parsedPercent) && parsedPercent > 0
+        ? Math.round(parsedPercent)
+        : DEFAULT_DISCOUNT_PERCENT;
+
+    return { couponCode, discountPercent };
+};
+
+const buildDefaultCouponConfigs = () => {
+    const numericCodes = buildDeterministicNumericCodes(DEFAULT_TOTAL_CODES);
+    const configs = [];
+    let cursor = 0;
+    for (const tier of DEFAULT_COUPON_TIERS) {
+        for (let i = 0; i < tier.count; i += 1) {
+            const couponCode = numericCodes[cursor];
+            cursor += 1;
+            configs.push({
+                couponCode,
+                discountPercent: tier.discountPercent
+            });
+        }
+    }
+    return configs;
+};
+
+const ALL_COUPON_CONFIGS = (() => {
+    const envCodes = parseCouponCodesFromEnv()
+        .map((entry) => parseEnvCouponEntry(entry))
+        .filter(Boolean);
+    if (envCodes.length > 0) return envCodes;
+    return buildDefaultCouponConfigs();
+})();
+const COUPON_CONFIG_MAP = new Map(
+    ALL_COUPON_CONFIGS.map((config) => [config.couponCode, Number(config.discountPercent) || DEFAULT_DISCOUNT_PERCENT])
+);
+
+const isSupportedCouponCode = (value) => COUPON_CONFIG_MAP.has(normalizeCouponCode(value));
+const getCouponDiscountPercent = (value) => {
+    const key = normalizeCouponCode(value);
+    return Number(COUPON_CONFIG_MAP.get(key) || 0);
+};
 
 module.exports = {
     DEFAULT_DISCOUNT_PERCENT,
-    DEFAULT_COUPON_CODES: ALL_COUPON_CODES,
+    DEFAULT_COUPON_CODES: Array.from(COUPON_CONFIG_MAP.keys()),
+    DEFAULT_COUPON_TIERS,
     normalizeCouponCode,
-    isSupportedCouponCode
+    isSupportedCouponCode,
+    getCouponDiscountPercent
 };

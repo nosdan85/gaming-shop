@@ -147,6 +147,11 @@ body {
   animation: productRevealUp 0.42s cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
 }
 
+.product-virtualized {
+  content-visibility: auto;
+  contain-intrinsic-size: 380px;
+}
+
 @media (max-width: 768px) {
   .products-loader {
     padding: 56px 0;
