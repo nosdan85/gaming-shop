@@ -10,6 +10,7 @@ const ProductCard = ({ product, onOpenDetail }) => {
   const [quantity, setQuantity] = useState(1);
   const [quantityInput, setQuantityInput] = useState('1');
   const displayPrice = formatCardPrice(product.originalPriceString, product.price);
+  const isSetCategory = String(product?.category || '').trim().toLowerCase() === 'sets';
   const productImageSrc = `/products/${encodeURIComponent(String(product.image || ''))}`;
 
   const normalizeQuantity = (value, fallback = 1) => {
@@ -81,22 +82,22 @@ const ProductCard = ({ product, onOpenDetail }) => {
           <img
             src={productImageSrc}
             alt={product.name}
-            className="w-full h-full object-contain transition-transform duration-400 group-hover:scale-105"
+            className={`w-full h-full object-contain transition-transform duration-400 ${isSetCategory ? 'scale-[1.15] group-hover:scale-[1.22]' : 'group-hover:scale-105'}`}
             onError={(e) => { e.currentTarget.src = '/products/aura-chest.png'; }}
           />
         </div>
       </div>
 
       <div className="mt-auto bg-black/35 rounded-2xl px-3 py-2.5 backdrop-blur-sm relative z-10 border border-white/10">
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
           <span className="text-white font-bold text-sm md:text-[15px] leading-tight">{displayPrice}</span>
 
-          <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center bg-black/50 border border-white/15 rounded-full">
+          <div className="flex items-center gap-2 w-full md:w-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex-1 md:flex-none flex items-center justify-between bg-black/50 border border-white/15 rounded-full px-1">
               <button
                 type="button"
                 onClick={() => updateQuantity(quantity - 1)}
-                className="btn-press w-7 h-7 rounded-full text-gray-200 hover:text-white flex items-center justify-center"
+                className="btn-press w-6 h-6 md:w-7 md:h-7 rounded-full text-gray-200 hover:text-white flex items-center justify-center"
                 aria-label="Decrease quantity"
               >
                 <MinusIcon className="w-4 h-4" />
@@ -109,12 +110,12 @@ const ProductCard = ({ product, onOpenDetail }) => {
                 onChange={handleQuantityInput}
                 onBlur={handleQuantityBlur}
                 onClick={(e) => e.stopPropagation()}
-                className="w-14 bg-transparent text-xs font-semibold text-white text-center outline-none"
+                className="w-8 md:w-12 bg-transparent text-xs font-semibold text-white text-center outline-none"
               />
               <button
                 type="button"
                 onClick={() => updateQuantity(quantity + 1)}
-                className="btn-press w-7 h-7 rounded-full text-gray-200 hover:text-white flex items-center justify-center"
+                className="btn-press w-6 h-6 md:w-7 md:h-7 rounded-full text-gray-200 hover:text-white flex items-center justify-center"
                 aria-label="Increase quantity"
               >
                 <PlusIcon className="w-4 h-4" />
@@ -124,7 +125,7 @@ const ProductCard = ({ product, onOpenDetail }) => {
             <button
               type="button"
               onClick={handleAddToCart}
-              className="btn-press bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white p-2 rounded-full transition-all transform hover:scale-105 active:scale-90 shadow-lg shadow-cyan-500/25 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-cyan-400"
+              className="btn-press shrink-0 bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white p-2 rounded-full transition-all transform hover:scale-105 active:scale-90 shadow-lg shadow-cyan-500/25 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-cyan-400"
               title="Add to Cart"
             >
               <PlusIcon className="w-5 h-5" />

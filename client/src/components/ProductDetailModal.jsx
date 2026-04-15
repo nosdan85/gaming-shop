@@ -15,6 +15,7 @@ const ProductDetailModal = ({ product, onClose }) => {
   }, [product?._id]);
 
   if (!product) return null;
+  const isSetCategory = String(product?.category || '').trim().toLowerCase() === 'sets';
   const productImageSrc = `/products/${encodeURIComponent(String(product.image || ''))}`;
 
   const normalizeQuantity = (value, fallback = 1) => {
@@ -85,7 +86,7 @@ const ProductDetailModal = ({ product, onClose }) => {
             <img
               src={productImageSrc}
               alt={product.name}
-              className="w-full h-full object-contain"
+              className={`w-full h-full object-contain ${isSetCategory ? 'scale-[1.15]' : ''}`}
               onError={(e) => { e.currentTarget.src = '/products/aura-chest.png'; }}
             />
           </div>

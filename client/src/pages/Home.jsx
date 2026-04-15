@@ -50,6 +50,7 @@ const Home = () => {
   const [products, setProducts] = useState(() => getCachedProducts());
   const [activeGame, setActiveGame] = useState('Sailor Piece');
   const [activeCategory, setActiveCategory] = useState('All');
+  const [categoryAnimKey, setCategoryAnimKey] = useState(0);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [loading, setLoading] = useState(() => getCachedProducts().length === 0);
   const [loadError, setLoadError] = useState('');
@@ -84,6 +85,10 @@ const Home = () => {
       .finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => {
+    setCategoryAnimKey((prev) => prev + 1);
+  }, [activeCategory]);
+
   const safeProducts = Array.isArray(products) ? products : [];
 
   let filteredProducts = safeProducts.filter((p) => {
@@ -117,7 +122,7 @@ const Home = () => {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4">
+      <div className="max-w-7xl mx-auto px-3 sm:px-4">
         <div className="mb-8 md:mb-10">
           <div className="relative max-w-xl mx-auto">
             <MagnifyingGlassIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--color-accent)]" />
@@ -144,10 +149,6 @@ const Home = () => {
             </button>
           ))}
         </div>
-
-        <p className="text-center text-xs text-[#9a9aa0] -mt-4 mb-8">
-          If one item costs at least $10, it qualifies for bulk pricing.
-        </p>
 
         <div className="flex flex-wrap justify-center items-center gap-3 mb-12">
           {CATEGORIES.map((cat) => (
@@ -185,13 +186,18 @@ const Home = () => {
         ) : filteredProducts.length === 0 ? (
           <div className="text-center py-20 text-[#86868b]">No products found.</div>
         ) : (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
-            {filteredProducts.map((p) => (
-              <ProductCard
-                key={p._id}
-                product={p}
-                onOpenDetail={setSelectedProduct}
-              />
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-6">
+            {filteredProducts.map((p, index) => (
+              <div
+                key={`${p._id}-${categoryAnimKey}`}
+                className="product-reveal"
+                style={{ animationDelay: `${Math.min(index, 11) * 45}ms` }}
+              >
+                <ProductCard
+                  product={p}
+                  onOpenDetail={setSelectedProduct}
+                />
+              </div>
             ))}
           </div>
         )}

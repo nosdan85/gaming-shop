@@ -131,6 +131,22 @@ body {
   filter: brightness(0.96);
 }
 
+@keyframes productRevealUp {
+  0% {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.product-reveal {
+  opacity: 0;
+  animation: productRevealUp 0.42s cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
+}
+
 @media (max-width: 768px) {
   .products-loader {
     padding: 56px 0;
@@ -148,5 +164,12 @@ body {
 
   .products-loader-text {
     font-size: 13px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .product-reveal {
+    opacity: 1;
+    animation: none;
   }
 }
