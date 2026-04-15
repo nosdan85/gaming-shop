@@ -82,7 +82,7 @@ const ProductCard = ({ product, onOpenDetail }) => {
           <img
             src={productImageSrc}
             alt={product.name}
-            className={`w-full h-full object-contain transition-transform duration-400 ${isSetCategory ? 'scale-[1.15] group-hover:scale-[1.22]' : 'group-hover:scale-105'}`}
+            className={`w-full h-full object-contain transition-transform duration-400 ${isSetCategory ? 'scale-[1.10] group-hover:scale-[1.17]' : 'group-hover:scale-105'}`}
             onError={(e) => { e.currentTarget.src = '/products/aura-chest.png'; }}
           />
         </div>

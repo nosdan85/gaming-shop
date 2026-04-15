@@ -186,7 +186,7 @@ const Home = () => {
         ) : filteredProducts.length === 0 ? (
           <div className="text-center py-20 text-[#86868b]">No products found.</div>
         ) : (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-6">
             {filteredProducts.map((p, index) => (
               <div
                 key={`${p._id}-${categoryAnimKey}`}
