@@ -1846,6 +1846,7 @@ router.post('/create-ticket', authRequired, async (req, res) => {
                     channelId,
                     ticketStatus: 'created',
                     ticketError: '',
+                    paymentMethod: 'cashapp',
                     status: lockedOrder.status === 'Pending' ? 'Waiting Payment' : lockedOrder.status
                 },
                 $unset: { ticketLockUntil: 1 }
@@ -1874,6 +1875,7 @@ router.post('/create-ticket', authRequired, async (req, res) => {
                         channelId,
                         ticketStatus: 'created',
                         ticketError: '',
+                        paymentMethod: 'cashapp',
                         status: lockedOrder.status === 'Pending' ? 'Waiting Payment' : lockedOrder.status
                     },
                     $unset: { ticketLockUntil: 1 }

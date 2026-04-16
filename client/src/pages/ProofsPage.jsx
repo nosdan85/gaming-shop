@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { ChevronLeftIcon, ChevronRightIcon, ClockIcon } from '@heroicons/react/24/outline';
+import { Link } from 'react-router-dom';
 
 const DISCORD_VOUCH_URL = String(import.meta.env.VITE_DISCORD_VOUCH_URL || '').trim();
 
@@ -80,6 +81,14 @@ const ProofsPage = () => {
               Open Discord Vouch Channel
             </a>
           )}
+          <div className="mt-3">
+            <Link
+              to="/"
+              className="inline-block btn-press bg-[#1a2030] hover:bg-[#24314a] text-white text-sm px-4 py-2 rounded-full border border-[#2a3a58]"
+            >
+              Back To Home
+            </Link>
+          </div>
         </section>
 
         {loading ? (

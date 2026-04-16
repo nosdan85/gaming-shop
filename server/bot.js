@@ -10,7 +10,6 @@ const { discordRequest } = require('./utils/discordApi');
 const Order = require('./models/Order');
 const User = require('./models/User');
 const Proof = require('./models/Proof');
-const { getDiscordGatewayStatus } = require('./config/discordGateway');
 const { encryptSecret, decryptSecret } = require('./utils/tokenCrypto');
 const { formatDeliveredUnitsLabel } = require('./utils/itemQuantityDisplay');
 
@@ -75,7 +74,6 @@ const client = new Client({
         GatewayIntentBits.MessageContent
     ]
 });
-const { gatewayEnabled: discordGatewayEnabled } = getDiscordGatewayStatus();
 
 const normalizeEnvValue = (value) => {
     const text = String(value || '').trim();
@@ -92,6 +90,7 @@ const normalizeEnvValue = (value) => {
 const isSnowflake = (value) => SNOWFLAKE_PATTERN.test(String(value || '').trim());
 const getPayPalPaymentEmail = () => normalizeEnvValue(process.env.PAYPAL_PAYMENT_EMAIL) || 'nguyenquanghuy111106@gmail.com';
 const getCashAppHandle = () => normalizeEnvValue(process.env.CASHAPP_HANDLE) || '$yoko276';
+const getLtcPayAddress = () => normalizeEnvValue(process.env.LTC_PAY_ADDRESS) || 'ltc1ququ7e6ryccpnu7jgy0l4vukgc3mventxyulyge';
 const getBotToken = () => normalizeEnvValue(process.env.DISCORD_BOT_TOKEN);
 const getGuildId = () => normalizeEnvValue(process.env.DISCORD_GUILD_ID);
 const getOwnerRoleId = () => normalizeEnvValue(process.env.DISCORD_OWNER_ROLE_ID);
@@ -192,6 +191,15 @@ const formatOrderItemNamesForNote = (items) => {
             .filter(Boolean)
         : [];
     return truncateText(names.join(', ') || 'Item', 300);
+};
+
+const getOrderSequence = (order) => {
+    const orderId = String(order?.orderId || '').trim();
+    const match = orderId.match(/(\d+)$/);
+    if (!match) return Date.now();
+    const parsed = Number(match[1]);
+    if (!Number.isFinite(parsed) || parsed <= 0) return Date.now();
+    return Math.floor(parsed);
 };
 
 const assertDiscordConfig = () => {
@@ -996,6 +1004,24 @@ const buildOrderMention = (discordId) => {
 
 const formatUsdAmount = (value) => `$${Number(value || 0).toFixed(2)}`;
 
+const buildCopyButtons = (buttonConfigs = []) => {
+    const usableConfigs = (Array.isArray(buttonConfigs) ? buttonConfigs : [])
+        .filter((item) => item && item.customId && item.label);
+    if (usableConfigs.length === 0) return [];
+
+    const rows = [];
+    for (let index = 0; index < usableConfigs.length; index += 5) {
+        const chunk = usableConfigs.slice(index, index + 5);
+        rows.push(new ActionRowBuilder().addComponents(
+            ...chunk.map((item) => new ButtonBuilder()
+                .setCustomId(String(item.customId))
+                .setLabel(String(item.label))
+                .setStyle(ButtonStyle.Secondary))
+        ));
+    }
+    return rows;
+};
+
 const buildPayPalGuideDescription = (order) => {
     const amountText = formatUsdAmount(order?.totalAmount || 0);
     const itemNote = formatOrderItemNamesForNote(order?.items);
@@ -1031,6 +1057,33 @@ const buildCashAppGuideDescription = (order) => {
     ].join('\n');
 };
 
+const buildLtcGuideDescription = (order) => {
+    const ltcAddress = getLtcPayAddress();
+    const amountText = formatUsdAmount(order?.totalAmount || 0);
+    return [
+        '# **🤍 LTC Payment Guide**',
+        '',
+        `**Send ${amountText} worth of LTC to:** \`${ltcAddress}\``,
+        '',
+        '**1.** Send the LTC payment to the wallet above',
+        '**2.** Send your **payment screenshot** in this ticket'
+    ].join('\n');
+};
+
+const buildPayPalCopyRows = (order) => buildCopyButtons([
+    { customId: `copy_paypal_email_${order.orderId}`, label: 'Copy PayPal Email' },
+    { customId: `copy_paypal_item_${order.orderId}`, label: 'Copy Item Name' }
+]);
+
+const buildCashAppCopyRows = (order) => buildCopyButtons([
+    { customId: `copy_cashapp_tag_${order.orderId}`, label: 'Copy CashApp Tag' },
+    { customId: `copy_cashapp_item_${order.orderId}`, label: 'Copy Item Name' }
+]);
+
+const buildLtcCopyRows = (order) => buildCopyButtons([
+    { customId: `copy_ltc_wallet_${order.orderId}`, label: 'Copy LTC Address' }
+]);
+
 const createPayPalFFTicket = async (order, paypalSeq) => {
     const safeSeq = Number.isInteger(Number(paypalSeq)) ? Number(paypalSeq) : Date.now();
     const channelId = await createTicketChannel({
@@ -1039,7 +1092,7 @@ const createPayPalFFTicket = async (order, paypalSeq) => {
     });
 
     const embed = new EmbedBuilder()
-        .setColor(0x003087)
+        .setColor(0x8ED3FF)
         .setTitle(`PayPal F&F - Order ${order.orderId}`)
         .setDescription(buildPayPalGuideDescription(order))
         .addFields(
@@ -1052,7 +1105,8 @@ const createPayPalFFTicket = async (order, paypalSeq) => {
         await sendTicketMessage({
             channelId,
             content: buildOrderMention(order.discordId),
-            embed
+            embed,
+            components: buildPayPalCopyRows(order)
         });
     } catch (error) {
         // Channel is already created; do not force duplicate channel attempts.
@@ -1070,9 +1124,9 @@ const createLTCTicket = async (order, ltcSeq) => {
     });
 
     const embed = new EmbedBuilder()
-        .setColor(0x345D9D)
+        .setColor(0xF5F7FA)
         .setTitle(`LTC Payment - Order ${order.orderId}`)
-        .setDescription(`Hello <@${order.discordId}>. Please upload your LTC payment proof screenshot here.`)
+        .setDescription(buildLtcGuideDescription(order))
         .addFields(
             { name: 'Customer', value: order.discordUsername || `<@${order.discordId}>`, inline: true },
             { name: 'Total', value: `$${Number(order.totalAmount || 0).toFixed(2)}`, inline: true },
@@ -1083,7 +1137,8 @@ const createLTCTicket = async (order, ltcSeq) => {
         await sendTicketMessage({
             channelId,
             content: buildOrderMention(order.discordId),
-            embed
+            embed,
+            components: buildLtcCopyRows(order)
         });
     } catch (error) {
         // Channel is already created; do not force duplicate channel attempts.
@@ -1094,41 +1149,28 @@ const createLTCTicket = async (order, ltcSeq) => {
 };
 
 const createOrderTicket = async (order) => {
+    const seq = getOrderSequence(order);
     const channelId = await createTicketChannel({
-        channelName: `${order.orderId}`,
+        channelName: `cashapp_${seq}`,
         customerId: order.discordId
     });
-    const gatewayDisabled = !discordGatewayEnabled;
 
     const embed = new EmbedBuilder()
-        .setColor(0xFFFFFF)
-        .setTitle(`Order: ${order.orderId}`)
-        .setDescription(
-            gatewayDisabled
-                ? `Hello <@${order.discordId}>. Please reply with your payment method: CashApp.`
-                : `Hello <@${order.discordId}>. Choose CashApp.`
-        )
+        .setColor(0xA7EFC0)
+        .setTitle(`Cash App - Order ${order.orderId}`)
+        .setDescription(buildCashAppGuideDescription(order))
         .addFields(
             { name: 'Customer', value: order.discordUsername || `<@${order.discordId}>`, inline: true },
             { name: 'Total', value: `$${Number(order.totalAmount || 0).toFixed(2)}`, inline: true },
-            { name: 'Items', value: formatOrderItems(order.items) },
-            { name: 'Payment', value: '-', inline: false },
-            { name: 'Paid', value: 'No', inline: false }
+            { name: 'Items', value: formatOrderItems(order.items) }
         );
-
-    const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId(`pay_cashapp_${order.orderId}`)
-            .setLabel('CashApp')
-            .setStyle(ButtonStyle.Secondary)
-    );
 
     try {
         await sendTicketMessage({
             channelId,
             content: buildOrderMention(order.discordId),
             embed,
-            components: gatewayDisabled ? [] : [row]
+            components: buildCashAppCopyRows(order)
         });
     } catch (error) {
         // Channel is already created; do not force duplicate channel attempts.
@@ -1142,10 +1184,10 @@ client.on('interactionCreate', async (interaction) => {
     if (!interaction.isButton()) return;
 
     const customId = String(interaction.customId || '');
-    const match = customId.match(/^pay_(cashapp)_(.+)$/);
+    const match = customId.match(/^copy_(paypal_email|paypal_item|cashapp_tag|cashapp_item|ltc_wallet)_(.+)$/);
     if (!match) return;
 
-    const method = match[1];
+    const copyType = match[1];
     const orderId = match[2];
 
     try {
@@ -1157,18 +1199,28 @@ client.on('interactionCreate', async (interaction) => {
             return;
         }
 
-        await Order.findOneAndUpdate(
-            { orderId },
-            { status: 'Waiting Payment', paymentMethod: method }
-        );
-
-        const payEmbed = new EmbedBuilder()
-            .setColor(0x000000)
-            .setTitle('Pay via CashApp')
-            .setDescription(buildCashAppGuideDescription(order));
-
+        const valueMap = {
+            paypal_email: getPayPalPaymentEmail(),
+            paypal_item: formatOrderItemNamesForNote(order.items),
+            cashapp_tag: getCashAppHandle(),
+            cashapp_item: formatOrderItemNamesForNote(order.items),
+            ltc_wallet: getLtcPayAddress()
+        };
+        const labelMap = {
+            paypal_email: 'PayPal Email',
+            paypal_item: 'Item Name',
+            cashapp_tag: 'CashApp Tag',
+            cashapp_item: 'Item Name',
+            ltc_wallet: 'LTC Address'
+        };
+        const rawValue = String(valueMap[copyType] || '').trim();
+        const safeValue = truncateText(rawValue || '-', 300);
+        const label = String(labelMap[copyType] || 'Value');
         if (!interaction.replied && !interaction.deferred) {
-            await interaction.reply({ embeds: [payEmbed] });
+            await interaction.reply({
+                ephemeral: true,
+                content: `Copy ${label}:\n\`${safeValue}\``
+            });
         }
     } catch (error) {
         console.error('Button interaction error:', error?.message || error);

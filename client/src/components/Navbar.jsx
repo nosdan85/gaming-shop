@@ -8,6 +8,7 @@ const PROOFS_EXTERNAL_URL = String(import.meta.env.VITE_PROOFS_URL || '').trim()
 const DISCORD_INVITE_URL = String(import.meta.env.VITE_DISCORD_INVITE_URL || '').trim();
 const DISCORD_VOUCH_URL = String(import.meta.env.VITE_DISCORD_VOUCH_URL || '').trim();
 const RESOLVED_DISCORD_URL = DISCORD_INVITE_URL || DISCORD_VOUCH_URL;
+const SITE_LOGO_PATH = String(import.meta.env.VITE_SITE_LOGO || '/site-logo.png').trim() || '/site-logo.png';
 
 const NavItem = ({ label, href, isExternal = false, onClick }) => {
   if (isExternal) {
@@ -75,9 +76,10 @@ const Navbar = () => {
         <div className="flex items-center justify-between h-16 md:h-20">
           <Link to="/" className="flex-shrink-0 flex items-center">
             <img
-              src="/logo.png"
+              src={SITE_LOGO_PATH}
               alt="NOS Logo"
               className="h-10 md:h-14 w-auto object-contain"
+              onError={(event) => { event.currentTarget.src = '/logo.png'; }}
             />
           </Link>
 
