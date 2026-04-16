@@ -4,6 +4,10 @@ import { ChevronLeftIcon, ChevronRightIcon, ClockIcon } from '@heroicons/react/2
 import { Link } from 'react-router-dom';
 
 const DISCORD_VOUCH_URL = String(import.meta.env.VITE_DISCORD_VOUCH_URL || '').trim();
+const publicApi = axios.create({
+  baseURL: axios.defaults.baseURL || ''
+});
+delete publicApi.defaults.headers.common.Authorization;
 
 const formatAgo = (dateValue) => {
   if (!dateValue) return '';
@@ -31,7 +35,7 @@ const ProofsPage = () => {
       setLoading(true);
       setError('');
       try {
-        const { data } = await axios.get('/api/shop/proofs?limit=48', { timeout: 20000 });
+        const { data } = await publicApi.get('/api/shop/proofs?limit=48', { timeout: 20000 });
         if (cancelled) return;
         setProofs(Array.isArray(data?.items) ? data.items : []);
       } catch (err) {

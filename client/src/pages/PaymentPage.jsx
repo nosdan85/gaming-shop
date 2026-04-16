@@ -505,7 +505,6 @@ const PaymentPage = () => {
     <div className="min-h-screen min-h-[100dvh] bg-black flex items-center justify-center p-4">
       <div className="bg-[#1c1c1e] rounded-2xl p-6 max-w-md w-full border border-[#2c2c2e] overflow-hidden">
         <h2 className="text-xl font-bold text-white mb-1">Complete Payment</h2>
-        <p className="text-gray-400 text-sm mb-1">Order: <span className="text-white font-bold">{orderId}</span></p>
         {discountAmountNum > 0 ? (
           <div className="mb-6 text-sm">
             <p className="text-gray-400">Subtotal: <span className="text-white font-bold">${subtotalNum.toFixed(2)}</span></p>
@@ -659,6 +658,9 @@ const PaymentPage = () => {
             <button onClick={() => setLtcData(null)} className="btn-press text-gray-400 hover:text-white text-xs mb-3 flex items-center gap-1">
               &larr; Back
             </button>
+            <p className="text-gray-400 text-xs mb-2">
+              Send equivalent of <span className="text-white font-bold">${totalNum.toFixed(2)}</span> in LTC
+            </p>
             <p className="text-gray-400 text-xs mb-1">To address:</p>
             <div className="bg-[#1a1a1c] rounded p-2 mb-2">
               <p className="text-white font-mono text-xs break-all">{ltcData.payAddress}</p>

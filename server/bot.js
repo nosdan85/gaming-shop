@@ -191,7 +191,7 @@ const formatOrderItemsWithPrice = (items) => {
             const name = String(item?.name || 'Item').trim();
             const deliveredLabel = formatDeliveredUnitsLabel(name, quantity);
             const lineTotal = (Math.max(0, Number(item?.price) || 0) * quantity).toFixed(2);
-            return `${deliveredLabel} ${name} — $${lineTotal}`;
+            return `${deliveredLabel} ${name} - $${lineTotal}`;
         })
         : [];
     const joined = lines.join('\n') || '-';
@@ -1018,6 +1018,24 @@ const buildOrderMention = (discordId) => {
 
 const formatUsdAmount = (value) => `$${Number(value || 0).toFixed(2)}`;
 
+const buildPaymentTicketFields = ({ order, paymentLine, note }) => {
+    const ownerRoleId = getOwnerRoleId();
+    const ownerMention = isSnowflake(ownerRoleId) ? `<@&${ownerRoleId}>` : '-';
+    const fields = [
+        { name: 'Buyer', value: `<@${order.discordId}>`, inline: true },
+        { name: 'Owner Role', value: ownerMention, inline: true },
+        { name: 'Order Total', value: formatUsdAmount(order.totalAmount || 0), inline: true },
+        { name: 'Payment', value: paymentLine, inline: false },
+        { name: 'Items (Qty + Price)', value: formatOrderItemsWithPrice(order.items), inline: false },
+        { name: 'Proof', value: 'Send your payment screenshot in this ticket after you pay.', inline: false }
+    ];
+    const safeNote = String(note || '').trim();
+    if (safeNote) {
+        fields.push({ name: 'Note', value: safeNote, inline: false });
+    }
+    return fields;
+};
+
 const buildCopyButtons = (buttonConfigs = []) => {
     const usableConfigs = (Array.isArray(buttonConfigs) ? buttonConfigs : [])
         .filter((item) => item && item.customId && item.label);
@@ -1075,7 +1093,7 @@ const buildLtcGuideDescription = (order) => {
     const ltcAddress = getLtcPayAddress();
     const amountText = formatUsdAmount(order?.totalAmount || 0);
     return [
-        '# **🤍 LTC Payment Guide**',
+        '# **LTC Payment Guide**',
         '',
         `**Send ${amountText} worth of LTC to:** \`${ltcAddress}\``,
         '',
@@ -1107,13 +1125,14 @@ const createPayPalFFTicket = async (order, paypalSeq) => {
 
     const embed = new EmbedBuilder()
         .setColor(0x8ED3FF)
-        .setTitle(`PayPal F&F - Order ${order.orderId}`)
-        .setDescription(`Hello <@${order.discordId}>. Please send your PayPal payment proof screenshot in this ticket.`)
-        .addFields(
-            { name: 'Customer', value: order.discordUsername || `<@${order.discordId}>`, inline: true },
-            { name: 'Total', value: `$${Number(order.totalAmount || 0).toFixed(2)}`, inline: true },
-            { name: 'Items', value: formatOrderItems(order.items) }
-        );
+        .setTitle('PayPal Payment')
+        .setDescription(
+            `Hello <@${order.discordId}>. Please complete payment and send your proof screenshot in this ticket.\nOur staff will confirm your payment and deliver right away.`
+        )
+        .addFields(buildPaymentTicketFields({
+            order,
+            paymentLine: `${formatUsdAmount(order.totalAmount || 0)} to ${getPayPalPaymentEmail()} (Friends & Family)`
+        }));
 
     try {
         await sendTicketMessage({
@@ -1122,7 +1141,6 @@ const createPayPalFFTicket = async (order, paypalSeq) => {
             embed
         });
     } catch (error) {
-        // Channel is already created; do not force duplicate channel attempts.
         console.error('PayPal F&F ticket message error:', error?.message || error);
     }
 
@@ -1138,13 +1156,14 @@ const createLTCTicket = async (order, ltcSeq) => {
 
     const embed = new EmbedBuilder()
         .setColor(0xF5F7FA)
-        .setTitle(`LTC Payment - Order ${order.orderId}`)
-        .setDescription(`Hello <@${order.discordId}>. Please send your LTC payment proof screenshot in this ticket.`)
-        .addFields(
-            { name: 'Customer', value: order.discordUsername || `<@${order.discordId}>`, inline: true },
-            { name: 'Total', value: `$${Number(order.totalAmount || 0).toFixed(2)}`, inline: true },
-            { name: 'Items', value: formatOrderItems(order.items) }
-        );
+        .setTitle('LTC Payment')
+        .setDescription(
+            `Hello <@${order.discordId}>. Please complete payment and send your proof screenshot in this ticket.\nOur staff will confirm your payment and deliver right away.`
+        )
+        .addFields(buildPaymentTicketFields({
+            order,
+            paymentLine: `${formatUsdAmount(order.totalAmount || 0)} equivalent LTC to ${getLtcPayAddress()}`
+        }));
 
     try {
         await sendTicketMessage({
@@ -1153,7 +1172,6 @@ const createLTCTicket = async (order, ltcSeq) => {
             embed
         });
     } catch (error) {
-        // Channel is already created; do not force duplicate channel attempts.
         console.error('LTC ticket message error:', error?.message || error);
     }
 
@@ -1162,9 +1180,7 @@ const createLTCTicket = async (order, ltcSeq) => {
 
 const createOrderTicket = async (order) => {
     const seq = getOrderSequence(order);
-    const ownerRoleId = getOwnerRoleId();
     const cashAppAmount = Number(order.totalAmount || 0) * 1.1;
-    const ownerMention = isSnowflake(ownerRoleId) ? `<@&${ownerRoleId}>` : '-';
     const channelId = await createTicketChannel({
         channelName: `cashapp_${seq}`,
         customerId: order.discordId
@@ -1172,18 +1188,15 @@ const createOrderTicket = async (order) => {
 
     const embed = new EmbedBuilder()
         .setColor(0xA7EFC0)
-        .setTitle(`Cash App - Order ${order.orderId}`)
+        .setTitle('Cash App Payment')
         .setDescription(
             `Hello <@${order.discordId}>. Please complete payment and send your proof screenshot in this ticket.\nOur staff will confirm your payment and deliver right away.`
         )
-        .addFields(
-            { name: 'Buyer', value: `<@${order.discordId}>`, inline: true },
-            { name: 'Owner Role', value: ownerMention, inline: true },
-            { name: 'Order Total', value: `$${Number(order.totalAmount || 0).toFixed(2)}`, inline: true },
-            { name: 'CashApp Amount (+10%)', value: `$${cashAppAmount.toFixed(2)} to ${getCashAppHandle()}`, inline: false },
-            { name: 'Items (Qty + Price)', value: formatOrderItemsWithPrice(order.items), inline: false },
-            { name: 'Proof', value: 'Send your payment screenshot in this ticket after you pay.', inline: false }
-        );
+        .addFields(buildPaymentTicketFields({
+            order,
+            paymentLine: `${formatUsdAmount(cashAppAmount)} to ${getCashAppHandle()}`,
+            note: 'Includes additional 10% conversion fee.'
+        }));
 
     try {
         await sendTicketMessage({
@@ -1192,7 +1205,6 @@ const createOrderTicket = async (order) => {
             embed
         });
     } catch (error) {
-        // Channel is already created; do not force duplicate channel attempts.
         console.error('Order ticket message error:', error?.message || error);
     }
 
@@ -1454,3 +1466,4 @@ module.exports = {
     checkUserHasOwnerRole,
     getOwnerId
 };
+
