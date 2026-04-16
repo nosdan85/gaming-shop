@@ -65,10 +65,10 @@ const ProofsPage = () => {
     <div className="min-h-screen bg-black pt-20 md:pt-24 pb-16">
       <div className="max-w-7xl mx-auto px-4">
         <section className="mb-8 md:mb-10 text-center">
-          <div className="inline-flex items-center rounded-full px-4 py-2 bg-[#0d111f] border border-[#1f2b45] text-[#8ef3c7] text-xs font-semibold tracking-wider uppercase">
+          <div className="inline-flex items-center rounded-full px-4 py-2 bg-[#0d111f] border border-[#22436a] text-[#7ed7ff] text-xs font-semibold tracking-wider uppercase">
             Verified Deliveries
           </div>
-          <h1 className="mt-4 text-4xl md:text-6xl font-black text-[#b7ffd8]">Proof of Delivery</h1>
+          <h1 className="mt-4 text-4xl md:text-6xl font-black text-[#8ad9ff]">Proof of Delivery</h1>
           <p className="mt-4 text-gray-300 max-w-3xl mx-auto text-sm md:text-xl">
             Every completed order is logged with image proof. Browse clear, authentic delivery records from our real orders.
           </p>
@@ -144,7 +144,7 @@ const ProofsPage = () => {
                           <p className="text-sm text-white truncate font-bold">
                             {item.deliveredLabel || 'x0'} {item.name}
                           </p>
-                          <p className="text-sm text-[#7ef8bc] font-semibold shrink-0">
+                          <p className="text-sm text-[#78d4ff] font-semibold shrink-0">
                             ${Number(item?.lineTotal || 0).toFixed(2)}
                           </p>
                         </div>
@@ -155,7 +155,7 @@ const ProofsPage = () => {
                       {items.length === 0 && (
                         <div className="flex items-start justify-between gap-3">
                           <p className="text-sm text-white font-bold">Unknown item</p>
-                          <p className="text-sm text-[#7ef8bc] font-semibold">${Number(proof?.totalAmount || 0).toFixed(2)}</p>
+                          <p className="text-sm text-[#78d4ff] font-semibold">${Number(proof?.totalAmount || 0).toFixed(2)}</p>
                         </div>
                       )}
                     </div>
@@ -218,7 +218,7 @@ const ProofsPage = () => {
 
               <div className="p-5 border-t md:border-t-0 md:border-l border-[#24314d]">
                 <h3 className="text-white font-bold text-lg">Order Proof</h3>
-                <p className="text-[#7ef8bc] font-semibold mt-1">${Number(preview?.totalAmount || 0).toFixed(2)}</p>
+                <p className="text-[#78d4ff] font-semibold mt-1">${Number(preview?.totalAmount || 0).toFixed(2)}</p>
                 <div className="mt-4 space-y-2">
                   {(Array.isArray(preview?.items) ? preview.items : []).map((item, idx) => (
                     <div key={`preview-${idx}`} className="rounded-lg bg-[#0a0e19] border border-[#1f2a43] px-3 py-2 text-sm">

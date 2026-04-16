@@ -6,7 +6,6 @@ import { formatCardPrice } from '../utils/priceFormatting';
 import { formatDeliveredUnitsLabel } from '../utils/itemQuantityDisplay';
 
 const BULK_DISCOUNT_THRESHOLD = 10;
-const MIN_CHECKOUT_TOTAL = 1;
 const CHECKOUT_TIMEOUT_MS = 20000;
 const roundMoney = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 
@@ -83,7 +82,7 @@ const CartModal = () => {
   }));
   const totalValue = roundMoney(cartRows.reduce((acc, row) => acc + row.pricing.lineTotal, 0));
   const total = totalValue.toFixed(2);
-  const isBelowMinimumCheckout = totalValue <= MIN_CHECKOUT_TOTAL;
+  const hasInvalidCheckoutTotal = totalValue <= 0;
   const normalizedCouponCode = couponCode.trim().toUpperCase();
   const appliedDiscountAmount = roundMoney(Number(appliedCoupon?.discountAmount) || 0);
   const totalAfterDiscountValue = roundMoney(Math.max(0, totalValue - appliedDiscountAmount));
@@ -179,7 +178,7 @@ const CartModal = () => {
   const handleCheckout = async () => {
     if (isProcessing) return;
     if (!user || !user.discordId) return alert('Please link Discord first!');
-    if (isBelowMinimumCheckout) return alert('Checkout total must be above $1.00.');
+    if (hasInvalidCheckoutTotal) return alert('Checkout total is invalid.');
 
     setIsProcessing(true);
     try {
@@ -360,8 +359,8 @@ const CartModal = () => {
             </div>
           </div>
 
-          {isBelowMinimumCheckout && cart.length > 0 && (
-            <p className="text-[11px] text-red-400 mb-2">Total must be above $1.00 to checkout.</p>
+          {hasInvalidCheckoutTotal && cart.length > 0 && (
+            <p className="text-[11px] text-red-400 mb-2">Total must be greater than $0.00 to checkout.</p>
           )}
           <div className="mb-3">
             <label className="block text-gray-400 text-xs uppercase font-bold mb-1 tracking-wider">
@@ -409,7 +408,7 @@ const CartModal = () => {
           </div>
           <button
             onClick={handleCheckout}
-            disabled={!user || cart.length === 0 || isProcessing || isBelowMinimumCheckout}
+            disabled={!user || cart.length === 0 || isProcessing || hasInvalidCheckoutTotal}
             className="btn-press w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white py-3 md:py-4 rounded-xl text-base md:text-lg font-bold shadow-lg shadow-blue-900/20 active:scale-95 transition-transform mt-auto"
           >
             {isProcessing ? 'Processing...' : 'Check Out'}

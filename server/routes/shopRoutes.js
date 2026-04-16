@@ -400,7 +400,6 @@ const extractPayPalSummary = (captureData) => {
 
 const amountsMatch = (left, right) => Math.abs(Number(left) - Number(right)) < 0.01;
 const BULK_DISCOUNT_THRESHOLD = 10;
-const MIN_CHECKOUT_TOTAL = 1;
 const roundMoney = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 const normalizeText = (value) => String(value || '').trim().toLowerCase();
 const normalizeKeyText = (value) => normalizeText(value).replace(/\s+/g, '');
@@ -1090,10 +1089,6 @@ router.post('/checkout', authRequired, checkoutLimiter, async (req, res) => {
             totalAmount,
             couponCode
         } = cartSummary;
-
-        if (subtotalAmount <= MIN_CHECKOUT_TOTAL) {
-            return res.status(400).json({ error: 'Minimum checkout total must be greater than $1.00' });
-        }
 
         const ticketMode = isPanelTicketMode() ? 'panel' : 'bot';
         let newOrder = null;
