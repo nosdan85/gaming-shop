@@ -2,6 +2,7 @@ import { useContext, useEffect, useMemo, useState } from 'react';
 import { ShopContext } from '../context/ShopContext';
 import { PlusIcon, MinusIcon } from '@heroicons/react/24/solid';
 import { formatCardPrice } from '../utils/priceFormatting';
+import { formatDeliveredUnitsLabel } from '../utils/itemQuantityDisplay';
 
 const MAX_UI_QUANTITY = 100000;
 
@@ -11,6 +12,7 @@ const ProductCard = ({ product, onOpenDetail }) => {
   const [quantityInput, setQuantityInput] = useState('1');
   const [imageVariantIndex, setImageVariantIndex] = useState(0);
   const displayPrice = formatCardPrice(product.originalPriceString, product.price);
+  const itemDescription = `${displayPrice} for ${formatDeliveredUnitsLabel(product?.name, 1)}`;
   const isSetCategory = String(product?.category || '').trim().toLowerCase() === 'sets';
   const imageCandidates = useMemo(() => {
     const rawName = String(product?.image || '').trim();
@@ -93,6 +95,7 @@ const ProductCard = ({ product, onOpenDetail }) => {
         <h3 className="text-white font-bold text-sm md:text-[15px] leading-snug line-clamp-2 group-hover:text-[#e7ebff] transition-colors">
           {product.name}
         </h3>
+        <p className="text-[#8aa5d8] text-[11px] mt-1 leading-tight">{itemDescription}</p>
       </div>
 
       <div className="flex-1 flex items-center justify-center my-3 md:my-4 relative z-10">

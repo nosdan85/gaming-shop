@@ -262,7 +262,7 @@ const CartModal = () => {
                     <h3 className="font-medium text-white text-sm md:text-base line-clamp-1">{item.name}</h3>
                     <div className="flex justify-between mt-2 items-center">
                       <div className="min-w-0">
-                        <span className="text-gray-400 text-xs md:text-sm">{pricing.displayUnitPrice} | {deliveredLabel}</span>
+                        <span className="text-gray-400 text-xs md:text-sm">{pricing.displayUnitPrice} | qty {deliveredLabel}</span>
                         {pricing.bulkAppliedUnits > 0 && (
                           <p className="text-[10px] text-green-400 mt-1">
                             Bulk applied for {pricing.bulkAppliedUnits} packs ({pricing.bulkDisplayUnitPrice})

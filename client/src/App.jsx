@@ -4,6 +4,7 @@ import Navbar from './components/Navbar';
 import Home from './pages/Home';
 import AuthCallback from './pages/AuthCallback';
 import PaymentPage from './pages/PaymentPage';
+import ProofsPage from './pages/ProofsPage';
 import AdminOrders from './pages/AdminOrders';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminLogin from './pages/AdminLogin';
@@ -35,6 +36,15 @@ function App() {
                 <>
                   <Navbar />
                   <Home />
+                </>
+              )}
+            />
+            <Route
+              path="/proofs"
+              element={(
+                <>
+                  <Navbar />
+                  <ProofsPage />
                 </>
               )}
             />

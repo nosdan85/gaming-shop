@@ -9,6 +9,7 @@ const {
 const { discordRequest } = require('./utils/discordApi');
 const Order = require('./models/Order');
 const User = require('./models/User');
+const Proof = require('./models/Proof');
 const { getDiscordGatewayStatus } = require('./config/discordGateway');
 const { encryptSecret, decryptSecret } = require('./utils/tokenCrypto');
 const { formatDeliveredUnitsLabel } = require('./utils/itemQuantityDisplay');
@@ -685,6 +686,41 @@ const buildVouchContent = (order) => {
     return truncateText(`${mention}\n${itemsText}\nPlease leave us a vouch ❤️`, 1900);
 };
 
+const buildProofItems = (items) => {
+    if (!Array.isArray(items)) return [];
+    return items
+        .map((item) => {
+            const name = String(item?.name || '').trim();
+            if (!name) return null;
+            const packQuantity = Math.max(1, Number(item?.quantity) || 1);
+            const deliveredLabel = formatDeliveredUnitsLabel(name, packQuantity);
+            const lineTotal = Math.max(0, Number(item?.price) || 0) * packQuantity;
+            return {
+                name,
+                packQuantity,
+                deliveredLabel,
+                lineTotal: Number.isFinite(lineTotal) ? Number(lineTotal.toFixed(2)) : 0
+            };
+        })
+        .filter(Boolean);
+};
+
+const saveProofRecord = async ({ order, imageUrls, vouchMessageIds = [] }) => {
+    const images = Array.from(new Set((Array.isArray(imageUrls) ? imageUrls : []).filter(Boolean)));
+    if (!order || images.length === 0) return;
+
+    await Proof.create({
+        orderId: String(order?.orderId || ''),
+        discordId: String(order?.discordId || ''),
+        discordUsername: String(order?.discordUsername || ''),
+        totalAmount: Number(order?.totalAmount || 0),
+        items: buildProofItems(order?.items),
+        imageUrls: images,
+        vouchMessageIds: Array.from(new Set((Array.isArray(vouchMessageIds) ? vouchMessageIds : []).filter(Boolean))),
+        source: 'auto_vouch'
+    });
+};
+
 const sendAutoVouchFromTicketImages = async ({ order, imageUrls }) => {
     const vouchChannelId = getVouchChannelId();
     const uniqueImageUrls = Array.from(
@@ -696,6 +732,7 @@ const sendAutoVouchFromTicketImages = async ({ order, imageUrls }) => {
     );
     if (!isSnowflake(vouchChannelId) || uniqueImageUrls.length === 0) return false;
 
+    const sentMessageIds = [];
     for (let index = 0; index < uniqueImageUrls.length; index += 10) {
         const imageBatch = uniqueImageUrls.slice(index, index + 10);
         const embeds = imageBatch.map((url) => new EmbedBuilder()
@@ -708,7 +745,7 @@ const sendAutoVouchFromTicketImages = async ({ order, imageUrls }) => {
             payload.content = buildVouchContent(order);
         }
 
-        await botRequest({
+        const sent = await botRequest({
             method: 'post',
             path: `/channels/${vouchChannelId}/messages`,
             data: payload,
@@ -716,6 +753,20 @@ const sendAutoVouchFromTicketImages = async ({ order, imageUrls }) => {
             retry: true,
             defaultCode: 'DISCORD_VOUCH_SEND_FAILED'
         });
+        const messageId = String(sent?.data?.id || '').trim();
+        if (isSnowflake(messageId)) {
+            sentMessageIds.push(messageId);
+        }
+    }
+
+    try {
+        await saveProofRecord({
+            order,
+            imageUrls: uniqueImageUrls,
+            vouchMessageIds: sentMessageIds
+        });
+    } catch (error) {
+        console.error('Save proof record error:', error?.message || error);
     }
 
     return true;

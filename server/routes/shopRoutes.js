@@ -6,6 +6,7 @@ const Product = require('../models/Product');
 const Order = require('../models/Order');
 const User = require('../models/User');
 const Counter = require('../models/Counter');
+const Proof = require('../models/Proof');
 const {
     createOrderTicket,
     createPayPalFFTicket,
@@ -982,6 +983,41 @@ router.get('/products', async (req, res) => {
         return res.json(normalizedProducts);
     } catch (err) {
         return res.status(500).json({ error: err.message });
+    }
+});
+
+router.get('/proofs', async (req, res) => {
+    try {
+        const page = Math.max(1, Number(req.query?.page) || 1);
+        const limit = Math.min(60, Math.max(1, Number(req.query?.limit) || 24));
+        const skip = (page - 1) * limit;
+
+        const proofs = await Proof.find({})
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit + 1)
+            .lean();
+
+        const hasMore = proofs.length > limit;
+        const pageItems = hasMore ? proofs.slice(0, limit) : proofs;
+
+        return res.json({
+            page,
+            limit,
+            hasMore,
+            items: pageItems.map((proof) => ({
+                id: String(proof?._id || ''),
+                orderId: String(proof?.orderId || ''),
+                discordUsername: String(proof?.discordUsername || ''),
+                totalAmount: Number(proof?.totalAmount || 0),
+                items: Array.isArray(proof?.items) ? proof.items : [],
+                imageUrls: Array.isArray(proof?.imageUrls) ? proof.imageUrls : [],
+                createdAt: proof?.createdAt || null
+            }))
+        });
+    } catch (error) {
+        console.error('Proofs fetch error:', error);
+        return res.status(500).json({ error: 'Failed to fetch proofs' });
     }
 });
 

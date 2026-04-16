@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import ProductCard from '../components/ProductCard';
 import ProductDetailModal from '../components/ProductDetailModal';
@@ -18,7 +19,7 @@ const SORT_OPTIONS = [
 ];
 
 const CACHE_KEY = 'productsCache';
-const DISCORD_INVITE_URL = import.meta.env.VITE_DISCORD_INVITE_URL || 'https://discord.gg/T4A4ANp9';
+const DISCORD_VOUCH_URL = String(import.meta.env.VITE_DISCORD_VOUCH_URL || '').trim();
 const normalizeCategory = (value) => {
   const raw = String(value || '').trim();
   if (!raw) return 'Other';
@@ -47,6 +48,7 @@ const getCachedProducts = () => {
 };
 
 const Home = () => {
+  const navigate = useNavigate();
   const [products, setProducts] = useState(() => getCachedProducts());
   const [activeGame, setActiveGame] = useState('Sailor Piece');
   const [activeCategory, setActiveCategory] = useState('All');
@@ -56,6 +58,7 @@ const Home = () => {
   const [loadError, setLoadError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('none');
+  const [showProofNotice, setShowProofNotice] = useState(true);
 
   useEffect(() => {
     const cachedProducts = getCachedProducts();
@@ -105,23 +108,6 @@ const Home = () => {
 
   return (
     <div className="min-h-screen bg-black pt-20 md:pt-24 pb-32">
-      <div className="max-w-7xl mx-auto px-4 mb-4 md:mb-10">
-        <div className="bg-[#1c1c1e] border border-[#2c2c2e] rounded-lg md:rounded-xl p-3 md:p-4 flex items-center justify-between shadow-lg sticky top-16 z-[45] md:top-20 md:z-[45]">
-          <div className="flex items-center gap-3">
-            <span className="relative flex h-3 w-3">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
-            </span>
-            <p className="text-sm font-medium text-gray-200">
-              We moved to a new Discord Server!
-            </p>
-          </div>
-          <a href={DISCORD_INVITE_URL} target="_blank" rel="noreferrer" className="text-sm text-[#2997ff] font-bold hover:underline">
-            Join Now &rarr;
-          </a>
-        </div>
-      </div>
-
       <div className="max-w-7xl mx-auto px-3 sm:px-4">
         <div className="mb-8 md:mb-10">
           <div className="relative max-w-xl mx-auto">
@@ -208,6 +194,46 @@ const Home = () => {
           product={selectedProduct}
           onClose={() => setSelectedProduct(null)}
         />
+      )}
+
+      {showProofNotice && (
+        <div className="fixed inset-0 z-[85] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-xl rounded-2xl border border-[#27344f] bg-[#0f1422] p-5 md:p-6 shadow-[0_25px_70px_rgba(0,0,0,0.45)]">
+            <h3 className="text-xl md:text-2xl font-black text-white mb-2"><strong>Order Proof</strong></h3>
+            <p className="text-sm md:text-base text-gray-300 leading-relaxed">
+              All completed orders are logged and supported with photo proof. Feel free to check our delivery history for clear and authentic records.
+            </p>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowProofNotice(false);
+                  navigate('/proofs');
+                }}
+                className="btn-press px-4 py-2 rounded-xl bg-[#11b7d6] hover:bg-[#0ea2be] text-white text-sm font-semibold"
+              >
+                Open Proofs
+              </button>
+              {DISCORD_VOUCH_URL && (
+                <a
+                  href={DISCORD_VOUCH_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="btn-press px-4 py-2 rounded-xl bg-[#223150] hover:bg-[#2c3e64] text-white text-sm font-semibold"
+                >
+                  Discord Vouch
+                </a>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowProofNotice(false)}
+                className="btn-press px-4 py-2 rounded-xl bg-[#1a2030] hover:bg-[#252f45] text-gray-200 text-sm font-semibold"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

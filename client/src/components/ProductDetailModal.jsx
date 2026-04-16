@@ -1,6 +1,8 @@
 import { useContext, useEffect, useState } from 'react';
 import { ShopContext } from '../context/ShopContext';
 import { XMarkIcon, CheckCircleIcon, PlusIcon, MinusIcon } from '@heroicons/react/24/outline';
+import { formatCardPrice } from '../utils/priceFormatting';
+import { formatDeliveredUnitsLabel } from '../utils/itemQuantityDisplay';
 
 const MAX_UI_QUANTITY = 100000;
 
@@ -17,6 +19,8 @@ const ProductDetailModal = ({ product, onClose }) => {
   if (!product) return null;
   const isSetCategory = String(product?.category || '').trim().toLowerCase() === 'sets';
   const productImageSrc = `/products/${encodeURIComponent(String(product.image || ''))}`;
+  const displayPrice = formatCardPrice(product?.originalPriceString, product?.price);
+  const itemDescription = `${displayPrice} for ${formatDeliveredUnitsLabel(product?.name, 1)}`;
 
   const normalizeQuantity = (value, fallback = 1) => {
     const parsed = Number(value);
@@ -73,7 +77,7 @@ const ProductDetailModal = ({ product, onClose }) => {
         onClick={onClose}
       ></div>
 
-      <div className="relative bg-[var(--color-bg-secondary)] w-full max-w-3xl rounded-3xl shadow-2xl overflow-hidden border border-gray-800 animate-pop-in flex flex-col md:flex-row">
+      <div className="relative bg-[var(--color-bg-secondary)] w-full max-w-3xl md:max-w-[67rem] rounded-3xl shadow-2xl overflow-hidden border border-gray-800 animate-pop-in flex flex-col md:flex-row">
         <button
           onClick={onClose}
           className="btn-press absolute top-4 right-4 z-10 p-2 bg-black/50 rounded-full text-white hover:bg-black/80 transition"
@@ -101,6 +105,7 @@ const ProductDetailModal = ({ product, onClose }) => {
           <h2 className="text-2xl md:text-3xl font-bold text-white mb-4 leading-tight">
             {product.name}
           </h2>
+          <p className="text-[#8aa5d8] text-sm mb-4">{itemDescription}</p>
 
           <div className="space-y-2 mb-6">
             <div className="flex items-center gap-2 text-sm text-gray-300">
