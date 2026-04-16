@@ -2,7 +2,7 @@ const ITEM_BASE_UNITS = new Map([
   ['abyss-sigil', 100000],
   ['aura-crate', 50],
   ['broken-sword', 100000],
-  ['clan-reroll', 50000],
+  ['clan-reroll', 25000],
   ['cosmetic-crate', 70],
   ['dark-grail', 100000],
   ['frost-relic', 5000],

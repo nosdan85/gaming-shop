@@ -68,9 +68,6 @@ const ProofsPage = () => {
           <p className="mt-4 text-gray-300 max-w-3xl mx-auto text-sm md:text-xl">
             Every completed order is logged with image proof. Browse clear, authentic delivery records from our real orders.
           </p>
-          <p className="mt-3 text-gray-400 text-sm md:text-base">
-            <span className="font-semibold text-white">{proofs.length}</span> proof entries loaded
-          </p>
           {DISCORD_VOUCH_URL && (
             <a
               href={DISCORD_VOUCH_URL}

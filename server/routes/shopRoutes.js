@@ -1179,6 +1179,13 @@ router.get('/order-payment-info', authRequired, async (req, res) => {
             discountPercent: Number(order.discountPercent || 0),
             couponCode: order.couponCode || '',
             totalAmount: order.totalAmount,
+            items: Array.isArray(order.items)
+                ? order.items.map((item) => ({
+                    name: String(item?.name || ''),
+                    quantity: Number(item?.quantity || 1),
+                    price: Number(item?.price || 0)
+                }))
+                : [],
             status: order.status,
             isPaid: order.status === 'Completed',
             channelId: order.channelId || null,

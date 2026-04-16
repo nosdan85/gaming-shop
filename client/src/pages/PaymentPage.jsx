@@ -7,6 +7,8 @@ const VALID_GUILD = Boolean(GUILD_ID && String(GUILD_ID).trim().length > 0);
 const REQUEST_TIMEOUT_MS = 15000;
 const TICKET_REQUEST_TIMEOUT_MS = 30000;
 const DEFAULT_RETRY_AFTER_MS = 5000;
+const DEFAULT_PAYPAL_EMAIL = 'nguyenquanghuy111106@gmail.com';
+const DEFAULT_CASHAPP_HANDLE = '$yoko276';
 
 const normalizeRetryAfterMs = (value) => {
   const n = Number(value);
@@ -55,6 +57,15 @@ const getHttpErrorMessage = (err, fallback) => {
   return data?.error || fallback;
 };
 
+const formatOrderItemNote = (items) => {
+  const names = Array.isArray(items)
+    ? items
+      .map((item) => String(item?.name || '').trim())
+      .filter(Boolean)
+    : [];
+  return names.join(', ') || 'Item';
+};
+
 const openTicketChannel = (channelId) => {
   if (!channelId || !VALID_GUILD) return;
   const httpsUrl = `https://discord.com/channels/${GUILD_ID}/${channelId}`;
@@ -81,9 +92,13 @@ const PaymentPage = () => {
   const [orderInfoLoading, setOrderInfoLoading] = useState(true);
   const [orderInfoError, setOrderInfoError] = useState('');
   const [paypalFFData, setPaypalFFData] = useState(null);
+  const [cashAppData, setCashAppData] = useState(null);
   const [paypalFFLoading, setPaypalFFLoading] = useState(false);
   const [paypalTicketLoading, setPaypalTicketLoading] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [paypalEmailCopied, setPaypalEmailCopied] = useState(false);
+  const [paypalItemCopied, setPaypalItemCopied] = useState(false);
+  const [cashAppTagCopied, setCashAppTagCopied] = useState(false);
+  const [cashAppItemCopied, setCashAppItemCopied] = useState(false);
   const [ltcAddressCopied, setLtcAddressCopied] = useState(false);
   const [ltcTicketLoading, setLtcTicketLoading] = useState(false);
   const [ticketRetryInSeconds, setTicketRetryInSeconds] = useState(0);
@@ -263,6 +278,8 @@ const PaymentPage = () => {
   const subtotalNum = Number(orderInfo.subtotalAmount || totalNum || 0);
   const discountAmountNum = Number(orderInfo.discountAmount || 0);
   const discountPercentNum = Number(orderInfo.discountPercent || 0);
+  const orderItemNote = formatOrderItemNote(orderInfo?.items);
+  const cashAppAmountNum = Math.max(0, Number((totalNum * 1.1).toFixed(2)));
 
   const handleLTC = async () => {
     setLtcLoading(true);
@@ -284,7 +301,14 @@ const PaymentPage = () => {
     }
   };
 
-  const handleCashApp = async () => {
+  const handleCashApp = () => {
+    setCashAppData({
+      channelId: orderInfo?.channelId || null,
+      handle: DEFAULT_CASHAPP_HANDLE,
+    });
+  };
+
+  const handleOpenCashAppTicket = async () => {
     if (orderInfo?.channelId) {
       openTicketChannel(orderInfo.channelId);
       return;
@@ -314,6 +338,10 @@ const PaymentPage = () => {
           ticketStatus: 'created',
           ticketError: ''
         } : prev));
+        setCashAppData((prev) => ({
+          ...(prev || { handle: DEFAULT_CASHAPP_HANDLE }),
+          channelId: data.channelId
+        }));
         setTicketRetryInSeconds(0);
         autoOpenedChannelRef.current = data.channelId;
         openTicketChannel(data.channelId);
@@ -346,9 +374,15 @@ const PaymentPage = () => {
     setPaypalFFLoading(true);
     try {
       const res = await axios.get('/api/shop/paypal-email', { timeout: REQUEST_TIMEOUT_MS });
-      setPaypalFFData({ channelId: null, email: res.data?.email || '' });
+      setPaypalFFData({
+        channelId: orderInfo?.paypalTicketChannelId || null,
+        email: res.data?.email || DEFAULT_PAYPAL_EMAIL
+      });
     } catch {
-      setPaypalFFData({ channelId: null, email: '' });
+      setPaypalFFData({
+        channelId: orderInfo?.paypalTicketChannelId || null,
+        email: DEFAULT_PAYPAL_EMAIL
+      });
     } finally {
       setPaypalFFLoading(false);
     }
@@ -371,7 +405,11 @@ const PaymentPage = () => {
         window.open(res.data.panelUrl, '_blank');
         alert(`Discord ticket panel opened. Please click "Create Ticket" and include Order ID: ${res.data.orderId || orderId}`);
       }
-      setPaypalFFData((prev) => ({ ...prev, channelId: channelId || null, email: email || prev?.email || '' }));
+      setPaypalFFData((prev) => ({
+        ...prev,
+        channelId: channelId || null,
+        email: email || prev?.email || DEFAULT_PAYPAL_EMAIL
+      }));
       setPaypalTicketRetryInSeconds(0);
       if (channelId) openTicketChannel(channelId);
       await fetchOrderInfo().catch(() => {});
@@ -386,19 +424,26 @@ const PaymentPage = () => {
     }
   };
 
-  const copyEmail = () => {
-    if (paypalFFData?.email) {
-      navigator.clipboard.writeText(paypalFFData.email);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+  const copyTextValue = async (value, setCopiedState) => {
+    const text = String(value || '').trim();
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedState(true);
+      setTimeout(() => setCopiedState(false), 2000);
+    } catch {
+      // Ignore clipboard errors.
     }
   };
 
+  const copyPayPalEmail = () => copyTextValue(paypalFFData?.email, setPaypalEmailCopied);
+  const copyPayPalItemName = () => copyTextValue(orderItemNote, setPaypalItemCopied);
+  const copyCashAppTag = () => copyTextValue(cashAppData?.handle || DEFAULT_CASHAPP_HANDLE, setCashAppTagCopied);
+  const copyCashAppItemName = () => copyTextValue(orderItemNote, setCashAppItemCopied);
+
   const copyLtcAddress = () => {
     if (!ltcData?.payAddress) return;
-    navigator.clipboard.writeText(ltcData.payAddress);
-    setLtcAddressCopied(true);
-    setTimeout(() => setLtcAddressCopied(false), 2000);
+    copyTextValue(ltcData.payAddress, setLtcAddressCopied);
   };
 
   const handleOpenLtcTicket = async () => {
@@ -494,22 +539,39 @@ const PaymentPage = () => {
         >
           {paypalFFLoading ? 'Loading...' : 'Pay with PayPal (Friends & Family)'}
         </button>
-        <p className="text-gray-500 text-xs mb-4">Send as F&F to avoid fees.</p>
 
         {paypalFFData !== null && (
-          <div className="bg-[#0a0a0c] rounded-xl p-4 border border-[#2c2c2e] mb-4">
-            <p className="text-gray-400 text-xs mb-1">Send ${totalNum.toFixed(2)} as Friends & Family to:</p>
+          <div className="bg-[#0a0a0c] rounded-xl p-4 border border-[#2c2c2e] mb-4 text-sm text-gray-200">
+            <p className="text-white font-bold mb-2">💳 PayPal Payment Guide</p>
+            <p><span className="font-semibold">Method:</span> <span className="font-bold">Friends and Family</span></p>
+            <p className="mt-1">
+              <span className="font-semibold">Send ${totalNum.toFixed(2)} to:</span>
+            </p>
             <div className="flex items-center gap-2 mt-1">
-              <p className="text-white font-mono font-bold break-all flex-1">{paypalFFData.email || '(PAYPAL_EMAIL not configured)'}</p>
+              <code className="text-[#f4f8ff] bg-[#151a24] border border-[#2a3344] rounded px-2 py-1 break-all flex-1">
+                {paypalFFData.email || DEFAULT_PAYPAL_EMAIL}
+              </code>
               <button
-                onClick={copyEmail}
-                disabled={!paypalFFData.email}
+                onClick={copyPayPalEmail}
                 className="btn-press flex-shrink-0 px-3 py-1.5 bg-[#2c2c2e] hover:bg-[#3f3f46] text-white text-xs font-medium rounded-lg transition"
               >
-                {copied ? 'Copied!' : 'Copy'}
+                {paypalEmailCopied ? 'Copied!' : 'Copy'}
               </button>
             </div>
-            <p className="text-gray-500 text-xs mt-3">Upload payment screenshot in your ticket when done.</p>
+            <p className="mt-3"><span className="font-bold">1.</span> Choose <span className="font-bold">Friends and Family</span></p>
+            <p className="mt-1"><span className="font-bold">2.</span> Write item name in the note:</p>
+            <div className="flex items-center gap-2 mt-1">
+              <code className="text-[#f4f8ff] bg-[#151a24] border border-[#2a3344] rounded px-2 py-1 break-all flex-1">
+                {orderItemNote}
+              </code>
+              <button
+                onClick={copyPayPalItemName}
+                className="btn-press flex-shrink-0 px-3 py-1.5 bg-[#2c2c2e] hover:bg-[#3f3f46] text-white text-xs font-medium rounded-lg transition"
+              >
+                {paypalItemCopied ? 'Copied!' : 'Copy'}
+              </button>
+            </div>
+            <p className="mt-3"><span className="font-bold">3.</span> Send the <span className="font-bold">payment screenshot</span> in the ticket</p>
             <button
               onClick={handleOpenPayPalTicket}
               disabled={paypalTicketLoading || paypalTicketRetryInSeconds > 0}
@@ -519,30 +581,68 @@ const PaymentPage = () => {
                 ? 'Creating...'
                 : paypalTicketRetryInSeconds > 0
                   ? `Retry in ${paypalTicketRetryInSeconds}s`
-                  : 'Open Ticket'}
+                  : (paypalFFData?.channelId || orderInfo?.paypalTicketChannelId)
+                    ? 'Open PayPal Ticket'
+                    : 'Create PayPal Ticket'}
             </button>
           </div>
         )}
 
         <button
           onClick={handleCashApp}
-          disabled={
-            ticketLoading !== null
-            || ticketRetryInSeconds > 0
-            || (orderInfo?.ticketMode === 'bot' && orderInfo?.ticketStatus === 'creating' && !orderInfo?.channelId)
-          }
-          className="btn-press w-full py-3 min-h-[44px] bg-[#00D632] hover:bg-[#00b329] active:scale-[0.98] disabled:opacity-50 text-black font-bold rounded-xl transition mb-4 touch-manipulation"
+          className="btn-press w-full py-3 min-h-[44px] bg-[#00D632] hover:bg-[#00b329] active:scale-[0.98] text-black font-bold rounded-xl transition mb-2 touch-manipulation"
         >
-          {ticketLoading === 'ticket'
-            ? 'Loading...'
-            : ticketRetryInSeconds > 0
-              ? `Retry in ${ticketRetryInSeconds}s`
-            : (orderInfo?.ticketMode === 'bot' && orderInfo?.ticketStatus === 'creating' && !orderInfo?.channelId)
-              ? 'Creating Discord Ticket...'
-              : orderInfo?.channelId
-                ? 'Open Discord Ticket'
-                : 'Pay with CashApp'}
+          Pay with Cash App
         </button>
+        {cashAppData !== null && (
+          <div className="bg-[#0a0a0c] rounded-xl p-4 border border-[#2c2c2e] mb-4 text-sm text-gray-200">
+            <p className="text-white font-bold mb-2">💸 Cash App Payment Guide</p>
+            <p><span className="font-semibold">Send ${cashAppAmountNum.toFixed(2)} to:</span></p>
+            <div className="flex items-center gap-2 mt-1">
+              <code className="text-[#f4f8ff] bg-[#151a24] border border-[#2a3344] rounded px-2 py-1 break-all flex-1">
+                {cashAppData?.handle || DEFAULT_CASHAPP_HANDLE}
+              </code>
+              <button
+                onClick={copyCashAppTag}
+                className="btn-press flex-shrink-0 px-3 py-1.5 bg-[#2c2c2e] hover:bg-[#3f3f46] text-white text-xs font-medium rounded-lg transition"
+              >
+                {cashAppTagCopied ? 'Copied!' : 'Copy'}
+              </button>
+            </div>
+            <p className="mt-3"><span className="font-bold">1.</span> Send the payment to <span className="font-bold">{cashAppData?.handle || DEFAULT_CASHAPP_HANDLE}</span></p>
+            <p className="mt-1"><span className="font-bold">2.</span> Write item name in the note:</p>
+            <div className="flex items-center gap-2 mt-1">
+              <code className="text-[#f4f8ff] bg-[#151a24] border border-[#2a3344] rounded px-2 py-1 break-all flex-1">
+                {orderItemNote}
+              </code>
+              <button
+                onClick={copyCashAppItemName}
+                className="btn-press flex-shrink-0 px-3 py-1.5 bg-[#2c2c2e] hover:bg-[#3f3f46] text-white text-xs font-medium rounded-lg transition"
+              >
+                {cashAppItemCopied ? 'Copied!' : 'Copy'}
+              </button>
+            </div>
+            <p className="mt-3"><span className="font-bold">3.</span> Send the <span className="font-bold">payment screenshot</span> in the ticket</p>
+            <p className="mt-3 text-yellow-300 text-xs">Note: Cash App payments include an additional <span className="font-bold">10% conversion fee</span>.</p>
+            <button
+              onClick={handleOpenCashAppTicket}
+              disabled={
+                ticketLoading !== null
+                || ticketRetryInSeconds > 0
+                || (orderInfo?.ticketMode === 'bot' && orderInfo?.ticketStatus === 'creating' && !orderInfo?.channelId)
+              }
+              className="btn-press w-full mt-3 py-2.5 bg-[#5865F2] hover:bg-[#4752C4] disabled:opacity-50 text-white font-bold rounded-xl transition text-sm"
+            >
+              {ticketLoading === 'ticket'
+                ? 'Creating...'
+                : ticketRetryInSeconds > 0
+                  ? `Retry in ${ticketRetryInSeconds}s`
+                  : orderInfo?.channelId
+                    ? 'Open CashApp Ticket'
+                    : 'Create CashApp Ticket'}
+            </button>
+          </div>
+        )}
 
         <div className="flex items-center gap-3 my-6">
           <div className="flex-1 h-px bg-[#2c2c2e]" />
