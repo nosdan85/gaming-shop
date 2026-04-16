@@ -19,7 +19,16 @@ const SORT_OPTIONS = [
 ];
 
 const CACHE_KEY = 'productsCache';
+const ORDER_PROOF_NOTICE_SEEN_KEY = 'orderProofNoticeSeenV1';
 const DISCORD_VOUCH_URL = String(import.meta.env.VITE_DISCORD_VOUCH_URL || '').trim();
+const shouldShowProofNoticeOnLoad = () => {
+  if (typeof window === 'undefined') return true;
+  try {
+    return localStorage.getItem(ORDER_PROOF_NOTICE_SEEN_KEY) !== '1';
+  } catch {
+    return true;
+  }
+};
 const normalizeCategory = (value) => {
   const raw = String(value || '').trim();
   if (!raw) return 'Other';
@@ -58,7 +67,16 @@ const Home = () => {
   const [loadError, setLoadError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('none');
-  const [showProofNotice, setShowProofNotice] = useState(true);
+  const [showProofNotice, setShowProofNotice] = useState(() => shouldShowProofNoticeOnLoad());
+
+  const closeProofNotice = () => {
+    setShowProofNotice(false);
+    try {
+      localStorage.setItem(ORDER_PROOF_NOTICE_SEEN_KEY, '1');
+    } catch (_) {
+      // Ignore storage write failures.
+    }
+  };
 
   useEffect(() => {
     const cachedProducts = getCachedProducts();
@@ -207,7 +225,7 @@ const Home = () => {
               <button
                 type="button"
                 onClick={() => {
-                  setShowProofNotice(false);
+                  closeProofNotice();
                   navigate('/proofs');
                 }}
                 className="btn-press px-4 py-2 rounded-xl bg-[#11b7d6] hover:bg-[#0ea2be] text-white text-sm font-semibold"
@@ -226,7 +244,7 @@ const Home = () => {
               )}
               <button
                 type="button"
-                onClick={() => setShowProofNotice(false)}
+                onClick={closeProofNotice}
                 className="btn-press px-4 py-2 rounded-xl bg-[#1a2030] hover:bg-[#252f45] text-gray-200 text-sm font-semibold"
               >
                 Close

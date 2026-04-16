@@ -106,7 +106,7 @@ const ProofsPage = () => {
                   <button
                     type="button"
                     onClick={() => setPreview(proof)}
-                    className="w-full block text-left"
+                    className="w-full block text-left btn-press"
                   >
                     <div className="relative h-56 bg-[#090b13]">
                       {firstImage ? (
@@ -127,22 +127,29 @@ const ProofsPage = () => {
                       )}
                     </div>
                   </button>
-                  <div className="p-4">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="font-bold text-white text-sm truncate">{proof.orderId || 'Order'}</p>
-                      <p className="text-[#7ef8bc] font-semibold text-sm">${Number(proof?.totalAmount || 0).toFixed(2)}</p>
-                    </div>
-                    <div className="mt-2 space-y-1">
+                  <div className="p-4 space-y-3">
+                    <div className="space-y-2">
                       {items.slice(0, 3).map((item, idx) => (
-                        <p key={`${proof.id}-${idx}`} className="text-xs text-gray-300 truncate">
-                          {item.deliveredLabel || 'x0'} {item.name}
-                        </p>
+                        <div key={`${proof.id}-${idx}`} className="flex items-start justify-between gap-3">
+                          <p className="text-sm text-white truncate font-bold">
+                            {item.deliveredLabel || 'x0'} {item.name}
+                          </p>
+                          <p className="text-sm text-[#7ef8bc] font-semibold shrink-0">
+                            ${Number(item?.lineTotal || 0).toFixed(2)}
+                          </p>
+                        </div>
                       ))}
                       {items.length > 3 && (
                         <p className="text-xs text-gray-500">+{items.length - 3} more</p>
                       )}
+                      {items.length === 0 && (
+                        <div className="flex items-start justify-between gap-3">
+                          <p className="text-sm text-white font-bold">Unknown item</p>
+                          <p className="text-sm text-[#7ef8bc] font-semibold">${Number(proof?.totalAmount || 0).toFixed(2)}</p>
+                        </div>
+                      )}
                     </div>
-                    <p className="mt-3 text-xs text-gray-500 flex items-center gap-1">
+                    <p className="text-xs text-gray-500 flex items-center gap-1">
                       <ClockIcon className="w-3.5 h-3.5" />
                       {formatAgo(proof?.createdAt)}
                     </p>
@@ -157,11 +164,11 @@ const ProofsPage = () => {
       {preview && (
         <div className="fixed inset-0 z-[90] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="absolute inset-0" onClick={() => setPreview(null)} />
-          <div className="relative w-full max-w-6xl bg-[#0f1320] border border-[#24314d] rounded-2xl overflow-hidden">
+          <div className="relative w-full max-w-6xl bg-[#0f1320] border border-[#24314d] rounded-2xl overflow-hidden proof-modal-in">
             <button
               type="button"
               onClick={() => setPreview(null)}
-              className="absolute top-3 right-3 z-10 px-3 py-1 rounded-full bg-black/60 text-white text-sm"
+              className="absolute top-3 right-3 z-10 px-3 py-1 rounded-full bg-black/60 text-white text-sm btn-press"
             >
               Close
             </button>
@@ -169,7 +176,12 @@ const ProofsPage = () => {
             <div className="md:grid md:grid-cols-[1.5fr_1fr]">
               <div className="relative min-h-[300px] bg-black flex items-center justify-center">
                 {activeImage ? (
-                  <img src={activeImage} alt="Proof preview" className="max-h-[72vh] w-auto max-w-full object-contain" />
+                  <img
+                    key={`preview-image-${preview?.id || 'proof'}-${previewIndex}`}
+                    src={activeImage}
+                    alt="Proof preview"
+                    className="max-h-[72vh] w-auto max-w-full object-contain proof-image-in"
+                  />
                 ) : (
                   <div className="text-gray-500 text-sm">No image</div>
                 )}
@@ -195,12 +207,12 @@ const ProofsPage = () => {
               </div>
 
               <div className="p-5 border-t md:border-t-0 md:border-l border-[#24314d]">
-                <h3 className="text-white font-bold text-lg">{preview.orderId || 'Order Proof'}</h3>
+                <h3 className="text-white font-bold text-lg">Order Proof</h3>
                 <p className="text-[#7ef8bc] font-semibold mt-1">${Number(preview?.totalAmount || 0).toFixed(2)}</p>
                 <div className="mt-4 space-y-2">
                   {(Array.isArray(preview?.items) ? preview.items : []).map((item, idx) => (
                     <div key={`preview-${idx}`} className="rounded-lg bg-[#0a0e19] border border-[#1f2a43] px-3 py-2 text-sm">
-                      <p className="text-white">{item.deliveredLabel || 'x0'} {item.name}</p>
+                      <p className="text-white font-bold">{item.deliveredLabel || 'x0'} {item.name}</p>
                       <p className="text-gray-400 text-xs">${Number(item?.lineTotal || 0).toFixed(2)}</p>
                     </div>
                   ))}

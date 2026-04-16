@@ -147,6 +147,36 @@ body {
   animation: productRevealUp 0.42s cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
 }
 
+@keyframes proofModalIn {
+  0% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes proofImageIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.proof-modal-in {
+  animation: proofModalIn 0.24s ease-out forwards;
+}
+
+.proof-image-in {
+  animation: proofImageIn 0.22s ease-out forwards;
+}
+
 @media (max-width: 768px) {
   .products-loader {
     padding: 56px 0;

@@ -90,6 +90,8 @@ const normalizeEnvValue = (value) => {
 };
 
 const isSnowflake = (value) => SNOWFLAKE_PATTERN.test(String(value || '').trim());
+const getPayPalPaymentEmail = () => normalizeEnvValue(process.env.PAYPAL_PAYMENT_EMAIL) || 'nguyenquanghuy111106@gmail.com';
+const getCashAppHandle = () => normalizeEnvValue(process.env.CASHAPP_HANDLE) || '$yoko276';
 const getBotToken = () => normalizeEnvValue(process.env.DISCORD_BOT_TOKEN);
 const getGuildId = () => normalizeEnvValue(process.env.DISCORD_GUILD_ID);
 const getOwnerRoleId = () => normalizeEnvValue(process.env.DISCORD_OWNER_ROLE_ID);
@@ -181,6 +183,15 @@ const formatOrderItems = (items) => {
         : [];
     const joined = lines.join('\n') || '-';
     return truncateText(joined, 1000);
+};
+
+const formatOrderItemNamesForNote = (items) => {
+    const names = Array.isArray(items)
+        ? items
+            .map((item) => String(item?.name || '').trim())
+            .filter(Boolean)
+        : [];
+    return truncateText(names.join(', ') || 'Item', 300);
 };
 
 const assertDiscordConfig = () => {
@@ -683,7 +694,8 @@ const formatVouchItems = (items) => {
 const buildVouchContent = (order) => {
     const mention = `<@${order?.discordId || ''}>`;
     const itemsText = formatVouchItems(order?.items);
-    return truncateText(`${mention}\n${itemsText}\nPlease leave us a vouch ❤️`, 1900);
+    const enjoyText = formatPurchasedItemsForDm(order?.items);
+    return truncateText(`${mention}\n${itemsText}\nEnjoy your ${enjoyText}\nPlease leave us a vouch \u2764\uFE0F`, 1900);
 };
 
 const buildProofItems = (items) => {
@@ -982,6 +994,43 @@ const buildOrderMention = (discordId) => {
     return `<@${discordId}>`;
 };
 
+const formatUsdAmount = (value) => `$${Number(value || 0).toFixed(2)}`;
+
+const buildPayPalGuideDescription = (order) => {
+    const amountText = formatUsdAmount(order?.totalAmount || 0);
+    const itemNote = formatOrderItemNamesForNote(order?.items);
+    const paypalEmail = getPayPalPaymentEmail();
+    return [
+        '# **\u{1F4B3} PayPal Payment Guide**',
+        '',
+        '**Method:** **Friends and Family**',
+        `**Send ${amountText} to:** \`${paypalEmail}\``,
+        '',
+        '**1.** Choose **Friends and Family**',
+        `**2.** Write \`${itemNote}\` in the note`,
+        '**3.** Send the **payment screenshot** in the ticket'
+    ].join('\n');
+};
+
+const buildCashAppGuideDescription = (order) => {
+    const baseTotal = Number(order?.totalAmount || 0);
+    const cashAppTotal = Math.max(0, baseTotal * 1.1);
+    const amountText = formatUsdAmount(cashAppTotal);
+    const cashAppHandle = getCashAppHandle();
+    const itemNote = formatOrderItemNamesForNote(order?.items);
+    return [
+        '# **\u{1F4B8} Cash App Payment Guide**',
+        '',
+        `**Send ${amountText} to:** \`${cashAppHandle}\``,
+        '',
+        `**1.** Send the payment to **${cashAppHandle}**`,
+        `**2.** Write \`${itemNote}\` in the note`,
+        '**3.** Send the **payment screenshot** in the ticket',
+        '',
+        '**Note:** Cash App payments will include an additional **10% conversion fee**.'
+    ].join('\n');
+};
+
 const createPayPalFFTicket = async (order, paypalSeq) => {
     const safeSeq = Number.isInteger(Number(paypalSeq)) ? Number(paypalSeq) : Date.now();
     const channelId = await createTicketChannel({
@@ -992,7 +1041,7 @@ const createPayPalFFTicket = async (order, paypalSeq) => {
     const embed = new EmbedBuilder()
         .setColor(0x003087)
         .setTitle(`PayPal F&F - Order ${order.orderId}`)
-        .setDescription(`Hello <@${order.discordId}>. Upload your PayPal payment screenshot here.`)
+        .setDescription(buildPayPalGuideDescription(order))
         .addFields(
             { name: 'Customer', value: order.discordUsername || `<@${order.discordId}>`, inline: true },
             { name: 'Total', value: `$${Number(order.totalAmount || 0).toFixed(2)}`, inline: true },
@@ -1116,9 +1165,7 @@ client.on('interactionCreate', async (interaction) => {
         const payEmbed = new EmbedBuilder()
             .setColor(0x000000)
             .setTitle('Pay via CashApp')
-            .setDescription(
-                `Amount: $${Number(order.totalAmount || 0).toFixed(2)}\nUpload your payment proof screenshot here.`
-            );
+            .setDescription(buildCashAppGuideDescription(order));
 
         if (!interaction.replied && !interaction.deferred) {
             await interaction.reply({ embeds: [payEmbed] });

@@ -6,6 +6,8 @@ import axios from 'axios';
 
 const PROOFS_EXTERNAL_URL = String(import.meta.env.VITE_PROOFS_URL || '').trim();
 const DISCORD_INVITE_URL = String(import.meta.env.VITE_DISCORD_INVITE_URL || '').trim();
+const DISCORD_VOUCH_URL = String(import.meta.env.VITE_DISCORD_VOUCH_URL || '').trim();
+const RESOLVED_DISCORD_URL = DISCORD_INVITE_URL || DISCORD_VOUCH_URL;
 
 const NavItem = ({ label, href, isExternal = false, onClick }) => {
   if (isExternal) {
@@ -58,14 +60,14 @@ const Navbar = () => {
     } else {
       links.push({ label: 'Proofs', href: '/proofs', isExternal: false });
     }
-    if (DISCORD_INVITE_URL) {
-      links.push({ label: 'Discord', href: DISCORD_INVITE_URL, isExternal: true });
+    if (user?.discordId && RESOLVED_DISCORD_URL) {
+      links.push({ label: 'Discord', href: RESOLVED_DISCORD_URL, isExternal: true });
     }
     if (isOwner) {
       links.push({ label: 'Admin', href: '/admin', isExternal: false });
     }
     return links;
-  }, [isOwner]);
+  }, [isOwner, user?.discordId]);
 
   return (
     <nav className="fixed top-0 left-0 w-full z-50 bg-[#09090b]/80 backdrop-blur-md border-b border-white/5">

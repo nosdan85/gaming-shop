@@ -77,7 +77,7 @@ const ProductDetailModal = ({ product, onClose }) => {
         onClick={onClose}
       ></div>
 
-      <div className="relative bg-[var(--color-bg-secondary)] w-full max-w-3xl md:max-w-[67rem] rounded-3xl shadow-2xl overflow-hidden border border-gray-800 animate-pop-in flex flex-col md:flex-row">
+      <div className="relative bg-[var(--color-bg-secondary)] w-full max-w-3xl md:max-w-[82rem] rounded-3xl shadow-2xl overflow-hidden border border-gray-800 animate-pop-in flex flex-col md:flex-row">
         <button
           onClick={onClose}
           className="btn-press absolute top-4 right-4 z-10 p-2 bg-black/50 rounded-full text-white hover:bg-black/80 transition"
@@ -85,8 +85,8 @@ const ProductDetailModal = ({ product, onClose }) => {
           <XMarkIcon className="w-6 h-6" />
         </button>
 
-        <div className="w-full md:w-1/2 bg-black/45 p-8 flex items-center justify-center">
-          <div className="w-full max-w-[300px] aspect-square bg-white rounded-2xl border border-[#dbe1ef] shadow-[0_12px_26px_rgba(255,255,255,0.10)] p-4 flex items-center justify-center">
+        <div className="w-full md:w-[56%] bg-black/45 p-8 md:p-10 flex items-center justify-center">
+          <div className="w-full max-w-[300px] md:max-w-[430px] aspect-square bg-white rounded-2xl border border-[#dbe1ef] shadow-[0_12px_26px_rgba(255,255,255,0.10)] p-4 md:p-5 flex items-center justify-center">
             <img
               src={productImageSrc}
               alt={product.name}
@@ -98,7 +98,7 @@ const ProductDetailModal = ({ product, onClose }) => {
           </div>
         </div>
 
-        <div className="w-full md:w-1/2 p-6 md:p-8 flex flex-col">
+        <div className="w-full md:w-[44%] p-6 md:p-10 flex flex-col">
           <p className="text-[var(--color-accent)] text-xs font-bold uppercase tracking-wider mb-2">
             {product.category}
           </p>
