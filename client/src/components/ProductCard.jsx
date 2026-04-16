@@ -100,6 +100,9 @@ const ProductCard = ({ product, onOpenDetail }) => {
           <img
             src={productImageSrc}
             alt={product.name}
+            loading="lazy"
+            decoding="async"
+            fetchPriority="low"
             className={`w-full h-full object-contain transition-transform duration-400 ${isSetCategory ? 'scale-[1.10] group-hover:scale-[1.17]' : 'group-hover:scale-105'}`}
             onError={() => {
               setImageVariantIndex((prev) => {

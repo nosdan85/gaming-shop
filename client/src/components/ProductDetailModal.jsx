@@ -86,6 +86,8 @@ const ProductDetailModal = ({ product, onClose }) => {
             <img
               src={productImageSrc}
               alt={product.name}
+              loading="eager"
+              decoding="async"
               className={`w-full h-full object-contain ${isSetCategory ? 'scale-[1.10]' : ''}`}
               onError={(e) => { e.currentTarget.src = '/products/aura-chest.png'; }}
             />

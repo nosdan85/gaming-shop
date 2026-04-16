@@ -3,6 +3,7 @@ import { ShopContext } from '../context/ShopContext';
 import { XMarkIcon, CheckBadgeIcon, UserCircleIcon, CurrencyDollarIcon, TicketIcon, ClipboardDocumentListIcon } from '@heroicons/react/24/outline';
 import axios from 'axios';
 import { formatCardPrice } from '../utils/priceFormatting';
+import { formatDeliveredUnitsLabel } from '../utils/itemQuantityDisplay';
 
 const BULK_DISCOUNT_THRESHOLD = 10;
 const MIN_CHECKOUT_TOTAL = 1;
@@ -77,7 +78,8 @@ const CartModal = () => {
   const user = contextUser || localUser;
   const cartRows = cart.map((item) => ({
     item,
-    pricing: getItemPricing(item)
+    pricing: getItemPricing(item),
+    deliveredLabel: formatDeliveredUnitsLabel(item?.name, item?.quantity)
   }));
   const totalValue = roundMoney(cartRows.reduce((acc, row) => acc + row.pricing.lineTotal, 0));
   const total = totalValue.toFixed(2);
@@ -247,21 +249,23 @@ const CartModal = () => {
             {cart.length === 0 ? (
               <div className="h-full flex items-center justify-center text-[#86868b]">Your bag is empty.</div>
             ) : (
-              cartRows.map(({ item, pricing }) => (
+              cartRows.map(({ item, pricing, deliveredLabel }) => (
                 <div key={item._id} className="flex gap-3 md:gap-4 p-3 md:p-4 rounded-2xl bg-[#1c1c1e]">
                     <img
                       src={`/products/${encodeURIComponent(String(item.image || ''))}`}
                       className="w-16 h-16 object-cover bg-[#2c2c2e] rounded-lg"
+                      loading="lazy"
+                      decoding="async"
                       onError={(e) => { e.currentTarget.src = '/products/aura-chest.png'; }}
                     />
                   <div className="flex-1">
                     <h3 className="font-medium text-white text-sm md:text-base line-clamp-1">{item.name}</h3>
                     <div className="flex justify-between mt-2 items-center">
                       <div className="min-w-0">
-                        <span className="text-gray-400 text-xs md:text-sm">{pricing.displayUnitPrice} | qty {item.quantity}</span>
+                        <span className="text-gray-400 text-xs md:text-sm">{pricing.displayUnitPrice} | {deliveredLabel}</span>
                         {pricing.bulkAppliedUnits > 0 && (
                           <p className="text-[10px] text-green-400 mt-1">
-                            Bulk applied for {pricing.bulkAppliedUnits} qty ({pricing.bulkDisplayUnitPrice})
+                            Bulk applied for {pricing.bulkAppliedUnits} packs ({pricing.bulkDisplayUnitPrice})
                           </p>
                         )}
                         <p className="text-[10px] text-gray-500 mt-1">Line total: ${pricing.lineTotal.toFixed(2)}</p>

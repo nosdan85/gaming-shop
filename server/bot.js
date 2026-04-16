@@ -11,6 +11,7 @@ const Order = require('./models/Order');
 const User = require('./models/User');
 const { getDiscordGatewayStatus } = require('./config/discordGateway');
 const { encryptSecret, decryptSecret } = require('./utils/tokenCrypto');
+const { formatDeliveredUnitsLabel } = require('./utils/itemQuantityDisplay');
 
 const DISCORD_API_BASE = 'https://discord.com/api/v10';
 const SNOWFLAKE_PATTERN = /^\d{16,22}$/;
@@ -171,7 +172,11 @@ const sanitizeChannelName = (raw, fallbackPrefix = 'ticket') => {
 
 const formatOrderItems = (items) => {
     const lines = Array.isArray(items)
-        ? items.map((item) => `${Number(item?.quantity) || 0}x ${String(item?.name || 'Item')}`)
+        ? items.map((item) => {
+            const quantity = Math.max(1, Number(item?.quantity) || 1);
+            const name = String(item?.name || 'Item').trim();
+            return `${formatDeliveredUnitsLabel(name, quantity)} ${name}`;
+        })
         : [];
     const joined = lines.join('\n') || '-';
     return truncateText(joined, 1000);
@@ -393,12 +398,13 @@ const isImageAttachment = (attachment) => {
     return IMAGE_EXTENSIONS.some((ext) => fileName.endsWith(ext));
 };
 
-const getFirstImageAttachment = (message) => {
-    if (!message?.attachments || typeof message.attachments.values !== 'function') return null;
+const getImageAttachments = (message) => {
+    if (!message?.attachments || typeof message.attachments.values !== 'function') return [];
+    const imageAttachments = [];
     for (const attachment of message.attachments.values()) {
-        if (isImageAttachment(attachment)) return attachment;
+        if (isImageAttachment(attachment)) imageAttachments.push(attachment);
     }
-    return null;
+    return imageAttachments;
 };
 
 const findOrderByTicketChannelId = async (channelId) => {
@@ -476,7 +482,7 @@ const formatPurchasedItemsForDm = (items) => {
         .map((item) => {
             const quantity = Math.max(1, Number(item?.quantity) || 1);
             const name = String(item?.name || 'Unknown item').trim();
-            return `${quantity}x ${name}`;
+            return `${formatDeliveredUnitsLabel(name, quantity)} ${name}`;
         })
         .join(', ')
         .slice(0, 800);
@@ -666,7 +672,8 @@ const formatVouchItems = (items) => {
         .map((item) => {
             const quantity = Math.max(1, Number(item?.quantity) || 1);
             const name = String(item?.name || 'UNKNOWN ITEM').trim().toUpperCase();
-            return `**${quantity}X ${name}**`;
+            const deliveredLabel = formatDeliveredUnitsLabel(name, quantity).toUpperCase();
+            return `**${deliveredLabel} ${name}**`;
         })
         .join('\n')
         .slice(0, 1500);
@@ -678,25 +685,38 @@ const buildVouchContent = (order) => {
     return truncateText(`${mention}\n${itemsText}\nPlease leave us a vouch ❤️`, 1900);
 };
 
-const sendAutoVouchFromTicketImage = async ({ order, imageUrl }) => {
+const sendAutoVouchFromTicketImages = async ({ order, imageUrls }) => {
     const vouchChannelId = getVouchChannelId();
-    if (!isSnowflake(vouchChannelId) || !imageUrl) return false;
+    const uniqueImageUrls = Array.from(
+        new Set(
+            (Array.isArray(imageUrls) ? imageUrls : [])
+                .map((url) => String(url || '').trim())
+                .filter(Boolean)
+        )
+    );
+    if (!isSnowflake(vouchChannelId) || uniqueImageUrls.length === 0) return false;
 
-    const embed = new EmbedBuilder()
-        .setColor(0x00D632)
-        .setImage(imageUrl);
+    for (let index = 0; index < uniqueImageUrls.length; index += 10) {
+        const imageBatch = uniqueImageUrls.slice(index, index + 10);
+        const embeds = imageBatch.map((url) => new EmbedBuilder()
+            .setColor(0x00D632)
+            .setImage(url)
+            .toJSON());
 
-    await botRequest({
-        method: 'post',
-        path: `/channels/${vouchChannelId}/messages`,
-        data: {
-            content: buildVouchContent(order),
-            embeds: [embed.toJSON()]
-        },
-        timeout: REQUEST_TIMEOUT_MS,
-        retry: true,
-        defaultCode: 'DISCORD_VOUCH_SEND_FAILED'
-    });
+        const payload = { embeds };
+        if (index === 0) {
+            payload.content = buildVouchContent(order);
+        }
+
+        await botRequest({
+            method: 'post',
+            path: `/channels/${vouchChannelId}/messages`,
+            data: payload,
+            timeout: REQUEST_TIMEOUT_MS,
+            retry: true,
+            defaultCode: 'DISCORD_VOUCH_SEND_FAILED'
+        });
+    }
 
     return true;
 };
@@ -952,7 +972,12 @@ const createLTCTicket = async (order, ltcSeq) => {
     const embed = new EmbedBuilder()
         .setColor(0x345D9D)
         .setTitle(`LTC Payment - Order ${order.orderId}`)
-        .setDescription(`Hello <@${order.discordId}>. Please upload your LTC payment proof screenshot here.`);
+        .setDescription(`Hello <@${order.discordId}>. Please upload your LTC payment proof screenshot here.`)
+        .addFields(
+            { name: 'Customer', value: order.discordUsername || `<@${order.discordId}>`, inline: true },
+            { name: 'Total', value: `$${Number(order.totalAmount || 0).toFixed(2)}`, inline: true },
+            { name: 'Items', value: formatOrderItems(order.items) }
+        );
 
     try {
         await sendTicketMessage({
@@ -1070,8 +1095,8 @@ client.on('messageCreate', async (message) => {
     const isCloseCommand = CLOSE_COMMANDS.has(normalizedContent);
     const isDoneCommand = DONE_COMMANDS.has(normalizedContent);
     const isReAddAllCommand = READD_ALL_COMMANDS.has(normalizedContent);
-    const imageAttachment = getFirstImageAttachment(message);
-    if (!isCloseCommand && !isDoneCommand && !isReAddAllCommand && !imageAttachment) return;
+    const imageAttachments = getImageAttachments(message);
+    if (!isCloseCommand && !isDoneCommand && !isReAddAllCommand && imageAttachments.length === 0) return;
 
     if (isReAddAllCommand) {
         const canRun = await isStaffUser(message.author.id);
@@ -1198,12 +1223,12 @@ client.on('messageCreate', async (message) => {
     }
 
     if (!order) {
-        if (imageAttachment?.url) {
+        if (imageAttachments.length > 0) {
             console.warn(`No order mapped for ticket channel ${channelId}`);
         }
         return;
     }
-    if (!imageAttachment?.url) return;
+    if (imageAttachments.length === 0) return;
 
     try {
         const canSendVouch = await isStaffUser(message.author.id);
@@ -1212,13 +1237,22 @@ client.on('messageCreate', async (message) => {
             return;
         }
 
-        const sent = await sendAutoVouchFromTicketImage({
+        const imageUrls = imageAttachments
+            .map((attachment) => String(attachment?.url || attachment?.proxyURL || '').trim())
+            .filter(Boolean);
+
+        if (imageUrls.length === 0) return;
+
+        const sent = await sendAutoVouchFromTicketImages({
             order,
-            imageUrl: imageAttachment.url
+            imageUrls
         });
 
         if (sent) {
-            await message.reply('Vouch posted successfully.');
+            const imageCountText = imageUrls.length > 1
+                ? ` (${imageUrls.length} images)`
+                : '';
+            await message.reply(`Vouch posted successfully${imageCountText}.`);
             return;
         }
 

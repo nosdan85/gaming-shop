@@ -7,6 +7,7 @@ import {
   emitAuthStateChanged,
   subscribeAuthStateChanges
 } from '../utils/authSync';
+import { formatDeliveredUnitsLabel } from '../utils/itemQuantityDisplay';
 
 export const ShopContext = createContext();
 
@@ -63,7 +64,7 @@ export const ShopProvider = ({ children }) => {
       return [...prev, { ...product, quantity: normalizedQuantity }];
     });
 
-    setNotification(`Added ${normalizedQuantity}x ${product.name} to bag`);
+    setNotification(`Added ${formatDeliveredUnitsLabel(product?.name, normalizedQuantity)} ${product.name} to bag`);
     setTimeout(() => setNotification(null), 3000);
   };
 
