@@ -42,7 +42,8 @@ const SHOP_DATA = {
         { name: 'Kokushibou+F', oneTimePrice: '$2/1', bulkPriceString: '', image: 'Kokushibou+F.png' }
     ],
     Combo: [
-        { name: 'combo x2 luck+drop', oneTimePrice: '$6/1', bulkPriceString: '', image: 'combo x2 luck+drop.png' }
+        { name: 'x2 luck', oneTimePrice: '$3/1', bulkPriceString: '', image: 'combo x2 luck+drop.png' },
+        { name: 'x2 drop', oneTimePrice: '$3/1', bulkPriceString: '', image: 'combo x2 luck+drop.png' }
     ]
 };
 

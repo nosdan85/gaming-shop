@@ -10,10 +10,12 @@ const ProductDetailModal = ({ product, onClose }) => {
   const { addToCart } = useContext(ShopContext);
   const [quantity, setQuantity] = useState(1);
   const [quantityInput, setQuantityInput] = useState('1');
+  const [isPortraitImage, setIsPortraitImage] = useState(false);
 
   useEffect(() => {
     setQuantity(1);
     setQuantityInput('1');
+    setIsPortraitImage(false);
   }, [product?._id]);
 
   if (!product) return null;
@@ -21,6 +23,9 @@ const ProductDetailModal = ({ product, onClose }) => {
   const productImageSrc = `/products/${encodeURIComponent(String(product.image || ''))}`;
   const displayPrice = formatCardPrice(product?.originalPriceString, product?.price);
   const itemDescription = `${displayPrice} for ${formatDeliveredUnitsLabel(product?.name, 1)}`;
+  const imageFrameClass = isPortraitImage
+    ? 'max-w-[300px] md:max-w-[470px] aspect-[3/4]'
+    : 'max-w-[320px] md:max-w-[560px] aspect-square';
 
   const normalizeQuantity = (value, fallback = 1) => {
     const parsed = Number(value);
@@ -77,7 +82,7 @@ const ProductDetailModal = ({ product, onClose }) => {
         onClick={onClose}
       ></div>
 
-      <div className="relative bg-[var(--color-bg-secondary)] w-full max-w-3xl md:max-w-[82rem] rounded-3xl shadow-2xl overflow-hidden border border-gray-800 animate-pop-in flex flex-col md:flex-row">
+      <div className="relative bg-[var(--color-bg-secondary)] w-full max-w-3xl md:max-w-[90rem] rounded-3xl shadow-2xl overflow-hidden border border-gray-800 animate-pop-in flex flex-col md:flex-row">
         <button
           onClick={onClose}
           className="btn-press absolute top-4 right-4 z-10 p-2 bg-black/50 rounded-full text-white hover:bg-black/80 transition"
@@ -85,20 +90,31 @@ const ProductDetailModal = ({ product, onClose }) => {
           <XMarkIcon className="w-6 h-6" />
         </button>
 
-        <div className="w-full md:w-[56%] bg-black/45 p-8 md:p-10 flex items-center justify-center">
-          <div className="w-full max-w-[300px] md:max-w-[430px] aspect-square bg-white rounded-2xl border border-[#dbe1ef] shadow-[0_12px_26px_rgba(255,255,255,0.10)] p-4 md:p-5 flex items-center justify-center">
-            <img
-              src={productImageSrc}
-              alt={product.name}
-              loading="eager"
-              decoding="async"
-              className={`w-full h-full object-contain ${isSetCategory ? 'scale-[1.10]' : ''}`}
-              onError={(e) => { e.currentTarget.src = '/products/aura-chest.png'; }}
-            />
+        <div className="w-full md:w-[60%] bg-black/45 p-6 md:p-10 flex items-center justify-center">
+          <div className={`w-full ${imageFrameClass} bg-black rounded-[30px] p-2 border border-black/80 shadow-[0_20px_45px_rgba(0,0,0,0.55)]`}>
+            <div className="w-full h-full bg-white rounded-[24px] border border-[#dbe1ef] shadow-[0_12px_26px_rgba(255,255,255,0.12)] overflow-hidden">
+              <img
+                src={productImageSrc}
+                alt={product.name}
+                loading="eager"
+                decoding="async"
+                className={`w-full h-full object-contain ${isSetCategory ? 'scale-[1.10]' : ''}`}
+                onLoad={(event) => {
+                  const naturalWidth = Number(event.currentTarget?.naturalWidth || 0);
+                  const naturalHeight = Number(event.currentTarget?.naturalHeight || 0);
+                  if (!naturalWidth || !naturalHeight) return;
+                  setIsPortraitImage(naturalHeight > (naturalWidth * 1.05));
+                }}
+                onError={(e) => {
+                  e.currentTarget.src = '/products/aura-chest.png';
+                  setIsPortraitImage(false);
+                }}
+              />
+            </div>
           </div>
         </div>
 
-        <div className="w-full md:w-[44%] p-6 md:p-10 flex flex-col">
+        <div className="w-full md:w-[40%] p-6 md:p-10 flex flex-col">
           <p className="text-[var(--color-accent)] text-xs font-bold uppercase tracking-wider mb-2">
             {product.category}
           </p>

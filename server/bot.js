@@ -1018,13 +1018,17 @@ const buildOrderMention = (discordId) => {
 
 const formatUsdAmount = (value) => `$${Number(value || 0).toFixed(2)}`;
 
-const buildPaymentTicketFields = ({ order, paymentLine, note }) => {
+const buildPaymentTicketFields = ({ order, paymentLine, note, orderTotalAmount = null }) => {
     const ownerRoleId = getOwnerRoleId();
     const ownerMention = isSnowflake(ownerRoleId) ? `<@&${ownerRoleId}>` : '-';
+    const normalizedOrderTotalAmount = Number(orderTotalAmount);
+    const resolvedOrderTotalAmount = Number.isFinite(normalizedOrderTotalAmount)
+        ? normalizedOrderTotalAmount
+        : Number(order?.totalAmount || 0);
     const fields = [
         { name: 'Buyer', value: `<@${order.discordId}>`, inline: true },
         { name: 'Owner Role', value: ownerMention, inline: true },
-        { name: 'Order Total', value: formatUsdAmount(order.totalAmount || 0), inline: true },
+        { name: 'Order Total', value: formatUsdAmount(resolvedOrderTotalAmount), inline: true },
         { name: 'Payment', value: paymentLine, inline: false },
         { name: 'Items (Qty + Price)', value: formatOrderItemsWithPrice(order.items), inline: false },
         { name: 'Proof', value: 'Send your payment screenshot in this ticket after you pay.', inline: false }
@@ -1195,6 +1199,7 @@ const createOrderTicket = async (order) => {
         .addFields(buildPaymentTicketFields({
             order,
             paymentLine: `${formatUsdAmount(cashAppAmount)} to ${getCashAppHandle()}`,
+            orderTotalAmount: cashAppAmount,
             note: 'Includes additional 10% conversion fee.'
         }));
 
