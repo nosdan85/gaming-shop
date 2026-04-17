@@ -742,8 +742,7 @@ const buildProofItems = (items) => {
 const saveProofRecord = async ({ order, imageUrls, vouchMessageIds = [] }) => {
     const images = Array.from(new Set((Array.isArray(imageUrls) ? imageUrls : []).filter(Boolean)));
     if (!order || images.length === 0) return;
-
-    await Proof.create({
+    const payload = {
         orderId: String(order?.orderId || ''),
         discordId: String(order?.discordId || ''),
         discordUsername: String(order?.discordUsername || ''),
@@ -752,7 +751,24 @@ const saveProofRecord = async ({ order, imageUrls, vouchMessageIds = [] }) => {
         imageUrls: images,
         vouchMessageIds: Array.from(new Set((Array.isArray(vouchMessageIds) ? vouchMessageIds : []).filter(Boolean))),
         source: 'auto_vouch'
-    });
+    };
+
+    // Upsert helps avoid duplicate rows for the same order/image set while keeping proof feed durable.
+    try {
+        await Proof.updateOne(
+            {
+                orderId: payload.orderId,
+                imageUrls: { $size: images.length, $all: images }
+            },
+            {
+                $set: payload,
+                $setOnInsert: { createdAt: new Date() }
+            },
+            { upsert: true }
+        );
+    } catch {
+        await Proof.create(payload);
+    }
 };
 
 const sendAutoVouchFromTicketImages = async ({ order, imageUrls }) => {

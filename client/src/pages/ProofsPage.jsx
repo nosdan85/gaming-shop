@@ -31,24 +31,43 @@ const ProofsPage = () => {
 
   useEffect(() => {
     let cancelled = false;
-    const run = async () => {
-      setLoading(true);
-      setError('');
+    const run = async ({ silent = false } = {}) => {
+      if (!silent) {
+        setLoading(true);
+      }
       try {
-        const { data } = await publicApi.get('/api/shop/proofs?limit=48', { timeout: 20000 });
+        const { data } = await publicApi.get(`/api/shop/proofs?limit=48&t=${Date.now()}`, {
+          timeout: 20000,
+          headers: {
+            'Cache-Control': 'no-cache',
+            Pragma: 'no-cache'
+          }
+        });
         if (cancelled) return;
+        setError('');
         setProofs(Array.isArray(data?.items) ? data.items : []);
       } catch (err) {
         if (cancelled) return;
         setError(err.response?.data?.error || 'Failed to load proofs.');
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled && !silent) setLoading(false);
       }
     };
 
     run();
+    const refreshTimer = setInterval(() => {
+      run({ silent: true }).catch(() => {});
+    }, 15000);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        run({ silent: true }).catch(() => {});
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => {
       cancelled = true;
+      clearInterval(refreshTimer);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []);
 

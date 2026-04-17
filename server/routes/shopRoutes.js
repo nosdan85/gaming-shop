@@ -1042,6 +1042,9 @@ router.get('/products', async (req, res) => {
 
 router.get('/proofs', async (req, res) => {
     try {
+        res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+        res.set('Pragma', 'no-cache');
+        res.set('Expires', '0');
         const page = Math.max(1, Number(req.query?.page) || 1);
         const limit = Math.min(60, Math.max(1, Number(req.query?.limit) || 24));
         const skip = (page - 1) * limit;

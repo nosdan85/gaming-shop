@@ -65,7 +65,7 @@ const Navbar = () => {
     } else {
       links.push({ label: 'Proofs', href: '/proofs', isExternal: false });
     }
-    if (user?.discordId && RESOLVED_DISCORD_URL) {
+    if (RESOLVED_DISCORD_URL) {
       links.push({ label: 'Discord', href: RESOLVED_DISCORD_URL, isExternal: true });
     }
     if (isOwner) {
