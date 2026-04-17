@@ -22,7 +22,8 @@ const trustProxyRaw = String(process.env.TRUST_PROXY || '').trim().toLowerCase()
 if (/^\d+$/.test(trustProxyRaw)) {
     app.set('trust proxy', Number(trustProxyRaw));
 } else if (trustProxyRaw === 'true') {
-    app.set('trust proxy', true);
+    // express-rate-limit warns on boolean true because it's overly permissive for IP limiting.
+    app.set('trust proxy', 1);
 } else if (trustProxyRaw === 'false') {
     app.set('trust proxy', false);
 } else {

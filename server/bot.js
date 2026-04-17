@@ -1488,7 +1488,7 @@ client.on('messageCreate', async (message) => {
     }
 });
 
-client.on('ready', () => {
+client.on('clientReady', () => {
     console.log(`Bot online: ${client.user?.tag || client.user?.id || 'unknown'}`);
 });
 

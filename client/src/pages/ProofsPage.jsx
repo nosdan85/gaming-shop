@@ -4,10 +4,18 @@ import { ChevronLeftIcon, ChevronRightIcon, ClockIcon } from '@heroicons/react/2
 import { Link } from 'react-router-dom';
 
 const DISCORD_VOUCH_URL = String(import.meta.env.VITE_DISCORD_VOUCH_URL || '').trim();
-const publicApi = axios.create({
-  baseURL: axios.defaults.baseURL || ''
-});
-delete publicApi.defaults.headers.common.Authorization;
+const buildPublicApiClient = () => {
+  const configuredApiBaseUrl = String(axios.defaults.baseURL || '').trim();
+  const fallbackApiBaseUrl = String(import.meta.env.VITE_FALLBACK_API_URL || '').trim().replace(/\/+$/, '');
+  const runtimeHost = typeof window !== 'undefined' ? String(window.location.hostname || '').trim().toLowerCase() : '';
+  const isNosMarketHost = runtimeHost === 'nosmarket.com' || runtimeHost === 'www.nosmarket.com';
+  const resolvedApiBaseUrl = configuredApiBaseUrl
+    || (isNosMarketHost ? (fallbackApiBaseUrl || 'https://gaming-shop-2.onrender.com') : '');
+
+  const client = axios.create({ baseURL: resolvedApiBaseUrl });
+  delete client.defaults.headers.common.Authorization;
+  return client;
+};
 
 const formatAgo = (dateValue) => {
   if (!dateValue) return '';
@@ -36,6 +44,7 @@ const ProofsPage = () => {
         setLoading(true);
       }
       try {
+        const publicApi = buildPublicApiClient();
         const { data } = await publicApi.get(`/api/shop/proofs?limit=48&t=${Date.now()}`, {
           timeout: 20000,
           headers: {
