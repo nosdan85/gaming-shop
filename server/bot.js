@@ -1021,7 +1021,12 @@ const formatUsdAmount = (value) => `$${Number(value || 0).toFixed(2)}`;
 const buildPaymentTicketFields = ({ order, paymentLine, note, orderTotalAmount = null }) => {
     const ownerRoleId = getOwnerRoleId();
     const ownerMention = isSnowflake(ownerRoleId) ? `<@&${ownerRoleId}>` : '-';
-    const normalizedOrderTotalAmount = Number(orderTotalAmount);
+    const hasExplicitOrderTotal = !(
+        orderTotalAmount === null
+        || orderTotalAmount === undefined
+        || String(orderTotalAmount).trim() === ''
+    );
+    const normalizedOrderTotalAmount = hasExplicitOrderTotal ? Number(orderTotalAmount) : NaN;
     const resolvedOrderTotalAmount = Number.isFinite(normalizedOrderTotalAmount)
         ? normalizedOrderTotalAmount
         : Number(order?.totalAmount || 0);
