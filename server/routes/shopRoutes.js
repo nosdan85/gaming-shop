@@ -1078,6 +1078,35 @@ router.get('/proofs', async (req, res) => {
     }
 });
 
+router.delete('/proofs/:proofId', authRequired, async (req, res) => {
+    try {
+        const discordId = String(req.user?.discordId || '').trim();
+        if (!discordId) {
+            return res.status(401).json({ error: 'Authentication required' });
+        }
+
+        const canDelete = await canAccessOwnerEndpoints(discordId);
+        if (!canDelete) {
+            return res.status(403).json({ error: 'Forbidden' });
+        }
+
+        const proofId = String(req.params?.proofId || '').trim();
+        if (!OBJECT_ID_PATTERN.test(proofId)) {
+            return res.status(400).json({ error: 'Invalid proof id' });
+        }
+
+        const deleted = await Proof.findByIdAndDelete(proofId);
+        if (!deleted) {
+            return res.status(404).json({ error: 'Proof not found' });
+        }
+
+        return res.json({ success: true, id: proofId });
+    } catch (error) {
+        console.error('Delete proof error:', error);
+        return res.status(500).json({ error: 'Failed to delete proof' });
+    }
+});
+
 router.post('/coupon/preview', async (req, res) => {
     try {
         const cartItems = Array.isArray(req.body?.cartItems) ? req.body.cartItems : [];

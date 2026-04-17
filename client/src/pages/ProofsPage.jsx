@@ -36,6 +36,29 @@ const ProofsPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [preview, setPreview] = useState(null);
+  const [isOwner, setIsOwner] = useState(false);
+  const [deletingProofId, setDeletingProofId] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    const checkOwner = async () => {
+      try {
+        const { data } = await axios.get('/api/shop/check-owner', { timeout: 10000 });
+        if (!cancelled) {
+          setIsOwner(data?.isOwner === true);
+        }
+      } catch {
+        if (!cancelled) {
+          setIsOwner(false);
+        }
+      }
+    };
+
+    checkOwner();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -88,6 +111,23 @@ const ProofsPage = () => {
   }, [preview?.id]);
 
   const activeImage = previewImages[previewIndex] || '';
+
+  const handleDeleteProof = async (proofId) => {
+    const id = String(proofId || '').trim();
+    if (!id) return;
+    if (!window.confirm('Delete this proof?')) return;
+
+    setDeletingProofId(id);
+    try {
+      await axios.delete(`/api/shop/proofs/${encodeURIComponent(id)}`, { timeout: 15000 });
+      setProofs((prev) => prev.filter((item) => String(item?.id || '') !== id));
+      setPreview((prev) => (String(prev?.id || '') === id ? null : prev));
+    } catch (err) {
+      alert(err?.response?.data?.error || 'Failed to delete proof.');
+    } finally {
+      setDeletingProofId('');
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[var(--color-bg-main)] pt-20 md:pt-24 pb-16">
@@ -166,6 +206,18 @@ const ProofsPage = () => {
                     </div>
                   </button>
                   <div className="p-4 space-y-3">
+                    {isOwner && (
+                      <div className="flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteProof(proof.id)}
+                          disabled={deletingProofId === proof.id}
+                          className="btn-press px-3 py-1.5 rounded-pill border border-[rgba(207,45,86,0.35)] bg-[rgba(207,45,86,0.08)] text-[var(--color-error)] text-xs font-gothic hover:text-[var(--color-error)] disabled:opacity-60"
+                        >
+                          {deletingProofId === proof.id ? 'Deleting...' : 'Delete'}
+                        </button>
+                      </div>
+                    )}
                     <div className="space-y-2">
                       {items.slice(0, 3).map((item, idx) => (
                         <div key={`${proof.id}-${idx}`} className="flex items-start justify-between gap-3">
