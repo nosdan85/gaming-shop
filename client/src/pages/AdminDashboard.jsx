@@ -40,32 +40,32 @@ const AdminDashboard = () => {
     };
 
     if (!token || !hasAdminToken) return <Navigate to="/admin/login" replace />;
-    if (failed) return <div className="text-white p-8">Could not load dashboard.</div>;
-    if (!stats) return <div className="text-white p-8">Loading...</div>;
+    if (failed) return <div className="text-[var(--color-text-primary)] p-8 bg-[var(--color-bg-main)]">Could not load dashboard.</div>;
+    if (!stats) return <div className="text-[var(--color-text-primary)] p-8 bg-[var(--color-bg-main)]">Loading...</div>;
 
     return (
-        <div className="p-8 text-white">
-            <h1 className="text-3xl font-bold mb-8 gradient-text">Dashboard</h1>
+        <div className="p-8 text-[var(--color-text-primary)] bg-[var(--color-bg-main)] min-h-screen">
+            <h1 className="text-3xl font-gothic tracking-[-0.72px] mb-8 text-[var(--color-text-primary)]">Dashboard</h1>
 
             <div className="grid grid-cols-3 gap-6 mb-8">
-                <div className="bg-[#0F172A] p-6 rounded-xl border border-blue-500/20">
-                    <h3 className="text-gray-400">Total Revenue</h3>
-                    <p className="text-2xl font-bold">${stats.revenue}</p>
+                <div className="bg-[var(--color-bg-secondary)] p-6 rounded-[8px] border border-[var(--color-border)]">
+                    <h3 className="text-[var(--color-text-secondary)]">Total Revenue</h3>
+                    <p className="text-2xl font-gothic">{stats.revenue}</p>
                 </div>
-                <div className="bg-[#0F172A] p-6 rounded-xl border border-purple-500/20">
-                    <h3 className="text-gray-400">Total Orders</h3>
-                    <p className="text-2xl font-bold">{stats.orders}</p>
+                <div className="bg-[var(--color-bg-secondary)] p-6 rounded-[8px] border border-[var(--color-border)]">
+                    <h3 className="text-[var(--color-text-secondary)]">Total Orders</h3>
+                    <p className="text-2xl font-gothic">{stats.orders}</p>
                 </div>
-                <div className="bg-[#0F172A] p-6 rounded-xl border border-pink-500/20">
-                    <h3 className="text-gray-400">Users Linked</h3>
-                    <p className="text-2xl font-bold">{stats.users}</p>
+                <div className="bg-[var(--color-bg-secondary)] p-6 rounded-[8px] border border-[var(--color-border)]">
+                    <h3 className="text-[var(--color-text-secondary)]">Users Linked</h3>
+                    <p className="text-2xl font-gothic">{stats.users}</p>
                 </div>
             </div>
 
-            <h2 className="text-xl font-bold mb-4">Recent Orders</h2>
-            <div className="bg-[#0F172A] rounded-xl overflow-hidden">
+            <h2 className="text-xl font-gothic mb-4">Recent Orders</h2>
+            <div className="bg-[var(--color-bg-secondary)] rounded-[8px] overflow-hidden border border-[var(--color-border)]">
                 <table className="w-full text-left">
-                    <thead className="bg-blue-900/20">
+                    <thead className="bg-[var(--color-bg-elevated)]">
                         <tr>
                             <th className="p-4">ID</th>
                             <th className="p-4">User</th>
@@ -76,15 +76,15 @@ const AdminDashboard = () => {
                     </thead>
                     <tbody>
                         {orders.map((order) => (
-                            <tr key={order._id} className="border-t border-gray-800 hover:bg-white/5">
-                                <td className="p-4 text-sm font-mono text-blue-400">{order.orderId}</td>
+                            <tr key={order._id} className="border-t border-[var(--color-border)] hover:bg-[var(--color-bg-elevated)]">
+                                <td className="p-4 text-sm font-mono text-[var(--color-accent)]">{order.orderId}</td>
                                 <td className="p-4">{order.discordId}</td>
                                 <td className="p-4">${order.totalAmount}</td>
                                 <td className="p-4">
                                     <span className={`px-2 py-1 rounded text-xs ${
-                                        order.status === 'Completed' ? 'bg-green-500/20 text-green-400'
-                                            : order.status === 'Pending' ? 'bg-yellow-500/20 text-yellow-400'
-                                                : 'bg-blue-500/20 text-blue-400'
+                                        order.status === 'Completed' ? 'bg-[rgba(31,138,101,0.2)] text-[var(--color-success)]'
+                                            : order.status === 'Pending' ? 'bg-[rgba(192,133,50,0.2)] text-[var(--color-gold)]'
+                                                : 'bg-[rgba(245,78,0,0.2)] text-[var(--color-accent)]'
                                     }`}
                                     >
                                         {order.status}

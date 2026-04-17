@@ -235,80 +235,80 @@ const CartModal = () => {
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-0 md:p-4">
-      <div className="absolute inset-0 bg-black/80 backdrop-blur-xl transition-opacity" onClick={() => setIsCartOpen(false)} />
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-xl transition-opacity" onClick={() => setIsCartOpen(false)} />
 
-      <div className="relative bg-[#09090b] w-full h-full md:h-[85vh] md:max-w-4xl md:rounded-[32px] shadow-2xl flex flex-col md:flex-row overflow-hidden border border-[#2c2c2e] animate-pop-in">
-        <button onClick={() => setIsCartOpen(false)} className="btn-press md:hidden absolute top-4 right-4 z-50 p-2 bg-[#2c2c2e] rounded-full text-white">
+      <div className="relative bg-[var(--color-bg-main)] w-full h-full md:h-[85vh] md:max-w-4xl md:rounded-[10px] shadow-[rgba(0,0,0,0.14)_0px_28px_70px,rgba(0,0,0,0.1)_0px_14px_32px] flex flex-col md:flex-row overflow-hidden border border-[var(--color-border)] animate-pop-in">
+        <button onClick={() => setIsCartOpen(false)} className="btn-press md:hidden absolute top-4 right-4 z-50 p-2 bg-[var(--color-bg-elevated)] rounded-full text-[var(--color-text-primary)] hover:text-[var(--color-error)]">
           <XMarkIcon className="w-6 h-6" />
         </button>
 
-        <div className="w-full md:w-3/5 p-6 flex flex-col bg-[#000000] h-3/5 md:h-full border-b md:border-b-0 md:border-r border-[#2c2c2e]">
-          <h2 className="text-2xl md:text-3xl font-bold mb-4 md:mb-6 text-white">Bag</h2>
+        <div className="w-full md:w-3/5 p-6 flex flex-col bg-[var(--color-bg-main)] h-3/5 md:h-full border-b md:border-b-0 md:border-r border-[var(--color-border)]">
+          <h2 className="text-2xl md:text-3xl font-gothic tracking-[-0.72px] mb-4 md:mb-6 text-[var(--color-text-primary)]">Bag</h2>
           <div className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar">
             {cart.length === 0 ? (
-              <div className="h-full flex items-center justify-center text-[#86868b]">Your bag is empty.</div>
+              <div className="h-full flex items-center justify-center text-[var(--color-text-secondary)] font-serif">Your bag is empty.</div>
             ) : (
               cartRows.map(({ item, pricing, deliveredLabel }) => (
-                <div key={item._id} className="flex gap-3 md:gap-4 p-3 md:p-4 rounded-2xl bg-[#1c1c1e]">
+                <div key={item._id} className="flex gap-3 md:gap-4 p-3 md:p-4 rounded-[8px] bg-[var(--color-bg-secondary)] border border-[var(--color-border)]">
                     <img
                       src={`/products/${encodeURIComponent(String(item.image || ''))}`}
-                      className="w-16 h-16 object-cover bg-[#2c2c2e] rounded-lg"
+                      className="w-16 h-16 object-cover bg-[var(--color-bg-elevated)] rounded-[8px]"
                       loading="lazy"
                       decoding="async"
                       onError={(e) => { e.currentTarget.src = '/products/aura-chest.png'; }}
                     />
                   <div className="flex-1">
-                    <h3 className="font-medium text-white text-sm md:text-base line-clamp-1">{item.name}</h3>
+                    <h3 className="font-gothic font-medium text-[var(--color-text-primary)] text-sm md:text-base line-clamp-1">{item.name}</h3>
                     <div className="flex justify-between mt-2 items-center">
                       <div className="min-w-0">
-                        <span className="text-gray-400 text-xs md:text-sm">{pricing.displayUnitPrice} | qty {deliveredLabel}</span>
+                        <span className="text-[var(--color-text-secondary)] text-xs md:text-sm">{pricing.displayUnitPrice} | qty {deliveredLabel}</span>
                         {pricing.bulkAppliedUnits > 0 && (
-                          <p className="text-[10px] text-green-400 mt-1">
+                          <p className="text-[10px] text-[var(--color-success)] mt-1">
                             Bulk applied for {pricing.bulkAppliedUnits} packs ({pricing.bulkDisplayUnitPrice})
                           </p>
                         )}
-                        <p className="text-[10px] text-gray-500 mt-1">Line total: ${pricing.lineTotal.toFixed(2)}</p>
+                        <p className="text-[10px] text-[var(--color-text-secondary)] mt-1">Line total: ${pricing.lineTotal.toFixed(2)}</p>
                       </div>
-                      <button onClick={() => removeFromCart(item._id)} className="btn-press text-[#ff3b30] text-xs md:text-sm font-medium">Remove</button>
+                      <button onClick={() => removeFromCart(item._id)} className="btn-press text-[var(--color-error)] text-xs md:text-sm font-medium hover:underline">Remove</button>
                     </div>
                   </div>
                 </div>
               ))
             )}
           </div>
-          <div className="pt-4 mt-2 border-t border-[#2c2c2e] flex justify-between text-lg md:text-xl font-bold text-white">
+          <div className="pt-4 mt-2 border-t border-[var(--color-border)] flex justify-between text-lg md:text-xl font-gothic text-[var(--color-text-primary)]">
             <span>Total</span>
             <span>${total}</span>
           </div>
         </div>
 
-        <div className="w-full md:w-2/5 bg-[#1c1c1e] p-4 md:p-6 flex flex-col min-h-0 h-2/5 md:h-full relative overflow-y-auto">
-          <button onClick={() => setIsCartOpen(false)} className="btn-press hidden md:block self-end p-2 bg-[#2c2c2e] rounded-full text-white mb-2">
+        <div className="w-full md:w-2/5 bg-[var(--color-bg-secondary)] p-4 md:p-6 flex flex-col min-h-0 h-2/5 md:h-full relative overflow-y-auto">
+          <button onClick={() => setIsCartOpen(false)} className="btn-press hidden md:block self-end p-2 bg-[var(--color-bg-elevated)] rounded-full text-[var(--color-text-primary)] hover:text-[var(--color-error)] mb-2">
             <XMarkIcon className="w-5 h-5" />
           </button>
 
-          <div className="bg-[#000000] p-4 rounded-2xl border border-[#2c2c2e] mb-4">
+          <div className="bg-[var(--color-bg-main)] p-4 rounded-[8px] border border-[var(--color-border)] mb-4">
             {user && user.discordId ? (
               <div className="text-center">
                 <div className="flex items-center justify-center gap-2 mb-1">
-                  <CheckBadgeIcon className="w-5 h-5 text-green-500" />
-                  <span className="text-white font-bold truncate max-w-[150px]">{user.discordUsername || user.username}</span>
+                  <CheckBadgeIcon className="w-5 h-5 text-[var(--color-success)]" />
+                  <span className="text-[var(--color-text-primary)] font-gothic font-medium truncate max-w-[150px]">{user.discordUsername || user.username}</span>
                 </div>
-                <button onClick={handleLogout} className="text-[#ff3b30] text-xs hover:underline">Sign Out</button>
+                <button onClick={handleLogout} className="text-[var(--color-error)] text-xs hover:underline">Sign Out</button>
               </div>
             ) : (
               <div className="text-center space-y-3">
-                <p className="text-gray-400 text-xs">Login to process order</p>
+                <p className="text-[var(--color-text-secondary)] text-xs font-serif">Login to process order</p>
                 {isMobile ? (
-                    <button onClick={handleLinkWeb} className="btn-press w-full bg-[#5865F2] hover:bg-[#4752C4] text-white py-2.5 rounded-xl font-bold text-sm transition flex items-center justify-center gap-2">
+                    <button onClick={handleLinkWeb} className="btn-press w-full bg-[#5865F2] hover:bg-[#4752C4] text-white py-2.5 rounded-[8px] font-gothic text-sm transition flex items-center justify-center gap-2">
                       <UserCircleIcon className="w-5 h-5" /> Link Discord
                     </button>
                 ) : (
                   <>
-                    <button onClick={handleLinkWeb} className="btn-press w-full bg-[#5865F2] hover:bg-[#4752C4] text-white py-2.5 rounded-xl font-bold text-sm transition flex items-center justify-center gap-2">
+                    <button onClick={handleLinkWeb} className="btn-press w-full bg-[#5865F2] hover:bg-[#4752C4] text-white py-2.5 rounded-[8px] font-gothic text-sm transition flex items-center justify-center gap-2">
                       <UserCircleIcon className="w-5 h-5" /> Link via Discord Web
                     </button>
-                    <button onClick={handleLinkApp} className="btn-press w-full bg-[#2c2c2e] hover:bg-[#3f3f46] text-white py-2.5 rounded-xl font-bold text-xs transition flex items-center justify-center gap-2">
+                    <button onClick={handleLinkApp} className="btn-press w-full bg-[var(--color-bg-elevated)] hover:text-[var(--color-error)] text-[var(--color-text-primary)] py-2.5 rounded-[8px] font-gothic text-xs transition flex items-center justify-center gap-2">
                       Link via Discord App
                     </button>
                   </>
@@ -318,52 +318,52 @@ const CartModal = () => {
           </div>
 
           <div className="flex-1 overflow-y-auto mb-4 pr-1">
-            <h3 className="text-gray-400 text-xs uppercase font-bold mb-3 tracking-wider">How to pay</h3>
+            <h3 className="text-[var(--color-text-secondary)] text-xs uppercase font-gothic mb-3 tracking-wider">How to pay</h3>
             <div className="space-y-3">
               <div className="flex gap-3">
-                <div className="w-8 h-8 rounded-full bg-[#2c2c2e] flex items-center justify-center flex-shrink-0 text-blue-400">
+                <div className="w-8 h-8 rounded-full bg-[var(--color-bg-elevated)] flex items-center justify-center flex-shrink-0 text-blue-500">
                   <ClipboardDocumentListIcon className="w-4 h-4" />
                 </div>
                 <div>
-                  <p className="text-white text-sm font-medium">1. Link Discord</p>
-                  <p className="text-gray-500 text-xs">Press &quot;Link Discord&quot; and login with your account.</p>
+                  <p className="text-[var(--color-text-primary)] text-sm font-gothic">1. Link Discord</p>
+                  <p className="text-[var(--color-text-secondary)] text-xs font-serif">Press &quot;Link Discord&quot; and login with your account.</p>
                 </div>
               </div>
               <div className="flex gap-3">
-                <div className="w-8 h-8 rounded-full bg-[#2c2c2e] flex items-center justify-center flex-shrink-0 text-purple-400">
+                <div className="w-8 h-8 rounded-full bg-[var(--color-bg-elevated)] flex items-center justify-center flex-shrink-0 text-[var(--color-accent)]">
                   <TicketIcon className="w-4 h-4" />
                 </div>
                 <div>
-                  <p className="text-white text-sm font-medium">2. Create an Order</p>
-                  <p className="text-gray-500 text-xs">Add items to bag and click &quot;Check Out&quot;.</p>
+                  <p className="text-[var(--color-text-primary)] text-sm font-gothic">2. Create an Order</p>
+                  <p className="text-[var(--color-text-secondary)] text-xs font-serif">Add items to bag and click &quot;Check Out&quot;.</p>
                 </div>
               </div>
               <div className="flex gap-3">
-                <div className="w-8 h-8 rounded-full bg-[#2c2c2e] flex items-center justify-center flex-shrink-0 text-green-400">
+                <div className="w-8 h-8 rounded-full bg-[var(--color-bg-elevated)] flex items-center justify-center flex-shrink-0 text-[var(--color-success)]">
                   <CurrencyDollarIcon className="w-4 h-4" />
                 </div>
                 <div>
-                  <p className="text-white text-sm font-medium">3. Open payment page</p>
-                  <p className="text-gray-500 text-xs">After checkout, press the green payment button to create your Discord ticket.</p>
+                  <p className="text-[var(--color-text-primary)] text-sm font-gothic">3. Open payment page</p>
+                  <p className="text-[var(--color-text-secondary)] text-xs font-serif">After checkout, press the green payment button to create your Discord ticket.</p>
                 </div>
               </div>
               <div className="flex gap-3">
-                <div className="w-8 h-8 rounded-full bg-[#2c2c2e] flex items-center justify-center flex-shrink-0 text-green-400">
+                <div className="w-8 h-8 rounded-full bg-[var(--color-bg-elevated)] flex items-center justify-center flex-shrink-0 text-[var(--color-success)]">
                   <CurrencyDollarIcon className="w-4 h-4" />
                 </div>
                 <div>
-                  <p className="text-white text-sm font-medium">4. Payment</p>
-                  <p className="text-gray-500 text-xs">Complete payment from the payment page or inside the Discord ticket.</p>
+                  <p className="text-[var(--color-text-primary)] text-sm font-gothic">4. Payment</p>
+                  <p className="text-[var(--color-text-secondary)] text-xs font-serif">Complete payment from the payment page or inside the Discord ticket.</p>
                 </div>
               </div>
             </div>
           </div>
 
           {hasInvalidCheckoutTotal && cart.length > 0 && (
-            <p className="text-[11px] text-red-400 mb-2">Total must be greater than $0.00 to checkout.</p>
+            <p className="text-[11px] text-[var(--color-error)] mb-2">Total must be greater than $0.00 to checkout.</p>
           )}
           <div className="mb-3">
-            <label className="block text-gray-400 text-xs uppercase font-bold mb-1 tracking-wider">
+            <label className="block text-[var(--color-text-secondary)] text-xs uppercase font-gothic mb-1 tracking-wider">
               Coupon Code
             </label>
             <div className="flex items-center gap-2">
@@ -372,36 +372,36 @@ const CartModal = () => {
                 value={couponCode}
                 onChange={(e) => handleCouponInputChange(e.target.value)}
                 placeholder="Enter coupon"
-                className="flex-1 bg-[#0f0f12] border border-[#2c2c2e] rounded-xl px-3 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-[#4f8cff]"
+                className="flex-1 bg-transparent border border-[var(--color-border)] rounded-[8px] px-3 py-2.5 text-sm text-[var(--color-text-primary)] placeholder-[var(--color-text-secondary)] focus:outline-none focus:border-[var(--color-accent)] focus-warm"
               />
               <button
                 type="button"
                 onClick={handleApplyCoupon}
                 disabled={isApplyingCoupon || cart.length === 0}
-                className="btn-press px-3 py-2.5 rounded-xl bg-[#2c2c2e] hover:bg-[#3b3b40] disabled:bg-[#232327] disabled:text-gray-500 text-white text-xs font-semibold transition"
+                className="btn-press px-3 py-2.5 rounded-[8px] bg-[var(--color-bg-elevated)] hover:text-[var(--color-error)] disabled:bg-[var(--color-bg-elevated)] disabled:text-[var(--color-text-secondary)] text-[var(--color-text-primary)] text-xs font-gothic transition"
               >
                 {isApplyingCoupon ? 'Applying...' : 'Apply'}
               </button>
             </div>
             {couponError && (
-              <p className="text-[11px] text-red-400 mt-1">{couponError}</p>
+              <p className="text-[11px] text-[var(--color-error)] mt-1">{couponError}</p>
             )}
             {appliedCoupon && (
-              <p className="text-[11px] text-green-400 mt-1">
+              <p className="text-[11px] text-[var(--color-success)] mt-1">
                 Applied {appliedCoupon.couponCode} (-{appliedCoupon.discountPercent}%)
               </p>
             )}
           </div>
-          <div className="mb-3 rounded-xl border border-[#2c2c2e] bg-[#0f0f12] p-3 text-xs space-y-1">
-            <div className="flex items-center justify-between text-gray-300">
+          <div className="mb-3 rounded-[8px] border border-[var(--color-border)] bg-[var(--color-bg-main)] p-3 text-xs space-y-1">
+            <div className="flex items-center justify-between text-[var(--color-text-secondary)]">
               <span>Subtotal</span>
               <span>${totalValue.toFixed(2)}</span>
             </div>
-            <div className="flex items-center justify-between text-gray-300">
+            <div className="flex items-center justify-between text-[var(--color-text-secondary)]">
               <span>Discount</span>
               <span>- ${appliedDiscountAmount.toFixed(2)}</span>
             </div>
-            <div className="flex items-center justify-between text-white font-bold text-sm pt-1 border-t border-[#2c2c2e]">
+            <div className="flex items-center justify-between text-[var(--color-text-primary)] font-gothic text-sm pt-1 border-t border-[var(--color-border)]">
               <span>Total after discount</span>
               <span>${totalAfterDiscountValue.toFixed(2)}</span>
             </div>
@@ -409,7 +409,7 @@ const CartModal = () => {
           <button
             onClick={handleCheckout}
             disabled={!user || cart.length === 0 || isProcessing || hasInvalidCheckoutTotal}
-            className="btn-press w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white py-3 md:py-4 rounded-xl text-base md:text-lg font-bold shadow-lg shadow-blue-900/20 active:scale-95 transition-transform mt-auto"
+            className="btn-press w-full bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] disabled:bg-[var(--color-bg-elevated)] disabled:text-[var(--color-text-secondary)] disabled:cursor-not-allowed text-white py-3 md:py-4 rounded-[8px] text-base md:text-lg font-gothic active:scale-95 transition-transform mt-auto"
           >
             {isProcessing ? 'Processing...' : 'Check Out'}
           </button>
@@ -417,12 +417,12 @@ const CartModal = () => {
       </div>
 
       {showJoinModal && (
-        <div className="absolute inset-0 z-[70] bg-black/90 flex items-center justify-center p-6 animate-fade-in">
-          <div className="bg-[#1c1c1e] rounded-2xl p-8 max-w-sm text-center w-full border border-[#2c2c2e]">
-            <h2 className="text-2xl font-bold text-white mb-2">Join Discord</h2>
-            <p className="text-gray-400 mb-6 text-sm">Required to process your order.</p>
-            <a href={inviteLink} target="_blank" rel="noreferrer" className="btn-press block w-full py-3 bg-[#5865F2] text-white font-bold rounded-xl mb-3 hover:bg-[#4752C4] transition text-center">Join Server Now</a>
-            <button onClick={() => setShowJoinModal(false)} className="btn-press text-gray-500 hover:text-white transition">Close</button>
+        <div className="absolute inset-0 z-[70] bg-black/80 flex items-center justify-center p-6 animate-fade-in">
+          <div className="bg-[var(--color-bg-main)] rounded-[10px] p-8 max-w-sm text-center w-full border border-[var(--color-border)]">
+            <h2 className="text-2xl font-gothic text-[var(--color-text-primary)] mb-2">Join Discord</h2>
+            <p className="text-[var(--color-text-secondary)] font-serif mb-6 text-sm">Required to process your order.</p>
+            <a href={inviteLink} target="_blank" rel="noreferrer" className="btn-press block w-full py-3 bg-[#5865F2] text-white font-gothic rounded-[8px] mb-3 hover:bg-[#4752C4] transition text-center">Join Server Now</a>
+            <button onClick={() => setShowJoinModal(false)} className="btn-press text-[var(--color-text-secondary)] hover:text-[var(--color-error)] transition">Close</button>
           </div>
         </div>
       )}

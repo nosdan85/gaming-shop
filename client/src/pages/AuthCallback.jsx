@@ -344,11 +344,11 @@ const AuthCallback = () => {
     };
 
     return (
-        <div className="min-h-screen flex flex-col items-center justify-center bg-black text-white p-4">
-            <h2 className="text-2xl font-bold mb-4">{status}</h2>
+        <div className="min-h-screen flex flex-col items-center justify-center bg-[var(--color-bg-main)] text-[var(--color-text-primary)] p-4">
+            <h2 className="text-2xl font-gothic mb-4">{status}</h2>
             {debugInfo && (
-                <div className="bg-red-900 p-4 rounded border border-red-500 max-w-2xl w-full overflow-auto">
-                    <h3 className="font-bold text-red-300 mb-2">Error Log:</h3>
+                <div className="bg-[rgba(207,45,86,0.1)] p-4 rounded-[8px] border border-[rgba(207,45,86,0.3)] max-w-2xl w-full overflow-auto">
+                    <h3 className="font-gothic text-[var(--color-error)] mb-2">Error Log:</h3>
                     <pre className="text-sm font-mono whitespace-pre-wrap">{debugInfo}</pre>
                     <div className="mt-4 flex gap-2">
                         {canRetry && (
@@ -364,7 +364,7 @@ const AuthCallback = () => {
                         )}
                         <button
                             onClick={() => { window.location.href = '/'; }}
-                            className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded"
+                            className="bg-[var(--color-bg-elevated)] hover:text-[var(--color-error)] text-[var(--color-text-primary)] px-4 py-2 rounded-[8px]"
                         >
                             Back to Home
                         </button>

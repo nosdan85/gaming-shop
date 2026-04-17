@@ -78,21 +78,21 @@ const ProductDetailModal = ({ product, onClose }) => {
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
       <div
-        className="absolute inset-0 bg-black/80 backdrop-blur-sm transition-opacity"
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity"
         onClick={onClose}
       ></div>
 
-      <div className="relative bg-[var(--color-bg-secondary)] w-full max-w-3xl md:max-w-[90rem] rounded-3xl shadow-2xl overflow-hidden border border-gray-800 animate-pop-in flex flex-col md:flex-row">
+      <div className="relative bg-[var(--color-bg-main)] w-full max-w-3xl md:max-w-[90rem] rounded-[10px] shadow-[rgba(0,0,0,0.14)_0px_28px_70px,rgba(0,0,0,0.1)_0px_14px_32px] overflow-hidden border border-[var(--color-border)] animate-pop-in flex flex-col md:flex-row">
         <button
           onClick={onClose}
-          className="btn-press absolute top-4 right-4 z-10 p-2 bg-black/50 rounded-full text-white hover:bg-black/80 transition"
+          className="btn-press absolute top-4 right-4 z-10 p-2 bg-[var(--color-bg-elevated)] rounded-full text-[var(--color-text-primary)] hover:text-[var(--color-error)] transition"
         >
           <XMarkIcon className="w-6 h-6" />
         </button>
 
-        <div className="w-full md:w-[60%] bg-black/45 p-6 md:p-10 flex items-center justify-center">
-          <div className={`w-full ${imageFrameClass} bg-black rounded-[30px] p-2 border border-black/80 shadow-[0_20px_45px_rgba(0,0,0,0.55)]`}>
-            <div className="w-full h-full bg-white rounded-[24px] border border-[#dbe1ef] shadow-[0_12px_26px_rgba(255,255,255,0.12)] overflow-hidden">
+        <div className="w-full md:w-[60%] bg-[var(--color-bg-secondary)] p-6 md:p-10 flex items-center justify-center">
+          <div className={`w-full ${imageFrameClass}`}>
+            <div className="w-full h-full bg-white rounded-[8px] border border-[var(--color-border)] overflow-hidden">
               <img
                 src={productImageSrc}
                 alt={product.name}
@@ -115,31 +115,31 @@ const ProductDetailModal = ({ product, onClose }) => {
         </div>
 
         <div className="w-full md:w-[40%] p-6 md:p-10 flex flex-col">
-          <p className="text-[var(--color-accent)] text-xs font-bold uppercase tracking-wider mb-2">
+          <p className="text-[var(--color-accent)] text-xs font-gothic font-normal uppercase tracking-wider mb-2">
             {product.category}
           </p>
-          <h2 className="text-2xl md:text-3xl font-bold text-white mb-4 leading-tight">
+          <h2 className="text-2xl md:text-[36px] font-gothic font-normal text-[var(--color-text-primary)] mb-4 leading-tight tracking-[-0.72px]">
             {product.name}
           </h2>
-          <p className="text-[#8aa5d8] text-sm mb-4">{itemDescription}</p>
+          <p className="text-[var(--color-text-secondary)] font-serif text-sm mb-4">{itemDescription}</p>
 
           <div className="space-y-2 mb-6">
-            <div className="flex items-center gap-2 text-sm text-gray-300">
-              <CheckCircleIcon className="w-5 h-5 text-[var(--color-accent)]" />
+            <div className="flex items-center gap-2 text-sm text-[var(--color-text-secondary)]">
+              <CheckCircleIcon className="w-5 h-5 text-[var(--color-success)]" />
               <span>Instant Delivery</span>
             </div>
-            <div className="flex items-center gap-2 text-sm text-gray-300">
-              <CheckCircleIcon className="w-5 h-5 text-[var(--color-accent)]" />
+            <div className="flex items-center gap-2 text-sm text-[var(--color-text-secondary)]">
+              <CheckCircleIcon className="w-5 h-5 text-[var(--color-success)]" />
               <span>Secure Transaction</span>
             </div>
           </div>
 
           <div className="flex items-center gap-3 mb-4">
-            <div className="flex items-center bg-black/45 border border-white/15 rounded-full">
+            <div className="flex items-center bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-pill">
               <button
                 type="button"
                 onClick={() => updateQuantity(quantity - 1)}
-                className="btn-press w-8 h-8 text-gray-200 hover:text-white flex items-center justify-center"
+                className="btn-press w-8 h-8 text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] flex items-center justify-center"
                 aria-label="Decrease quantity"
               >
                 <MinusIcon className="w-4 h-4" />
@@ -151,23 +151,23 @@ const ProductDetailModal = ({ product, onClose }) => {
                 value={quantityInput}
                 onChange={handleQuantityInput}
                 onBlur={handleQuantityBlur}
-                className="w-16 bg-transparent text-sm font-semibold text-white text-center outline-none"
+                className="w-16 bg-transparent text-sm font-semibold text-[var(--color-text-primary)] text-center outline-none"
               />
               <button
                 type="button"
                 onClick={() => updateQuantity(quantity + 1)}
-                className="btn-press w-8 h-8 text-gray-200 hover:text-white flex items-center justify-center"
+                className="btn-press w-8 h-8 text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] flex items-center justify-center"
                 aria-label="Increase quantity"
               >
                 <PlusIcon className="w-4 h-4" />
               </button>
             </div>
-            <span className="text-xs text-gray-400">Selected quantity</span>
+            <span className="text-xs text-[var(--color-text-secondary)]">Selected quantity</span>
           </div>
 
           <button
             onClick={handleAddToCart}
-            className="btn-press w-full bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white py-4 rounded-2xl text-lg font-bold shadow-lg shadow-cyan-500/20 active:scale-95 transition-all mt-auto"
+            className="btn-press w-full bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white hover:text-white py-4 rounded-[8px] text-lg font-gothic font-normal shadow-none active:scale-95 transition-all mt-auto"
           >
             Add {quantity} to Cart
           </button>

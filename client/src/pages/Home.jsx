@@ -20,6 +20,7 @@ const SORT_OPTIONS = [
 
 const CACHE_KEY = 'productsCache';
 const ORDER_PROOF_NOTICE_SEEN_KEY = 'orderProofNoticeSeenV1';
+
 const shouldShowProofNoticeOnLoad = () => {
   if (typeof window === 'undefined') return true;
   try {
@@ -28,12 +29,14 @@ const shouldShowProofNoticeOnLoad = () => {
     return true;
   }
 };
+
 const normalizeCategory = (value) => {
   const raw = String(value || '').trim();
   if (!raw) return 'Other';
   const knownCategory = KNOWN_CATEGORY_LOOKUP.get(raw.toLowerCase());
   return knownCategory || raw;
 };
+
 const normalizeProducts = (value) => {
   if (!Array.isArray(value)) return [];
   return value
@@ -43,6 +46,7 @@ const normalizeProducts = (value) => {
       category: normalizeCategory(item.category),
     }));
 };
+
 const getCachedProducts = () => {
   if (typeof window === 'undefined') return [];
   try {
@@ -72,7 +76,7 @@ const Home = () => {
     setShowProofNotice(false);
     try {
       localStorage.setItem(ORDER_PROOF_NOTICE_SEEN_KEY, '1');
-    } catch (_) {
+    } catch {
       // Ignore storage write failures.
     }
   };
@@ -93,7 +97,7 @@ const Home = () => {
         setLoadError('');
         try {
           localStorage.setItem(CACHE_KEY, JSON.stringify({ data: nextProducts, ts: Date.now() }));
-        } catch (_) {
+        } catch {
           // Ignore cache write errors.
         }
       })
@@ -111,9 +115,9 @@ const Home = () => {
 
   const safeProducts = Array.isArray(products) ? products : [];
 
-  let filteredProducts = safeProducts.filter((p) => {
-    const matchSearch = !searchTerm.trim() || p.name.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchCategory = !searchTerm.trim() ? (activeCategory === 'All' || p.category === activeCategory) : true;
+  let filteredProducts = safeProducts.filter((product) => {
+    const matchSearch = !searchTerm.trim() || product.name.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchCategory = !searchTerm.trim() ? (activeCategory === 'All' || product.category === activeCategory) : true;
     return matchSearch && matchCategory;
   });
 
@@ -124,7 +128,7 @@ const Home = () => {
   }
 
   return (
-    <div className="min-h-screen bg-black pt-20 md:pt-24 pb-32">
+    <div className="min-h-screen bg-[var(--color-bg-main)] pt-20 md:pt-24 pb-32">
       <div className="max-w-7xl mx-auto px-3 sm:px-4">
         <div className="mb-8 md:mb-10">
           <div className="relative max-w-xl mx-auto">
@@ -133,8 +137,8 @@ const Home = () => {
               type="text"
               placeholder="Search products..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-12 pr-4 py-3 md:py-4 bg-[var(--color-bg-secondary)] border border-[var(--color-accent)]/30 rounded-2xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] focus:border-transparent transition-all shadow-lg shadow-cyan-500/5"
+              onChange={(event) => setSearchTerm(event.target.value)}
+              className="w-full pl-12 pr-4 py-3 md:py-4 bg-transparent border border-[var(--color-border)] rounded-[8px] text-[var(--color-text-primary)] placeholder-[var(--color-text-secondary)] focus:outline-none focus:border-[var(--color-border-medium)] focus:shadow-[rgba(0,0,0,0.1)_0px_4px_12px] transition-all"
             />
           </div>
         </div>
@@ -144,8 +148,10 @@ const Home = () => {
             <button
               key={game}
               onClick={() => setActiveGame(game)}
-              className={`text-lg font-semibold transition-all whitespace-nowrap ${
-                activeGame === game ? 'text-white border-b-2 border-white pb-1' : 'text-[#86868b] hover:text-white'
+              className={`text-lg font-gothic transition-all whitespace-nowrap ${
+                activeGame === game
+                  ? 'text-[var(--color-text-primary)] border-b-2 border-[var(--color-text-primary)] pb-1'
+                  : 'text-[var(--color-text-secondary)] hover:text-[var(--color-error)]'
               }`}
             >
               {game}
@@ -154,29 +160,31 @@ const Home = () => {
         </div>
 
         <div className="flex flex-wrap justify-center items-center gap-3 mb-12">
-          {CATEGORIES.map((cat) => (
+          {CATEGORIES.map((category) => (
             <button
-              key={cat}
-              onClick={() => setActiveCategory(cat)}
-              className={`tab-apple ${activeCategory === cat ? 'active' : 'inactive'}`}
+              key={category}
+              onClick={() => setActiveCategory(category)}
+              className={`tab-apple ${activeCategory === category ? 'active' : 'inactive'}`}
             >
-              {cat}
+              {category}
             </button>
           ))}
-          <span className="text-gray-500 text-sm mx-1">|</span>
+          <span className="text-[var(--color-text-secondary)] text-sm mx-1">|</span>
           <select
             value={sortBy}
-            onChange={(e) => setSortBy(e.target.value)}
-            className="bg-[var(--color-bg-secondary)] border border-white/10 rounded-full px-4 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] cursor-pointer"
+            onChange={(event) => setSortBy(event.target.value)}
+            className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-pill px-4 py-2 text-sm text-[var(--color-text-primary)] font-gothic focus:outline-none focus:border-[var(--color-border-medium)] cursor-pointer"
           >
-            {SORT_OPTIONS.map((opt) => (
-              <option key={opt.id} value={opt.id} className="bg-[#1c1c1e]">{opt.label}</option>
+            {SORT_OPTIONS.map((option) => (
+              <option key={option.id} value={option.id} className="bg-[var(--color-bg-secondary)] text-[var(--color-text-primary)]">
+                {option.label}
+              </option>
             ))}
           </select>
         </div>
 
         {loadError && (
-          <div className="text-center mb-6 text-red-400 text-sm">{loadError}</div>
+          <div className="text-center mb-6 text-[var(--color-error)] text-sm">{loadError}</div>
         )}
 
         {loading && filteredProducts.length === 0 ? (
@@ -187,19 +195,16 @@ const Home = () => {
             <p className="products-loader-text">Loading products...</p>
           </div>
         ) : filteredProducts.length === 0 ? (
-          <div className="text-center py-20 text-[#86868b]">No products found.</div>
+          <div className="text-center py-20 text-[var(--color-text-secondary)] font-serif">No products found.</div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-6">
-            {filteredProducts.map((p, index) => (
+            {filteredProducts.map((product, index) => (
               <div
-                key={`${p._id}-${categoryAnimKey}`}
+                key={`${product._id}-${categoryAnimKey}`}
                 className="product-reveal"
                 style={{ animationDelay: `${Math.min(index, 11) * 45}ms` }}
               >
-                <ProductCard
-                  product={p}
-                  onOpenDetail={setSelectedProduct}
-                />
+                <ProductCard product={product} onOpenDetail={setSelectedProduct} />
               </div>
             ))}
           </div>
@@ -215,22 +220,22 @@ const Home = () => {
 
       {showProofNotice && (
         <div className="fixed z-[85] top-20 md:top-24 left-3 right-3 md:left-auto md:right-6">
-          <div className="relative w-full md:w-[430px] rounded-2xl border border-[#1f7dbf] bg-[linear-gradient(160deg,#071c2d_0%,#0a2a42_100%)] shadow-[0_26px_60px_rgba(3,13,24,0.48)]">
+          <div className="relative w-full md:w-[430px] rounded-[10px] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] shadow-[rgba(0,0,0,0.14)_0px_28px_70px]">
             <button
               type="button"
               onClick={closeProofNotice}
               aria-label="Close notice"
-              className="btn-press absolute top-3 right-3 p-1 rounded-full text-[#7fb9e8] hover:text-white hover:bg-white/10"
+              className="btn-press absolute top-3 right-3 p-1 rounded-full text-[var(--color-text-secondary)] hover:text-[var(--color-error)] hover:bg-[var(--color-bg-elevated)]"
             >
               <XMarkIcon className="w-4 h-4" />
             </button>
             <div className="p-4 md:p-5 flex items-start gap-3">
-              <div className="mt-0.5 w-11 h-11 rounded-xl border border-[#2d88c7] bg-[#0b3150] flex items-center justify-center shrink-0">
-                <ShieldCheckIcon className="w-6 h-6 text-[#5fd0ff]" />
+              <div className="mt-0.5 w-11 h-11 rounded-[8px] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] flex items-center justify-center shrink-0">
+                <ShieldCheckIcon className="w-6 h-6 text-[var(--color-accent)]" />
               </div>
               <div className="min-w-0 flex-1 pr-8">
-                <h3 className="text-white font-extrabold text-lg leading-tight">New here? See our receipts 🧾</h3>
-                <p className="mt-1 text-[#b7d8f1] text-sm leading-relaxed">
+                <h3 className="text-[var(--color-text-primary)] font-gothic text-lg leading-tight">New here? See our receipts</h3>
+                <p className="mt-1 text-[var(--color-text-secondary)] font-serif text-sm leading-relaxed">
                   Every delivery we make is photographed and logged. Browse thousands of verified deliveries.
                 </p>
                 <div className="mt-4 flex items-center gap-3">
@@ -240,14 +245,14 @@ const Home = () => {
                       closeProofNotice();
                       navigate('/proofs');
                     }}
-                    className="btn-press px-4 py-2 rounded-xl bg-[#17b8ff] hover:bg-[#0ea8ec] text-white text-sm font-bold"
+                    className="btn-press px-4 py-2 rounded-[8px] bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white text-sm font-gothic"
                   >
-                    View Proof Logs →
+                    View Proof Logs {'>'}
                   </button>
                   <button
                     type="button"
                     onClick={closeProofNotice}
-                    className="btn-press text-[#8fc0e3] hover:text-white text-sm font-medium"
+                    className="btn-press text-[var(--color-text-secondary)] hover:text-[var(--color-error)] text-sm font-medium"
                   >
                     Later
                   </button>

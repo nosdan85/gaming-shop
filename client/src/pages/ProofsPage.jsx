@@ -62,14 +62,14 @@ const ProofsPage = () => {
   const activeImage = previewImages[previewIndex] || '';
 
   return (
-    <div className="min-h-screen bg-black pt-20 md:pt-24 pb-16">
+    <div className="min-h-screen bg-[var(--color-bg-main)] pt-20 md:pt-24 pb-16">
       <div className="max-w-7xl mx-auto px-4">
         <section className="mb-8 md:mb-10 text-center">
-          <div className="inline-flex items-center rounded-full px-4 py-2 bg-[#0d111f] border border-[#22436a] text-[#7ed7ff] text-xs font-semibold tracking-wider uppercase">
+          <div className="inline-flex items-center rounded-pill px-4 py-2 bg-[var(--color-bg-elevated)] border border-[var(--color-border)] text-[var(--color-accent)] text-xs font-gothic tracking-wider uppercase">
             Verified Deliveries
           </div>
-          <h1 className="mt-4 text-4xl md:text-6xl font-black text-[#8ad9ff]">Proof of Delivery</h1>
-          <p className="mt-4 text-gray-300 max-w-3xl mx-auto text-sm md:text-xl">
+          <h1 className="mt-4 text-4xl md:text-6xl font-gothic text-[var(--color-text-primary)] tracking-[-2.16px]">Proof of Delivery</h1>
+          <p className="mt-4 text-[var(--color-text-secondary)] font-serif max-w-3xl mx-auto text-sm md:text-xl">
             Every completed order is logged with image proof. Browse clear, authentic delivery records from our real orders.
           </p>
           {DISCORD_VOUCH_URL && (
@@ -77,7 +77,7 @@ const ProofsPage = () => {
               href={DISCORD_VOUCH_URL}
               target="_blank"
               rel="noreferrer"
-              className="inline-block mt-4 btn-press bg-[#1d273d] hover:bg-[#293553] text-white text-sm px-4 py-2 rounded-full border border-[#31405f]"
+              className="inline-block mt-4 btn-press bg-[var(--color-bg-elevated)] hover:text-[var(--color-error)] text-[var(--color-text-primary)] text-sm px-4 py-2 rounded-pill border border-[var(--color-border)]"
             >
               Open Discord Vouch Channel
             </a>
@@ -85,7 +85,7 @@ const ProofsPage = () => {
           <div className="mt-3">
             <Link
               to="/"
-              className="inline-block btn-press bg-[#1a2030] hover:bg-[#24314a] text-white text-sm px-4 py-2 rounded-full border border-[#2a3a58]"
+              className="inline-block btn-press bg-[var(--color-bg-elevated)] hover:text-[var(--color-error)] text-[var(--color-text-primary)] text-sm px-4 py-2 rounded-pill border border-[var(--color-border)]"
             >
               Back To Home
             </Link>
@@ -100,9 +100,9 @@ const ProofsPage = () => {
             <p className="products-loader-text">Loading proofs...</p>
           </div>
         ) : error ? (
-          <div className="text-center text-red-300 bg-[#1d0f12] border border-[#47232a] rounded-2xl p-5">{error}</div>
+          <div className="text-center text-[var(--color-error)] bg-[rgba(207,45,86,0.1)] border border-[rgba(207,45,86,0.3)] rounded-[10px] p-5">{error}</div>
         ) : proofs.length === 0 ? (
-          <div className="text-center text-gray-400 bg-[#111217] border border-[#232737] rounded-2xl p-6">No proof records yet.</div>
+          <div className="text-center text-[var(--color-text-secondary)] bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-[10px] p-6">No proof records yet.</div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
             {proofs.map((proof) => {
@@ -111,14 +111,14 @@ const ProofsPage = () => {
               return (
                 <article
                   key={proof.id}
-                  className="rounded-2xl overflow-hidden border border-[#222939] bg-[#111522] shadow-[0_14px_34px_rgba(0,0,0,0.35)]"
+                  className="rounded-[10px] overflow-hidden border border-[var(--color-border)] bg-[var(--color-bg-secondary)] shadow-none hover:shadow-[rgba(0,0,0,0.14)_0px_28px_70px]"
                 >
                   <button
                     type="button"
                     onClick={() => setPreview(proof)}
                     className="w-full block text-left btn-press"
                   >
-                    <div className="relative h-56 bg-[#090b13]">
+                    <div className="relative h-56 bg-[var(--color-bg-elevated)]">
                       {firstImage ? (
                         <img
                           src={firstImage}
@@ -128,10 +128,10 @@ const ProofsPage = () => {
                           className="w-full h-full object-cover"
                         />
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center text-gray-500 text-sm">No image</div>
+                        <div className="w-full h-full flex items-center justify-center text-[var(--color-text-secondary)] text-sm">No image</div>
                       )}
                       {Array.isArray(proof?.imageUrls) && proof.imageUrls.length > 1 && (
-                        <span className="absolute top-3 right-3 px-2 py-1 rounded-full text-xs font-semibold bg-black/60 border border-white/10 text-white">
+                        <span className="absolute top-3 right-3 px-2 py-1 rounded-pill text-xs font-semibold bg-black/60 border border-white/10 text-white">
                           {proof.imageUrls.length} photos
                         </span>
                       )}
@@ -141,25 +141,25 @@ const ProofsPage = () => {
                     <div className="space-y-2">
                       {items.slice(0, 3).map((item, idx) => (
                         <div key={`${proof.id}-${idx}`} className="flex items-start justify-between gap-3">
-                          <p className="text-sm text-white truncate font-bold">
+                          <p className="text-sm text-[var(--color-text-primary)] truncate font-gothic">
                             {item.deliveredLabel || 'x0'} {item.name}
                           </p>
-                          <p className="text-sm text-[#78d4ff] font-semibold shrink-0">
+                          <p className="text-sm text-[var(--color-accent)] font-semibold shrink-0">
                             ${Number(item?.lineTotal || 0).toFixed(2)}
                           </p>
                         </div>
                       ))}
                       {items.length > 3 && (
-                        <p className="text-xs text-gray-500">+{items.length - 3} more</p>
+                        <p className="text-xs text-[var(--color-text-secondary)]">+{items.length - 3} more</p>
                       )}
                       {items.length === 0 && (
                         <div className="flex items-start justify-between gap-3">
-                          <p className="text-sm text-white font-bold">Unknown item</p>
-                          <p className="text-sm text-[#78d4ff] font-semibold">${Number(proof?.totalAmount || 0).toFixed(2)}</p>
+                          <p className="text-sm text-[var(--color-text-primary)] font-gothic">Unknown item</p>
+                          <p className="text-sm text-[var(--color-accent)] font-semibold">${Number(proof?.totalAmount || 0).toFixed(2)}</p>
                         </div>
                       )}
                     </div>
-                    <p className="text-xs text-gray-500 flex items-center gap-1">
+                    <p className="text-xs text-[var(--color-text-secondary)] flex items-center gap-1">
                       <ClockIcon className="w-3.5 h-3.5" />
                       {formatAgo(proof?.createdAt)}
                     </p>
@@ -172,13 +172,13 @@ const ProofsPage = () => {
       </div>
 
       {preview && (
-        <div className="fixed inset-0 z-[90] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[90] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="absolute inset-0" onClick={() => setPreview(null)} />
-          <div className="relative w-full max-w-6xl bg-[#0f1320] border border-[#24314d] rounded-2xl overflow-hidden proof-modal-in">
+          <div className="relative w-full max-w-6xl bg-[var(--color-bg-main)] border border-[var(--color-border)] rounded-[10px] overflow-hidden proof-modal-in">
             <button
               type="button"
               onClick={() => setPreview(null)}
-              className="absolute top-3 right-3 z-10 px-3 py-1 rounded-full bg-black/60 text-white text-sm btn-press"
+              className="absolute top-3 right-3 z-10 px-3 py-1 rounded-pill bg-[var(--color-bg-elevated)] text-[var(--color-text-primary)] text-sm btn-press hover:text-[var(--color-error)]"
             >
               Close
             </button>
@@ -193,7 +193,7 @@ const ProofsPage = () => {
                     className="max-h-[72vh] w-auto max-w-full object-contain proof-image-in"
                   />
                 ) : (
-                  <div className="text-gray-500 text-sm">No image</div>
+                  <div className="text-[var(--color-text-secondary)] text-sm">No image</div>
                 )}
 
                 {previewImages.length > 1 && (
@@ -216,19 +216,19 @@ const ProofsPage = () => {
                 )}
               </div>
 
-              <div className="p-5 border-t md:border-t-0 md:border-l border-[#24314d]">
-                <h3 className="text-white font-bold text-lg">Order Proof</h3>
-                <p className="text-[#78d4ff] font-semibold mt-1">${Number(preview?.totalAmount || 0).toFixed(2)}</p>
+              <div className="p-5 border-t md:border-t-0 md:border-l border-[var(--color-border)]">
+                <h3 className="text-[var(--color-text-primary)] font-gothic text-lg">Order Proof</h3>
+                <p className="text-[var(--color-accent)] font-semibold mt-1">${Number(preview?.totalAmount || 0).toFixed(2)}</p>
                 <div className="mt-4 space-y-2">
                   {(Array.isArray(preview?.items) ? preview.items : []).map((item, idx) => (
-                    <div key={`preview-${idx}`} className="rounded-lg bg-[#0a0e19] border border-[#1f2a43] px-3 py-2 text-sm">
-                      <p className="text-white font-bold">{item.deliveredLabel || 'x0'} {item.name}</p>
-                      <p className="text-gray-400 text-xs">${Number(item?.lineTotal || 0).toFixed(2)}</p>
+                    <div key={`preview-${idx}`} className="rounded-[8px] bg-[var(--color-bg-secondary)] border border-[var(--color-border)] px-3 py-2 text-sm">
+                      <p className="text-[var(--color-text-primary)] font-gothic">{item.deliveredLabel || 'x0'} {item.name}</p>
+                      <p className="text-[var(--color-text-secondary)] text-xs">${Number(item?.lineTotal || 0).toFixed(2)}</p>
                     </div>
                   ))}
                 </div>
                 {previewImages.length > 1 && (
-                  <p className="mt-4 text-xs text-gray-500">
+                  <p className="mt-4 text-xs text-[var(--color-text-secondary)]">
                     Image {previewIndex + 1} / {previewImages.length}
                   </p>
                 )}

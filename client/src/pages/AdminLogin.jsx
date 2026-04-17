@@ -25,17 +25,17 @@ const AdminLogin = () => {
     }
 
     return (
-        <div className="flex items-center justify-center h-screen bg-[#050B1E]">
-            <form onSubmit={handleSubmit} className="bg-[#0F172A] p-8 rounded-xl border border-blue-500/30">
-                <h2 className="text-2xl font-bold mb-4 text-white">Admin Access</h2>
+        <div className="flex items-center justify-center h-screen bg-[var(--color-bg-main)]">
+            <form onSubmit={handleSubmit} className="bg-[var(--color-bg-secondary)] p-8 rounded-[10px] border border-[var(--color-border)] shadow-[rgba(0,0,0,0.14)_0px_28px_70px]">
+                <h2 className="text-2xl font-gothic tracking-[-0.72px] mb-4 text-[var(--color-text-primary)]">Admin Access</h2>
                 <input
                     type="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="w-full p-2 mb-4 bg-black/50 text-white rounded"
+                    className="w-full p-2 mb-4 bg-transparent border border-[var(--color-border)] text-[var(--color-text-primary)] rounded-[8px] focus:outline-none focus:border-[var(--color-border-medium)]"
                     placeholder="Enter Password"
                 />
-                <button className="w-full btn-primary">Login</button>
+                <button className="w-full bg-[var(--color-bg-elevated)] text-[var(--color-text-primary)] hover:text-[var(--color-error)] py-2 px-4 rounded-[8px] font-gothic transition-colors duration-150">Login</button>
             </form>
         </div>
     );

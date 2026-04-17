@@ -1,7 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useContext } from 'react';
 import { Navigate } from 'react-router-dom';
 import axios from 'axios';
-import { useContext } from 'react';
 import { ShopContext } from '../context/ShopContext';
 
 const AdminOrders = () => {
@@ -11,19 +10,23 @@ const AdminOrders = () => {
   const [isOwner, setIsOwner] = useState(null);
 
   useEffect(() => {
-    const u = user || (() => {
+    const localUser = user || (() => {
       try {
-        const s = localStorage.getItem('discordUser') || localStorage.getItem('user');
-        return s ? JSON.parse(s) : null;
-      } catch { return null; }
+        const stored = localStorage.getItem('discordUser') || localStorage.getItem('user');
+        return stored ? JSON.parse(stored) : null;
+      } catch {
+        return null;
+      }
     })();
-    if (!u?.discordId) {
+
+    if (!localUser?.discordId) {
       setIsOwner(false);
       setLoading(false);
       return;
     }
+
     axios.get('/api/shop/check-owner')
-      .then(res => setIsOwner(res.data?.isOwner === true))
+      .then((res) => setIsOwner(res.data?.isOwner === true))
       .catch(() => setIsOwner(false))
       .finally(() => setLoading(false));
   }, [user]);
@@ -32,7 +35,7 @@ const AdminOrders = () => {
     if (isOwner !== true) return;
     setLoading(true);
     axios.get('/api/shop/orders')
-      .then(res => setOrders(res.data))
+      .then((res) => setOrders(res.data))
       .catch(() => setOrders([]))
       .finally(() => setLoading(false));
   }, [isOwner]);
@@ -40,36 +43,37 @@ const AdminOrders = () => {
   if (isOwner === false) {
     return <Navigate to="/" replace />;
   }
+
   if (isOwner !== true) {
     return (
-      <div className="min-h-screen bg-black flex items-center justify-center text-gray-400">
+      <div className="min-h-screen bg-[var(--color-bg-main)] flex items-center justify-center text-[var(--color-text-secondary)]">
         Checking access...
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-black p-4 md:p-8">
+    <div className="min-h-screen bg-[var(--color-bg-main)] p-4 md:p-8">
       <div className="max-w-4xl mx-auto">
-        <h1 className="text-2xl font-bold text-white mb-6">Orders</h1>
+        <h1 className="text-2xl font-gothic text-[var(--color-text-primary)] mb-6">Orders</h1>
         {loading ? (
-          <p className="text-gray-400">Loading...</p>
+          <p className="text-[var(--color-text-secondary)]">Loading...</p>
         ) : orders.length === 0 ? (
-          <p className="text-gray-400">No orders yet.</p>
+          <p className="text-[var(--color-text-secondary)]">No orders yet.</p>
         ) : (
           <div className="space-y-3 overflow-x-auto">
-            {orders.map(o => (
-              <div key={o.orderId} className="bg-[#1c1c1e] rounded-xl p-4 border border-[#2c2c2e]">
+            {orders.map((order) => (
+              <div key={order.orderId} className="bg-[var(--color-bg-secondary)] rounded-[8px] p-4 border border-[var(--color-border)]">
                 <div className="flex flex-wrap gap-4 items-start justify-between">
                   <div>
-                    <p className="text-white font-bold">{o.orderId}</p>
-                    <p className="text-gray-400 text-sm">Customer: {o.discordUsername || o.discordId}</p>
-                    <p className="text-gray-400 text-sm">${o.totalAmount?.toFixed(2)}</p>
+                    <p className="text-[var(--color-text-primary)] font-gothic">{order.orderId}</p>
+                    <p className="text-[var(--color-text-secondary)] text-sm">Customer: {order.discordUsername || order.discordId}</p>
+                    <p className="text-[var(--color-text-secondary)] text-sm">${order.totalAmount?.toFixed(2)}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-gray-400 text-sm">Payment: {o.paymentMethod}</p>
-                    <p className={o.isPaid ? 'text-green-400' : 'text-yellow-400'}>
-                      {o.isPaid ? 'Paid' : 'Unpaid'}
+                    <p className="text-[var(--color-text-secondary)] text-sm">Payment: {order.paymentMethod}</p>
+                    <p className={order.isPaid ? 'text-[var(--color-success)]' : 'text-[var(--color-gold)]'}>
+                      {order.isPaid ? 'Paid' : 'Unpaid'}
                     </p>
                   </div>
                 </div>
@@ -77,10 +81,11 @@ const AdminOrders = () => {
             ))}
           </div>
         )}
-        <a href="/" className="inline-block mt-6 text-gray-500 hover:text-white text-sm">← Back to shop</a>
+        <a href="/" className="inline-block mt-6 text-[var(--color-text-secondary)] hover:text-[var(--color-error)] text-sm">&larr; Back to shop</a>
       </div>
     </div>
   );
 };
 
 export default AdminOrders;
+

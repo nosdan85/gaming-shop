@@ -243,15 +243,15 @@ const PaymentPage = () => {
 
   if (!orderId) {
     return (
-      <div className="min-h-screen bg-black flex items-center justify-center text-white p-4">
-        <p>Invalid payment link. <a href="/" className="text-blue-400 underline">Go back</a></p>
+      <div className="min-h-screen bg-[var(--color-bg-main)] flex items-center justify-center text-[var(--color-text-primary)] p-4">
+        <p>Invalid payment link. <a href="/" className="text-[var(--color-accent)] underline">Go back</a></p>
       </div>
     );
   }
 
   if (orderInfoLoading) {
     return (
-      <div className="min-h-screen bg-black flex items-center justify-center text-white p-4">
+      <div className="min-h-screen bg-[var(--color-bg-main)] flex items-center justify-center text-[var(--color-text-primary)] p-4">
         <div className="products-loader" role="status" aria-live="polite">
           <div className="products-loader-track">
             <span className="products-loader-dog" aria-hidden="true">🐕</span>
@@ -264,11 +264,11 @@ const PaymentPage = () => {
 
   if (orderInfoError || !orderInfo) {
     return (
-      <div className="min-h-screen bg-black flex items-center justify-center text-white p-4">
-        <div className="max-w-md w-full bg-[#1c1c1e] border border-[#2c2c2e] rounded-2xl p-6 text-center">
-          <h2 className="text-xl font-bold mb-3">Cannot open payment page</h2>
-          <p className="text-gray-400 text-sm">{orderInfoError || 'Unknown error'}</p>
-          <a href="/" className="inline-block mt-5 text-blue-400 underline">Back to shop</a>
+      <div className="min-h-screen bg-[var(--color-bg-main)] flex items-center justify-center text-[var(--color-text-primary)] p-4">
+        <div className="max-w-md w-full bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-[8px] p-6 text-center">
+          <h2 className="text-xl font-gothic mb-3">Cannot open payment page</h2>
+          <p className="text-[var(--color-text-secondary)] text-sm font-serif">{orderInfoError || 'Unknown error'}</p>
+          <a href="/" className="inline-block mt-5 text-[var(--color-accent)] underline">Back to shop</a>
         </div>
       </div>
     );
@@ -490,43 +490,43 @@ const PaymentPage = () => {
 
   if (paid) {
     return (
-      <div className="min-h-screen bg-black flex items-center justify-center p-4">
-        <div className="bg-[#1c1c1e] rounded-2xl p-8 max-w-md w-full border border-[#2c2c2e] text-center">
+      <div className="min-h-screen bg-[var(--color-bg-main)] flex items-center justify-center p-4">
+        <div className="bg-[var(--color-bg-secondary)] rounded-[8px] p-8 max-w-md w-full border border-[var(--color-border)] text-center">
           <div className="text-4xl mb-4">&#10003;</div>
-          <h2 className="text-2xl font-bold text-white mb-2">Payment Received!</h2>
-          <p className="text-gray-400 mb-6">Your order has been paid.</p>
-          <a href="/" className="block mt-3 text-gray-500 hover:text-white text-sm">Back to shop</a>
+          <h2 className="text-2xl font-gothic text-[var(--color-text-primary)] mb-2">Payment Received!</h2>
+          <p className="text-[var(--color-text-secondary)] font-serif mb-6">Your order has been paid.</p>
+          <a href="/" className="block mt-3 text-[var(--color-text-secondary)] hover:text-[var(--color-error)] text-sm">Back to shop</a>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen min-h-[100dvh] bg-black flex items-center justify-center p-4">
-      <div className="bg-[#1c1c1e] rounded-2xl p-6 max-w-md w-full border border-[#2c2c2e] overflow-hidden">
-        <h2 className="text-xl font-bold text-white mb-1">Complete Payment</h2>
+    <div className="min-h-screen min-h-[100dvh] bg-[var(--color-bg-main)] flex items-center justify-center p-4">
+      <div className="bg-[var(--color-bg-secondary)] rounded-[8px] p-6 max-w-md w-full border border-[var(--color-border)] overflow-hidden">
+        <h2 className="text-xl font-gothic text-[var(--color-text-primary)] mb-1">Complete Payment</h2>
         {discountAmountNum > 0 ? (
           <div className="mb-6 text-sm">
-            <p className="text-gray-400">Subtotal: <span className="text-white font-bold">${subtotalNum.toFixed(2)}</span></p>
-            <p className="text-gray-400">
+            <p className="text-[var(--color-text-secondary)]">Subtotal: <span className="text-[var(--color-text-primary)] font-gothic">${subtotalNum.toFixed(2)}</span></p>
+            <p className="text-[var(--color-text-secondary)]">
               Discount ({discountPercentNum}%):
-              <span className="text-green-400 font-bold"> -${discountAmountNum.toFixed(2)}</span>
+              <span className="text-[var(--color-success)] font-gothic"> -${discountAmountNum.toFixed(2)}</span>
             </p>
-            <p className="text-gray-400">Total: <span className="text-white font-bold">${totalNum.toFixed(2)}</span></p>
+            <p className="text-[var(--color-text-secondary)]">Total: <span className="text-[var(--color-text-primary)] font-gothic">${totalNum.toFixed(2)}</span></p>
           </div>
         ) : (
-          <p className="text-gray-400 text-sm mb-6">Total: <span className="text-white font-bold">${totalNum.toFixed(2)}</span></p>
+          <p className="text-[var(--color-text-secondary)] text-sm mb-6">Total: <span className="text-[var(--color-text-primary)] font-gothic">${totalNum.toFixed(2)}</span></p>
         )}
 
         {orderInfo?.ticketMode === 'bot' && orderInfo?.ticketStatus === 'creating' && !orderInfo?.channelId && (
-          <div className="mb-4 rounded-xl border border-[#2c2c2e] bg-[#111114] px-4 py-3 text-sm text-yellow-300">
+          <div className="mb-4 rounded-[8px] border border-[var(--color-border)] bg-[var(--color-bg-main)] px-4 py-3 text-sm text-[var(--color-gold)]">
             Creating your Discord ticket. Please do not tap repeatedly.
             {ticketRetryInSeconds > 0 ? ` Retry in ${ticketRetryInSeconds}s.` : ''}
           </div>
         )}
 
         {orderInfo?.ticketMode === 'bot' && orderInfo?.ticketStatus === 'failed' && orderInfo?.ticketError && (
-          <div className="mb-4 rounded-xl border border-[#4b1d1d] bg-[#241010] px-4 py-3 text-sm text-red-300">
+          <div className="mb-4 rounded-[8px] border border-[rgba(207,45,86,0.3)] bg-[rgba(207,45,86,0.1)] px-4 py-3 text-sm text-[var(--color-error)]">
             {orderInfo.ticketError}
           </div>
         )}
@@ -534,25 +534,25 @@ const PaymentPage = () => {
         <button
           onClick={handlePayPalFF}
           disabled={paypalFFLoading}
-          className="btn-press w-full py-3 min-h-[44px] bg-[#003087] hover:bg-[#002766] active:scale-[0.98] disabled:opacity-50 text-white font-bold rounded-xl transition mb-2 touch-manipulation"
+          className="btn-press w-full py-3 min-h-[44px] bg-[#003087] hover:bg-[#002766] active:scale-[0.98] disabled:opacity-50 text-white font-gothic rounded-[8px] transition mb-2 touch-manipulation"
         >
           {paypalFFLoading ? 'Loading...' : 'Pay with PayPal (Friends & Family)'}
         </button>
 
         {paypalFFData !== null && (
-          <div className="bg-[#0a0a0c] rounded-xl p-4 border border-[#2c2c2e] mb-4 text-sm text-gray-200">
-            <p className="text-white font-bold mb-2">💳 PayPal Payment Guide</p>
+          <div className="bg-[var(--color-bg-main)] rounded-[8px] p-4 border border-[var(--color-border)] mb-4 text-sm text-[var(--color-text-primary)]">
+            <p className="text-[var(--color-text-primary)] font-gothic mb-2">💳 PayPal Payment Guide</p>
             <p><span className="font-semibold">Method:</span> <span className="font-bold">Friends and Family</span></p>
             <p className="mt-1">
               <span className="font-semibold">Send ${totalNum.toFixed(2)} to:</span>
             </p>
             <div className="flex items-center gap-2 mt-1">
-              <code className="text-[#f4f8ff] bg-[#151a24] border border-[#2a3344] rounded px-2 py-1 break-all flex-1">
+              <code className="text-[var(--color-text-primary)] bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[8px] px-2 py-1 break-all flex-1">
                 {paypalFFData.email || DEFAULT_PAYPAL_EMAIL}
               </code>
               <button
                 onClick={copyPayPalEmail}
-                className="btn-press flex-shrink-0 px-3 py-1.5 bg-[#2c2c2e] hover:bg-[#3f3f46] text-white text-xs font-medium rounded-lg transition"
+                className="btn-press flex-shrink-0 px-3 py-1.5 bg-[var(--color-bg-elevated)] hover:text-[var(--color-error)] text-[var(--color-text-primary)] text-xs font-medium rounded-[8px] transition"
               >
                 {paypalEmailCopied ? 'Copied!' : 'Copy'}
               </button>
@@ -560,12 +560,12 @@ const PaymentPage = () => {
             <p className="mt-3"><span className="font-bold">1.</span> Choose <span className="font-bold">Friends and Family</span></p>
             <p className="mt-1"><span className="font-bold">2.</span> Write item name in the note:</p>
             <div className="flex items-center gap-2 mt-1">
-              <code className="text-[#f4f8ff] bg-[#151a24] border border-[#2a3344] rounded px-2 py-1 break-all flex-1">
+              <code className="text-[var(--color-text-primary)] bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[8px] px-2 py-1 break-all flex-1">
                 {orderItemNote}
               </code>
               <button
                 onClick={copyPayPalItemName}
-                className="btn-press flex-shrink-0 px-3 py-1.5 bg-[#2c2c2e] hover:bg-[#3f3f46] text-white text-xs font-medium rounded-lg transition"
+                className="btn-press flex-shrink-0 px-3 py-1.5 bg-[var(--color-bg-elevated)] hover:text-[var(--color-error)] text-[var(--color-text-primary)] text-xs font-medium rounded-[8px] transition"
               >
                 {paypalItemCopied ? 'Copied!' : 'Copy'}
               </button>
@@ -574,7 +574,7 @@ const PaymentPage = () => {
             <button
               onClick={handleOpenPayPalTicket}
               disabled={paypalTicketLoading || paypalTicketRetryInSeconds > 0}
-              className="btn-press w-full mt-3 py-2.5 bg-[#5865F2] hover:bg-[#4752C4] disabled:opacity-50 text-white font-bold rounded-xl transition text-sm"
+              className="btn-press w-full mt-3 py-2.5 bg-[#5865F2] hover:bg-[#4752C4] disabled:opacity-50 text-white font-gothic rounded-[8px] transition text-sm"
             >
               {paypalTicketLoading
                 ? 'Creating...'
@@ -589,21 +589,21 @@ const PaymentPage = () => {
 
         <button
           onClick={handleCashApp}
-          className="btn-press w-full py-3 min-h-[44px] bg-[#00D632] hover:bg-[#00b329] active:scale-[0.98] text-black font-bold rounded-xl transition mb-2 touch-manipulation"
+          className="btn-press w-full py-3 min-h-[44px] bg-[#00D632] hover:bg-[#00b329] active:scale-[0.98] text-black font-gothic rounded-[8px] transition mb-2 touch-manipulation"
         >
           Pay with Cash App
         </button>
         {cashAppData !== null && (
-          <div className="bg-[#0a0a0c] rounded-xl p-4 border border-[#2c2c2e] mb-4 text-sm text-gray-200">
-            <p className="text-white font-bold mb-2">💸 Cash App Payment Guide</p>
+          <div className="bg-[var(--color-bg-main)] rounded-[8px] p-4 border border-[var(--color-border)] mb-4 text-sm text-[var(--color-text-primary)]">
+            <p className="text-[var(--color-text-primary)] font-gothic mb-2">💸 Cash App Payment Guide</p>
             <p><span className="font-semibold">Send ${cashAppAmountNum.toFixed(2)} to:</span></p>
             <div className="flex items-center gap-2 mt-1">
-              <code className="text-[#f4f8ff] bg-[#151a24] border border-[#2a3344] rounded px-2 py-1 break-all flex-1">
+              <code className="text-[var(--color-text-primary)] bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[8px] px-2 py-1 break-all flex-1">
                 {cashAppData?.handle || DEFAULT_CASHAPP_HANDLE}
               </code>
               <button
                 onClick={copyCashAppTag}
-                className="btn-press flex-shrink-0 px-3 py-1.5 bg-[#2c2c2e] hover:bg-[#3f3f46] text-white text-xs font-medium rounded-lg transition"
+                className="btn-press flex-shrink-0 px-3 py-1.5 bg-[var(--color-bg-elevated)] hover:text-[var(--color-error)] text-[var(--color-text-primary)] text-xs font-medium rounded-[8px] transition"
               >
                 {cashAppTagCopied ? 'Copied!' : 'Copy'}
               </button>
@@ -611,18 +611,18 @@ const PaymentPage = () => {
             <p className="mt-3"><span className="font-bold">1.</span> Send the payment to <span className="font-bold">{cashAppData?.handle || DEFAULT_CASHAPP_HANDLE}</span></p>
             <p className="mt-1"><span className="font-bold">2.</span> Write item name in the note:</p>
             <div className="flex items-center gap-2 mt-1">
-              <code className="text-[#f4f8ff] bg-[#151a24] border border-[#2a3344] rounded px-2 py-1 break-all flex-1">
+              <code className="text-[var(--color-text-primary)] bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[8px] px-2 py-1 break-all flex-1">
                 {orderItemNote}
               </code>
               <button
                 onClick={copyCashAppItemName}
-                className="btn-press flex-shrink-0 px-3 py-1.5 bg-[#2c2c2e] hover:bg-[#3f3f46] text-white text-xs font-medium rounded-lg transition"
+                className="btn-press flex-shrink-0 px-3 py-1.5 bg-[var(--color-bg-elevated)] hover:text-[var(--color-error)] text-[var(--color-text-primary)] text-xs font-medium rounded-[8px] transition"
               >
                 {cashAppItemCopied ? 'Copied!' : 'Copy'}
               </button>
             </div>
             <p className="mt-3"><span className="font-bold">3.</span> Send the <span className="font-bold">payment screenshot</span> in the ticket</p>
-            <p className="mt-3 text-yellow-300 text-xs">Note: Cash App payments include an additional <span className="font-bold">10% conversion fee</span>.</p>
+            <p className="mt-3 text-[var(--color-gold)] text-xs">Note: Cash App payments include an additional <span className="font-bold">10% conversion fee</span>.</p>
             <button
               onClick={handleOpenCashAppTicket}
               disabled={
@@ -630,7 +630,7 @@ const PaymentPage = () => {
                 || ticketRetryInSeconds > 0
                 || (orderInfo?.ticketMode === 'bot' && orderInfo?.ticketStatus === 'creating' && !orderInfo?.channelId)
               }
-              className="btn-press w-full mt-3 py-2.5 bg-[#5865F2] hover:bg-[#4752C4] disabled:opacity-50 text-white font-bold rounded-xl transition text-sm"
+              className="btn-press w-full mt-3 py-2.5 bg-[#5865F2] hover:bg-[#4752C4] disabled:opacity-50 text-white font-gothic rounded-[8px] transition text-sm"
             >
               {ticketLoading === 'ticket'
                 ? 'Creating...'
@@ -644,43 +644,43 @@ const PaymentPage = () => {
         )}
 
         <div className="flex items-center gap-3 my-6">
-          <div className="flex-1 h-px bg-[#2c2c2e]" />
-          <span className="text-gray-600 text-xs">or</span>
-          <div className="flex-1 h-px bg-[#2c2c2e]" />
+          <div className="flex-1 h-px bg-[var(--color-border)]" />
+          <span className="text-[var(--color-text-secondary)] text-xs">or</span>
+          <div className="flex-1 h-px bg-[var(--color-border)]" />
         </div>
 
         {!ltcData ? (
-          <button onClick={handleLTC} disabled={ltcLoading} className="btn-press w-full py-3 min-h-[44px] bg-[#333] hover:bg-[#444] active:scale-[0.98] disabled:opacity-50 text-white font-bold rounded-xl transition touch-manipulation">
+          <button onClick={handleLTC} disabled={ltcLoading} className="btn-press w-full py-3 min-h-[44px] bg-[#333] hover:bg-[#444] active:scale-[0.98] disabled:opacity-50 text-white font-gothic rounded-[8px] transition touch-manipulation">
             {ltcLoading ? 'Loading...' : 'Pay with LTC (Litecoin)'}
           </button>
         ) : (
-          <div className="bg-[#0a0a0c] rounded-xl p-4 border border-[#2c2c2e]">
-            <button onClick={() => setLtcData(null)} className="btn-press text-gray-400 hover:text-white text-xs mb-3 flex items-center gap-1">
+          <div className="bg-[var(--color-bg-main)] rounded-[8px] p-4 border border-[var(--color-border)]">
+            <button onClick={() => setLtcData(null)} className="btn-press text-[var(--color-text-secondary)] hover:text-[var(--color-error)] text-xs mb-3 flex items-center gap-1">
               &larr; Back
             </button>
-            <p className="text-gray-400 text-xs mb-2">
-              Send equivalent of <span className="text-white font-bold">${totalNum.toFixed(2)}</span> in LTC
+            <p className="text-[var(--color-text-secondary)] text-xs mb-2">
+              Send equivalent of <span className="text-[var(--color-text-primary)] font-gothic">${totalNum.toFixed(2)}</span> in LTC
             </p>
-            <p className="text-gray-400 text-xs mb-1">To address:</p>
-            <div className="bg-[#1a1a1c] rounded p-2 mb-2">
-              <p className="text-white font-mono text-xs break-all">{ltcData.payAddress}</p>
+            <p className="text-[var(--color-text-secondary)] text-xs mb-1">To address:</p>
+            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[8px] p-2 mb-2">
+              <p className="text-[var(--color-text-primary)] font-mono text-xs break-all">{ltcData.payAddress}</p>
             </div>
             <button
               onClick={copyLtcAddress}
-              className="btn-press w-full mb-3 py-2 bg-[#2c2c2e] hover:bg-[#3f3f46] text-white text-xs font-medium rounded-lg transition"
+              className="btn-press w-full mb-3 py-2 bg-[var(--color-bg-elevated)] hover:text-[var(--color-error)] text-[var(--color-text-primary)] text-xs font-medium rounded-[8px] transition"
             >
               {ltcAddressCopied ? 'Address Copied!' : 'Copy LTC Address'}
             </button>
             <img
               src={ltcData.qrImageUrl || '/pictures/payments/ltc.png'}
               alt="LTC QR"
-              className="w-full rounded-xl border border-[#2c2c2e] mb-3"
+              className="w-full rounded-[8px] border border-[var(--color-border)] mb-3"
             />
-            <p className="text-gray-400 text-xs mb-3">Send payment, then open ticket and upload proof screenshot.</p>
+            <p className="text-[var(--color-text-secondary)] text-xs mb-3">Send payment, then open ticket and upload proof screenshot.</p>
             <button
               onClick={handleOpenLtcTicket}
               disabled={ltcTicketLoading || ltcTicketRetryInSeconds > 0}
-              className="btn-press w-full py-2.5 bg-[#5865F2] hover:bg-[#4752C4] disabled:opacity-50 text-white font-bold rounded-xl transition text-sm"
+              className="btn-press w-full py-2.5 bg-[#5865F2] hover:bg-[#4752C4] disabled:opacity-50 text-white font-gothic rounded-[8px] transition text-sm"
             >
               {ltcTicketLoading
                 ? 'Creating...'
@@ -693,7 +693,7 @@ const PaymentPage = () => {
           </div>
         )}
 
-        <a href="/" className="block mt-6 text-center text-gray-500 hover:text-white text-sm">Back to shop</a>
+        <a href="/" className="block mt-6 text-center text-[var(--color-text-secondary)] hover:text-[var(--color-error)] text-sm">Back to shop</a>
       </div>
     </div>
   );

@@ -1,7 +1,8 @@
 import { useContext, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { ShopContext } from '../context/ShopContext';
-import { ShoppingBagIcon, Bars3Icon, XMarkIcon } from '@heroicons/react/24/outline';
+import { ShoppingBagIcon, Bars3Icon, XMarkIcon, SunIcon, MoonIcon } from '@heroicons/react/24/outline';
+import { useTheme } from '../context/ThemeContext';
 import axios from 'axios';
 
 const PROOFS_EXTERNAL_URL = String(import.meta.env.VITE_PROOFS_URL || '').trim();
@@ -11,6 +12,8 @@ const RESOLVED_DISCORD_URL = DISCORD_INVITE_URL || DISCORD_VOUCH_URL;
 const SITE_LOGO_PATH = String(import.meta.env.VITE_SITE_LOGO || '/site-logo.png').trim() || '/site-logo.png';
 
 const NavItem = ({ label, href, isExternal = false, onClick }) => {
+  const className = 'text-[var(--color-text-secondary)] hover:text-[var(--color-error)] transition-colors duration-150 font-gothic text-sm tracking-normal font-medium';
+
   if (isExternal) {
     return (
       <a
@@ -18,7 +21,7 @@ const NavItem = ({ label, href, isExternal = false, onClick }) => {
         target="_blank"
         rel="noreferrer"
         onClick={onClick}
-        className="text-gray-300 hover:text-white transition-colors font-medium"
+        className={className}
       >
         {label}
       </a>
@@ -26,7 +29,7 @@ const NavItem = ({ label, href, isExternal = false, onClick }) => {
   }
 
   return (
-    <Link to={href} onClick={onClick} className="text-gray-300 hover:text-white transition-colors font-medium">
+    <Link to={href} onClick={onClick} className={className}>
       {label}
     </Link>
   );
@@ -34,6 +37,7 @@ const NavItem = ({ label, href, isExternal = false, onClick }) => {
 
 const Navbar = () => {
   const { cart, setIsCartOpen, user } = useContext(ShopContext);
+  const { isDark, toggleTheme } = useTheme();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isOwner, setIsOwner] = useState(false);
   const location = useLocation();
@@ -71,7 +75,7 @@ const Navbar = () => {
   }, [isOwner, user?.discordId]);
 
   return (
-    <nav className="fixed top-0 left-0 w-full z-50 bg-[#09090b]/80 backdrop-blur-md border-b border-white/5">
+    <nav className="fixed top-0 left-0 w-full z-50 bg-[var(--color-bg-main)] backdrop-blur-md border-b border-[var(--color-border)]">
       <div className="max-w-7xl mx-auto px-4 md:px-6">
         <div className="flex items-center justify-between h-16 md:h-20">
           <Link to="/" className="flex-shrink-0 flex items-center">
@@ -92,19 +96,29 @@ const Navbar = () => {
           <div className="flex items-center gap-4">
             <button
               onClick={() => setIsCartOpen(true)}
-              className="relative p-2 text-gray-300 hover:text-white transition-colors"
+              className="relative p-2 text-[var(--color-text-primary)] hover:text-[var(--color-accent)] transition-colors"
             >
               <ShoppingBagIcon className="w-6 h-6" />
               {totalItems > 0 && (
-                <span className="absolute top-0 right-0 bg-[var(--color-accent)] text-white text-[10px] font-bold w-4 h-4 flex items-center justify-center rounded-full shadow-lg shadow-cyan-500/40">
+                <span className="absolute top-0 right-0 bg-[var(--color-accent)] text-white text-[10px] font-bold w-4 h-4 flex items-center justify-center rounded-full shadow-sm">
                   {totalItems}
                 </span>
               )}
             </button>
 
             <button
+              type="button"
+              onClick={toggleTheme}
+              className="btn-press p-2 rounded-pill bg-[var(--color-bg-elevated)] border border-[var(--color-border)] text-[var(--color-text-primary)] hover:text-[var(--color-error)] transition-colors"
+              aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+              title={isDark ? 'Light mode' : 'Dark mode'}
+            >
+              {isDark ? <SunIcon className="w-5 h-5" /> : <MoonIcon className="w-5 h-5" />}
+            </button>
+
+            <button
               onClick={() => setIsMenuOpen((prev) => !prev)}
-              className="md:hidden p-2 text-gray-300 hover:text-white"
+              className="md:hidden p-2 text-[var(--color-text-primary)] hover:text-[var(--color-error)]"
             >
               {isMenuOpen ? <XMarkIcon className="w-6 h-6" /> : <Bars3Icon className="w-6 h-6" />}
             </button>
@@ -113,10 +127,13 @@ const Navbar = () => {
       </div>
 
       {isMenuOpen && (
-        <div className="md:hidden bg-[#09090b] border-t border-white/10">
+        <div className="md:hidden bg-[var(--color-bg-main)] border-t border-[var(--color-border)]">
           <div className="px-4 pt-2 pb-4 space-y-1">
             {navLinks.map((item) => (
-              <div key={`mobile-${item.label}-${item.href}`} className="block px-3 py-2 text-base font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-md">
+              <div
+                key={`mobile-${item.label}-${item.href}`}
+                className="block px-3 py-2 rounded-md hover:bg-[var(--color-bg-elevated)]"
+              >
                 <NavItem {...item} onClick={() => setIsMenuOpen(false)} />
               </div>
             ))}
