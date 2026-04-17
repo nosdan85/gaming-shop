@@ -534,7 +534,11 @@ const PaymentPage = () => {
         <button
           onClick={handlePayPalFF}
           disabled={paypalFFLoading}
-          className="btn-press w-full py-3 min-h-[44px] bg-[#003087] hover:bg-[#002766] active:scale-[0.98] disabled:opacity-50 text-white font-gothic rounded-[8px] transition mb-2 touch-manipulation"
+          className={`btn-press w-full py-3 min-h-[44px] active:scale-[0.98] disabled:opacity-50 rounded-[8px] font-gothic transition mb-2 touch-manipulation ${
+            paypalFFData !== null
+              ? 'bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white border border-transparent'
+              : 'bg-[#003087]/10 text-[#003087] border border-[#003087]/20 hover:bg-[#003087]/15'
+          }`}
         >
           {paypalFFLoading ? 'Loading...' : 'Pay with PayPal (Friends & Family)'}
         </button>
@@ -552,7 +556,7 @@ const PaymentPage = () => {
               </code>
               <button
                 onClick={copyPayPalEmail}
-                className="btn-press flex-shrink-0 px-3 py-1.5 bg-[var(--color-bg-elevated)] hover:text-[var(--color-error)] text-[var(--color-text-primary)] text-xs font-medium rounded-[8px] transition"
+                className="btn-press flex-shrink-0 px-3 py-1 border border-[var(--color-border)] bg-[var(--color-bg-elevated)] hover:text-[var(--color-error)] text-[var(--color-text-primary)] text-xs font-gothic rounded-pill transition"
               >
                 {paypalEmailCopied ? 'Copied!' : 'Copy'}
               </button>
@@ -565,7 +569,7 @@ const PaymentPage = () => {
               </code>
               <button
                 onClick={copyPayPalItemName}
-                className="btn-press flex-shrink-0 px-3 py-1.5 bg-[var(--color-bg-elevated)] hover:text-[var(--color-error)] text-[var(--color-text-primary)] text-xs font-medium rounded-[8px] transition"
+                className="btn-press flex-shrink-0 px-3 py-1 border border-[var(--color-border)] bg-[var(--color-bg-elevated)] hover:text-[var(--color-error)] text-[var(--color-text-primary)] text-xs font-gothic rounded-pill transition"
               >
                 {paypalItemCopied ? 'Copied!' : 'Copy'}
               </button>
@@ -574,7 +578,7 @@ const PaymentPage = () => {
             <button
               onClick={handleOpenPayPalTicket}
               disabled={paypalTicketLoading || paypalTicketRetryInSeconds > 0}
-              className="btn-press w-full mt-3 py-2.5 bg-[#5865F2] hover:bg-[#4752C4] disabled:opacity-50 text-white font-gothic rounded-[8px] transition text-sm"
+              className="btn-press w-full mt-3 py-2.5 bg-[#5865F2]/10 text-[#5865F2] border border-[#5865F2]/20 hover:bg-[#5865F2]/15 hover:text-[#4752C4] disabled:opacity-50 font-gothic rounded-[8px] transition text-sm"
             >
               {paypalTicketLoading
                 ? 'Creating...'
@@ -589,7 +593,11 @@ const PaymentPage = () => {
 
         <button
           onClick={handleCashApp}
-          className="btn-press w-full py-3 min-h-[44px] bg-[#00D632] hover:bg-[#00b329] active:scale-[0.98] text-black font-gothic rounded-[8px] transition mb-2 touch-manipulation"
+          className={`btn-press w-full py-3 min-h-[44px] active:scale-[0.98] rounded-[8px] font-gothic transition mb-2 touch-manipulation ${
+            cashAppData !== null
+              ? 'bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white border border-transparent'
+              : 'bg-[#00D632]/10 text-[#00733a] border border-[#00D632]/20 hover:bg-[#00D632]/15'
+          }`}
         >
           Pay with Cash App
         </button>
@@ -603,7 +611,7 @@ const PaymentPage = () => {
               </code>
               <button
                 onClick={copyCashAppTag}
-                className="btn-press flex-shrink-0 px-3 py-1.5 bg-[var(--color-bg-elevated)] hover:text-[var(--color-error)] text-[var(--color-text-primary)] text-xs font-medium rounded-[8px] transition"
+                className="btn-press flex-shrink-0 px-3 py-1 border border-[var(--color-border)] bg-[var(--color-bg-elevated)] hover:text-[var(--color-error)] text-[var(--color-text-primary)] text-xs font-gothic rounded-pill transition"
               >
                 {cashAppTagCopied ? 'Copied!' : 'Copy'}
               </button>
@@ -616,7 +624,7 @@ const PaymentPage = () => {
               </code>
               <button
                 onClick={copyCashAppItemName}
-                className="btn-press flex-shrink-0 px-3 py-1.5 bg-[var(--color-bg-elevated)] hover:text-[var(--color-error)] text-[var(--color-text-primary)] text-xs font-medium rounded-[8px] transition"
+                className="btn-press flex-shrink-0 px-3 py-1 border border-[var(--color-border)] bg-[var(--color-bg-elevated)] hover:text-[var(--color-error)] text-[var(--color-text-primary)] text-xs font-gothic rounded-pill transition"
               >
                 {cashAppItemCopied ? 'Copied!' : 'Copy'}
               </button>
@@ -630,7 +638,7 @@ const PaymentPage = () => {
                 || ticketRetryInSeconds > 0
                 || (orderInfo?.ticketMode === 'bot' && orderInfo?.ticketStatus === 'creating' && !orderInfo?.channelId)
               }
-              className="btn-press w-full mt-3 py-2.5 bg-[#5865F2] hover:bg-[#4752C4] disabled:opacity-50 text-white font-gothic rounded-[8px] transition text-sm"
+              className="btn-press w-full mt-3 py-2.5 bg-[#5865F2]/10 text-[#5865F2] border border-[#5865F2]/20 hover:bg-[#5865F2]/15 hover:text-[#4752C4] disabled:opacity-50 font-gothic rounded-[8px] transition text-sm"
             >
               {ticketLoading === 'ticket'
                 ? 'Creating...'
@@ -649,13 +657,21 @@ const PaymentPage = () => {
           <div className="flex-1 h-px bg-[var(--color-border)]" />
         </div>
 
-        {!ltcData ? (
-          <button onClick={handleLTC} disabled={ltcLoading} className="btn-press w-full py-3 min-h-[44px] bg-[#333] hover:bg-[#444] active:scale-[0.98] disabled:opacity-50 text-white font-gothic rounded-[8px] transition touch-manipulation">
-            {ltcLoading ? 'Loading...' : 'Pay with LTC (Litecoin)'}
-          </button>
-        ) : (
+        <button
+          onClick={ltcData ? () => setLtcData(null) : handleLTC}
+          disabled={ltcLoading}
+          className={`btn-press w-full py-3 min-h-[44px] active:scale-[0.98] disabled:opacity-50 rounded-[8px] font-gothic transition touch-manipulation ${
+            ltcData !== null
+              ? 'bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white border border-transparent'
+              : 'bg-[var(--color-bg-elevated)] text-[var(--color-text-primary)] border border-[var(--color-border)] hover:text-[var(--color-error)]'
+          }`}
+        >
+          {ltcLoading ? 'Loading...' : 'Pay with LTC (Litecoin)'}
+        </button>
+
+        {ltcData !== null && (
           <div className="bg-[var(--color-bg-main)] rounded-[8px] p-4 border border-[var(--color-border)]">
-            <button onClick={() => setLtcData(null)} className="btn-press text-[var(--color-text-secondary)] hover:text-[var(--color-error)] text-xs mb-3 flex items-center gap-1">
+            <button onClick={() => setLtcData(null)} className="btn-press text-[var(--color-text-secondary)] hover:text-[var(--color-error)] font-gothic text-xs mb-3 flex items-center gap-1">
               &larr; Back
             </button>
             <p className="text-[var(--color-text-secondary)] text-xs mb-2">
@@ -667,7 +683,7 @@ const PaymentPage = () => {
             </div>
             <button
               onClick={copyLtcAddress}
-              className="btn-press w-full mb-3 py-2 bg-[var(--color-bg-elevated)] hover:text-[var(--color-error)] text-[var(--color-text-primary)] text-xs font-medium rounded-[8px] transition"
+              className="btn-press w-full mb-3 py-2 bg-[var(--color-bg-elevated)] border border-[var(--color-border)] hover:text-[var(--color-error)] text-[var(--color-text-primary)] text-xs font-gothic rounded-[8px] transition"
             >
               {ltcAddressCopied ? 'Address Copied!' : 'Copy LTC Address'}
             </button>
@@ -680,7 +696,7 @@ const PaymentPage = () => {
             <button
               onClick={handleOpenLtcTicket}
               disabled={ltcTicketLoading || ltcTicketRetryInSeconds > 0}
-              className="btn-press w-full py-2.5 bg-[#5865F2] hover:bg-[#4752C4] disabled:opacity-50 text-white font-gothic rounded-[8px] transition text-sm"
+              className="btn-press w-full py-2.5 bg-[#5865F2]/10 text-[#5865F2] border border-[#5865F2]/20 hover:bg-[#5865F2]/15 hover:text-[#4752C4] disabled:opacity-50 font-gothic rounded-[8px] transition text-sm"
             >
               {ltcTicketLoading
                 ? 'Creating...'
@@ -693,7 +709,7 @@ const PaymentPage = () => {
           </div>
         )}
 
-        <a href="/" className="block mt-6 text-center text-[var(--color-text-secondary)] hover:text-[var(--color-error)] text-sm">Back to shop</a>
+        <a href="/" className="block mt-6 text-center text-[var(--color-text-secondary)] hover:text-[var(--color-accent)] font-gothic text-sm">Back to shop</a>
       </div>
     </div>
   );
