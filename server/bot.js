@@ -753,22 +753,36 @@ const saveProofRecord = async ({ order, imageUrls, vouchMessageIds = [] }) => {
         source: 'auto_vouch'
     };
 
-    // Upsert helps avoid duplicate rows for the same order/image set while keeping proof feed durable.
-    try {
+    const normalizeUrl = (value) => String(value || '').trim();
+    const sameImageSet = (left, right) => {
+        const a = new Set((Array.isArray(left) ? left : []).map(normalizeUrl).filter(Boolean));
+        const b = new Set((Array.isArray(right) ? right : []).map(normalizeUrl).filter(Boolean));
+        if (a.size !== b.size) return false;
+        for (const url of a) {
+            if (!b.has(url)) return false;
+        }
+        return true;
+    };
+
+    const latestForOrder = await Proof.findOne({ orderId: payload.orderId })
+        .sort({ createdAt: -1 })
+        .select('_id createdAt imageUrls')
+        .lean();
+
+    if (latestForOrder && sameImageSet(latestForOrder.imageUrls, payload.imageUrls)) {
         await Proof.updateOne(
+            { _id: latestForOrder._id },
             {
-                orderId: payload.orderId,
-                imageUrls: { $size: images.length, $all: images }
-            },
-            {
-                $set: payload,
-                $setOnInsert: { createdAt: new Date() }
-            },
-            { upsert: true }
+                $set: {
+                    ...payload,
+                    createdAt: latestForOrder.createdAt || new Date()
+                }
+            }
         );
-    } catch {
-        await Proof.create(payload);
+        return;
     }
+
+    await Proof.create(payload);
 };
 
 const sendAutoVouchFromTicketImages = async ({ order, imageUrls }) => {
