@@ -4,8 +4,10 @@ const {
     EmbedBuilder,
     ActionRowBuilder,
     ButtonBuilder,
-    ButtonStyle
+    ButtonStyle,
+    AttachmentBuilder
 } = require('discord.js');
+const axios = require('axios');
 const { discordRequest } = require('./utils/discordApi');
 const Order = require('./models/Order');
 const User = require('./models/User');
@@ -27,6 +29,8 @@ const TICKET_CREATE_QUEUE_MAX_COOLDOWN_MS = 2 * 60 * 1000;
 const TICKET_CREATE_RETRY_MAX_RETRIES = 2;
 const TICKET_CREATE_RETRY_BASE_DELAY_MS = 900;
 const TICKET_CREATE_RETRY_MAX_DELAY_MS = 5000;
+const MAX_VOUCH_IMAGES_PER_MESSAGE = 10;
+const IMAGE_DOWNLOAD_TIMEOUT_MS = 15000;
 const CLOSE_COMMANDS = new Set(['!close', '/close', '!dong', '/dong']);
 const DONE_COMMANDS = new Set(['!done', '/done']);
 const READD_ALL_COMMANDS = new Set(['!addall', '/addall', '!readdall', '/readdall']);
@@ -796,37 +800,80 @@ const sendAutoVouchFromTicketImages = async ({ order, imageUrls }) => {
     );
     if (!isSnowflake(vouchChannelId) || uniqueImageUrls.length === 0) return false;
 
-    const sentMessageIds = [];
-    for (let index = 0; index < uniqueImageUrls.length; index += 10) {
-        const imageBatch = uniqueImageUrls.slice(index, index + 10);
-        const embeds = imageBatch.map((url) => new EmbedBuilder()
-            .setColor(0x00D632)
-            .setImage(url)
-            .toJSON());
+    const getImageExtFromUrl = (url) => {
+        try {
+            const pathname = String(new URL(String(url || '')).pathname || '').toLowerCase();
+            const matched = IMAGE_EXTENSIONS.find((ext) => pathname.endsWith(ext));
+            if (matched) return matched;
+        } catch {
+            // Ignore URL parse errors.
+        }
+        return '.png';
+    };
 
-        const payload = { embeds };
-        if (index === 0) {
-            payload.content = buildVouchContent(order);
+    const downloadImageBuffer = async (url) => {
+        const res = await axios.get(url, {
+            responseType: 'arraybuffer',
+            timeout: IMAGE_DOWNLOAD_TIMEOUT_MS,
+            validateStatus: (status) => Number(status) >= 200 && Number(status) < 300
+        });
+        return Buffer.from(res.data);
+    };
+
+    const channel = await client.channels.fetch(vouchChannelId, { force: true });
+    if (!channel || typeof channel.send !== 'function') {
+        return false;
+    }
+
+    const sentMessageIds = [];
+    const uploadedImageUrls = [];
+    let didSendHeaderContent = false;
+    for (let index = 0; index < uniqueImageUrls.length; index += MAX_VOUCH_IMAGES_PER_MESSAGE) {
+        const imageBatch = uniqueImageUrls.slice(index, index + MAX_VOUCH_IMAGES_PER_MESSAGE);
+        const files = [];
+
+        for (let imageIndex = 0; imageIndex < imageBatch.length; imageIndex += 1) {
+            const sourceUrl = imageBatch[imageIndex];
+            try {
+                const buffer = await downloadImageBuffer(sourceUrl);
+                const ext = getImageExtFromUrl(sourceUrl);
+                files.push(new AttachmentBuilder(buffer, {
+                    name: `proof-${Date.now()}-${index + imageIndex}${ext}`
+                }));
+            } catch (error) {
+                console.warn(`Auto-vouch image download failed: ${sourceUrl}`, error?.message || error);
+            }
         }
 
-        const sent = await botRequest({
-            method: 'post',
-            path: `/channels/${vouchChannelId}/messages`,
-            data: payload,
-            timeout: REQUEST_TIMEOUT_MS,
-            retry: true,
-            defaultCode: 'DISCORD_VOUCH_SEND_FAILED'
+        if (files.length === 0) {
+            continue;
+        }
+
+        const sent = await channel.send({
+            ...(didSendHeaderContent ? {} : { content: buildVouchContent(order) }),
+            files
         });
-        const messageId = String(sent?.data?.id || '').trim();
+        didSendHeaderContent = true;
+        const messageId = String(sent?.id || '').trim();
         if (isSnowflake(messageId)) {
             sentMessageIds.push(messageId);
         }
+        for (const attachment of sent.attachments.values()) {
+            const uploadedUrl = String(attachment?.url || '').trim();
+            if (uploadedUrl) {
+                uploadedImageUrls.push(uploadedUrl);
+            }
+        }
+    }
+
+    if (uploadedImageUrls.length === 0) {
+        return false;
     }
 
     try {
         await saveProofRecord({
             order,
-            imageUrls: uniqueImageUrls,
+            imageUrls: Array.from(new Set(uploadedImageUrls)),
             vouchMessageIds: sentMessageIds
         });
     } catch (error) {
@@ -1366,16 +1413,8 @@ client.on('messageCreate', async (message) => {
 
     if (isCloseCommand) {
         try {
-            let canClose = false;
-            if (order) {
-                canClose = await isTicketOwnerOrStaff(message.author.id, order);
-            } else if (isConfiguredTicketCategoryChannel(message)) {
-                // Fallback for legacy tickets missing channelId mapping in DB.
-                canClose = await isStaffUser(message.author.id);
-            }
-
-            if (!canClose) {
-                await message.reply('You do not have permission to close this ticket.');
+            if (!order && !isConfiguredTicketCategoryChannel(message)) {
+                await message.reply('This command only works inside a ticket channel.');
                 return;
             }
 
@@ -1398,12 +1437,6 @@ client.on('messageCreate', async (message) => {
         try {
             if (!order) {
                 await message.reply('Could not find order for this ticket channel.');
-                return;
-            }
-
-            const canDone = await isStaffUser(message.author.id);
-            if (!canDone) {
-                await message.reply('You do not have permission to mark this order as done.');
                 return;
             }
 
