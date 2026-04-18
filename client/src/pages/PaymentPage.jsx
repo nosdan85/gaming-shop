@@ -536,8 +536,8 @@ const PaymentPage = () => {
           disabled={paypalFFLoading}
           className={`btn-press w-full py-3 min-h-[44px] active:scale-[0.98] disabled:opacity-50 rounded-[8px] font-gothic transition mb-2 touch-manipulation ${
             paypalFFData !== null
-              ? 'bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white border border-transparent'
-              : 'bg-[#003087]/10 text-[#003087] border border-[#003087]/20 hover:bg-[#003087]/15'
+              ? 'bg-[#4f9ec7] hover:bg-[#5aa9d1] text-[#f4fbff] border border-[#7cc3e6]/40'
+              : 'bg-[#1b3654] text-[#8fc7e9] border border-[#2c5f8f] hover:bg-[#234062]'
           }`}
         >
           {paypalFFLoading ? 'Loading...' : 'Pay with PayPal (Friends & Family)'}
@@ -595,8 +595,8 @@ const PaymentPage = () => {
           onClick={handleCashApp}
           className={`btn-press w-full py-3 min-h-[44px] active:scale-[0.98] rounded-[8px] font-gothic transition mb-2 touch-manipulation ${
             cashAppData !== null
-              ? 'bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white border border-transparent'
-              : 'bg-[#00D632]/10 text-[#00733a] border border-[#00D632]/20 hover:bg-[#00D632]/15'
+              ? 'bg-[#3f8f82] hover:bg-[#4b9b8e] text-[#f3fffc] border border-[#70b6aa]/40'
+              : 'bg-[#153b33] text-[#73c5a8] border border-[#1f5a4d] hover:bg-[#1b4a40]'
           }`}
         >
           Pay with Cash App
