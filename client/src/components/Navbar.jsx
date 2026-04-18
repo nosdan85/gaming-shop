@@ -82,7 +82,7 @@ const Navbar = () => {
             <img
               src={SITE_LOGO_PATH}
               alt="NOS Logo"
-              className="h-10 md:h-14 w-auto object-contain"
+              className="h-12 md:h-[4.2rem] w-auto object-contain"
               onError={(event) => { event.currentTarget.src = '/logo.png'; }}
             />
           </Link>
