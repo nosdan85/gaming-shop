@@ -1,16 +1,16 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 
-const THEME_STORAGE_KEY = 'nos_theme_preference';
+const THEME_STORAGE_KEY = 'nos_theme_preference_v2';
 const VALID_THEMES = new Set(['light', 'dark']);
 
 const ThemeContext = createContext({
-  theme: 'light',
-  isDark: false,
+  theme: 'dark',
+  isDark: true,
   toggleTheme: () => {}
 });
 
 const getInitialTheme = () => {
-  if (typeof window === 'undefined') return 'light';
+  if (typeof window === 'undefined') return 'dark';
 
   try {
     const stored = String(localStorage.getItem(THEME_STORAGE_KEY) || '').trim().toLowerCase();
@@ -19,7 +19,7 @@ const getInitialTheme = () => {
     // Ignore storage read errors.
   }
 
-  return 'light';
+  return 'dark';
 };
 
 export const ThemeProvider = ({ children }) => {
@@ -49,4 +49,3 @@ export const ThemeProvider = ({ children }) => {
 };
 
 export const useTheme = () => useContext(ThemeContext);
-

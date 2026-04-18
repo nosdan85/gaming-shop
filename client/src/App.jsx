@@ -33,7 +33,7 @@ function App() {
     <ThemeProvider>
       <AuthProvider>
         <ShopProvider>
-          <div className="min-h-screen bg-[var(--color-bg-main)] text-[var(--color-text-primary)] font-serif selection:bg-orange-500/30 selection:text-[var(--color-text-primary)]">
+          <div className="min-h-screen bg-[var(--color-bg-main)] text-[var(--color-text-primary)] font-system selection:bg-sky-400/30 selection:text-[var(--color-text-primary)]">
             <CartModal />
 
             <Routes>
