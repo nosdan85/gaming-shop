@@ -220,24 +220,19 @@ const ProofsPage = () => {
                     )}
                     <div className="space-y-2">
                       {items.slice(0, 3).map((item, idx) => (
-                        <div key={`${proof.id}-${idx}`} className="flex items-start justify-between gap-3">
-                          <p className="text-sm text-[var(--color-text-primary)] truncate font-gothic">
-                            {item.deliveredLabel || 'x0'} {item.name}
-                          </p>
-                          <p className="text-sm text-[var(--color-accent)] font-semibold shrink-0">
-                            ${Number(item?.lineTotal || 0).toFixed(2)}
-                          </p>
-                        </div>
+                        <p key={`${proof.id}-${idx}`} className="text-sm text-[var(--color-text-primary)] truncate font-gothic">
+                          {item.deliveredLabel || 'x0'} {item.name}
+                        </p>
                       ))}
                       {items.length > 3 && (
                         <p className="text-xs text-[var(--color-text-secondary)]">+{items.length - 3} more</p>
                       )}
                       {items.length === 0 && (
-                        <div className="flex items-start justify-between gap-3">
-                          <p className="text-sm text-[var(--color-text-primary)] font-gothic">Unknown item</p>
-                          <p className="text-sm text-[var(--color-accent)] font-semibold">${Number(proof?.totalAmount || 0).toFixed(2)}</p>
-                        </div>
+                        <p className="text-sm text-[var(--color-text-primary)] font-gothic">Unknown item</p>
                       )}
+                      <p className="text-sm text-[var(--color-accent)] font-semibold">
+                        Total: ${Number(proof?.totalAmount || 0).toFixed(2)}
+                      </p>
                     </div>
                     <p className="text-xs text-[var(--color-text-secondary)] flex items-center gap-1">
                       <ClockIcon className="w-3.5 h-3.5" />
@@ -303,7 +298,6 @@ const ProofsPage = () => {
                   {(Array.isArray(preview?.items) ? preview.items : []).map((item, idx) => (
                     <div key={`preview-${idx}`} className="rounded-[8px] bg-[var(--color-bg-secondary)] border border-[var(--color-border)] px-3 py-2 text-sm">
                       <p className="text-[var(--color-text-primary)] font-gothic">{item.deliveredLabel || 'x0'} {item.name}</p>
-                      <p className="text-[var(--color-text-secondary)] text-xs">${Number(item?.lineTotal || 0).toFixed(2)}</p>
                     </div>
                   ))}
                 </div>
