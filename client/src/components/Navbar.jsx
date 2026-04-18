@@ -16,9 +16,12 @@ const normalizeExternalUrl = (value) => {
   if (/^[A-Za-z0-9_-]{2,64}$/.test(raw)) return `https://discord.gg/${raw}`;
   return `https://${raw}`;
 };
-const DISCORD_INVITE_URL = normalizeExternalUrl(import.meta.env.VITE_DISCORD_INVITE_URL);
+const isDiscordInviteUrl = (value) => /discord\.gg\/|discord\.com\/invite\/|discordapp\.com\/invite\//i.test(String(value || '').toLowerCase());
+const DISCORD_INVITE_URL = normalizeExternalUrl(import.meta.env.VITE_DISCORD_INVITE_URL || import.meta.env.VITE_DISCORD_SERVER_INVITE);
 const DISCORD_VOUCH_URL = normalizeExternalUrl(import.meta.env.VITE_DISCORD_VOUCH_URL);
-const RESOLVED_DISCORD_URL = DISCORD_INVITE_URL || DISCORD_VOUCH_URL;
+const RESOLVED_DISCORD_URL = isDiscordInviteUrl(DISCORD_INVITE_URL)
+  ? DISCORD_INVITE_URL
+  : (isDiscordInviteUrl(DISCORD_VOUCH_URL) ? DISCORD_VOUCH_URL : '');
 const SITE_LOGO_PATH = String(import.meta.env.VITE_SITE_LOGO || '/site-logo.png').trim() || '/site-logo.png';
 
 const NavItem = ({ label, href, isExternal = false, onClick }) => {
