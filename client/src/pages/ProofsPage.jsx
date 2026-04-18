@@ -3,7 +3,18 @@ import axios from 'axios';
 import { ChevronLeftIcon, ChevronRightIcon, ClockIcon } from '@heroicons/react/24/outline';
 import { Link } from 'react-router-dom';
 
-const DISCORD_VOUCH_URL = String(import.meta.env.VITE_DISCORD_VOUCH_URL || '').trim();
+const normalizeExternalUrl = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (/^(https?:\/\/|discord:\/\/)/i.test(raw)) return raw;
+  if (/^(discord\.gg|www\.discord\.gg|discord\.com\/invite|discordapp\.com\/invite)\//i.test(raw)) {
+    return `https://${raw}`;
+  }
+  if (/^[A-Za-z0-9_-]{2,64}$/.test(raw)) return `https://discord.gg/${raw}`;
+  return `https://${raw}`;
+};
+
+const DISCORD_VOUCH_URL = normalizeExternalUrl(import.meta.env.VITE_DISCORD_VOUCH_URL);
 const buildPublicApiClient = () => {
   const configuredApiBaseUrl = String(axios.defaults.baseURL || '').trim();
   const fallbackApiBaseUrl = String(import.meta.env.VITE_FALLBACK_API_URL || '').trim().replace(/\/+$/, '');

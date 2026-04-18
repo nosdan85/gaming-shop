@@ -6,9 +6,21 @@ import { useTheme } from '../context/ThemeContext';
 import axios from 'axios';
 
 const PROOFS_EXTERNAL_URL = String(import.meta.env.VITE_PROOFS_URL || '').trim();
-const DISCORD_INVITE_URL = String(import.meta.env.VITE_DISCORD_INVITE_URL || '').trim();
-const DISCORD_VOUCH_URL = String(import.meta.env.VITE_DISCORD_VOUCH_URL || '').trim();
-const RESOLVED_DISCORD_URL = DISCORD_INVITE_URL || DISCORD_VOUCH_URL;
+const normalizeExternalUrl = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (/^(https?:\/\/|discord:\/\/)/i.test(raw)) return raw;
+  if (/^(discord\.gg|www\.discord\.gg|discord\.com\/invite|discordapp\.com\/invite)\//i.test(raw)) {
+    return `https://${raw}`;
+  }
+  if (/^[A-Za-z0-9_-]{2,64}$/.test(raw)) return `https://discord.gg/${raw}`;
+  return `https://${raw}`;
+};
+const isDiscordInviteUrl = (value) => /discord\.gg\/|discord\.com\/invite\/|discordapp\.com\/invite\//i.test(String(value || ''));
+
+const DISCORD_INVITE_URL = normalizeExternalUrl(import.meta.env.VITE_DISCORD_INVITE_URL);
+const DISCORD_VOUCH_URL = normalizeExternalUrl(import.meta.env.VITE_DISCORD_VOUCH_URL);
+const RESOLVED_DISCORD_URL = DISCORD_INVITE_URL || (isDiscordInviteUrl(DISCORD_VOUCH_URL) ? DISCORD_VOUCH_URL : '');
 const SITE_LOGO_PATH = String(import.meta.env.VITE_SITE_LOGO || '/site-logo.png').trim() || '/site-logo.png';
 
 const NavItem = ({ label, href, isExternal = false, onClick }) => {
