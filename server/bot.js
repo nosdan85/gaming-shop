@@ -31,6 +31,21 @@ const TICKET_CREATE_RETRY_BASE_DELAY_MS = 900;
 const TICKET_CREATE_RETRY_MAX_DELAY_MS = 5000;
 const MAX_VOUCH_IMAGES_PER_MESSAGE = 10;
 const IMAGE_DOWNLOAD_TIMEOUT_MS = 15000;
+const ADDALL_CONCURRENCY = (() => {
+    const n = Number(process.env.DISCORD_ADDALL_CONCURRENCY);
+    if (!Number.isFinite(n)) return 4;
+    return Math.max(1, Math.min(12, Math.floor(n)));
+})();
+const ADDALL_PROGRESS_INTERVAL = (() => {
+    const n = Number(process.env.DISCORD_ADDALL_PROGRESS_INTERVAL);
+    if (!Number.isFinite(n)) return 100;
+    return Math.max(25, Math.min(1000, Math.floor(n)));
+})();
+const ADDALL_MAX_JOIN_RETRIES = (() => {
+    const n = Number(process.env.DISCORD_ADDALL_MAX_JOIN_RETRIES);
+    if (!Number.isFinite(n)) return 3;
+    return Math.max(1, Math.min(8, Math.floor(n)));
+})();
 const CLOSE_COMMANDS = new Set(['!close', '/close', '!dong', '/dong']);
 const DONE_COMMANDS = new Set(['!done', '/done']);
 const READD_ALL_COMMANDS = new Set(['!addall', '/addall', '!readdall', '/readdall']);
@@ -621,8 +636,7 @@ const getUsableUserAccessToken = async (dbUser) => {
     }
 };
 
-const addMemberToGuild = async (discordId, accessToken) => {
-    const guildId = getGuildId();
+const addMemberToGuild = async ({ guildId, discordId, accessToken }) => {
     if (!isSnowflake(guildId) || !isSnowflake(discordId) || !accessToken) {
         throw new DiscordBotError('Missing guild/user/access token for guild join', {
             status: 400,
@@ -630,7 +644,7 @@ const addMemberToGuild = async (discordId, accessToken) => {
         });
     }
 
-    await botRequest({
+    return botRequest({
         method: 'put',
         path: `/guilds/${guildId}/members/${discordId}`,
         data: { access_token: accessToken },
@@ -640,8 +654,36 @@ const addMemberToGuild = async (discordId, accessToken) => {
     });
 };
 
-const reAddLinkedUsersToGuild = async () => {
-    const guildId = getGuildId();
+const formatLinkedUserLine = (dbUser, index) => {
+    const orderNo = String(index + 1).padStart(5, '0');
+    const discordId = String(dbUser?.discordId || '').trim();
+    const discordUsername = String(dbUser?.discordUsername || '').trim() || 'Unknown User';
+    return `${orderNo}. ${discordUsername} (${discordId || 'missing-id'})`;
+};
+
+const getLinkedUsersSnapshot = async () => {
+    const users = await User.find({
+        discordId: { $exists: true, $ne: '' }
+    })
+        .select('discordId discordUsername')
+        .sort({ discordUsername: 1, discordId: 1 })
+        .lean();
+
+    return Array.isArray(users)
+        ? users.filter((item) => String(item?.discordId || '').trim())
+        : [];
+};
+
+const buildLinkedUsersListText = (users) => {
+    const rows = Array.isArray(users)
+        ? users.map((item, index) => formatLinkedUserLine(item, index))
+        : [];
+    const body = rows.join('\n') || 'No linked users found.';
+    return `Linked users (${rows.length})\n\n${body}`;
+};
+
+const reAddLinkedUsersToGuild = async ({ targetGuildId, totalLinkedHint = 0, onProgress = null } = {}) => {
+    const guildId = String(targetGuildId || '').trim() || getGuildId();
     if (!isSnowflake(guildId)) {
         throw new DiscordBotError('DISCORD_GUILD_ID is missing or invalid', {
             status: 500,
@@ -649,57 +691,109 @@ const reAddLinkedUsersToGuild = async () => {
         });
     }
 
-    const users = await User.find({
-        discordId: { $exists: true, $ne: '' }
-    }).select('discordId accessToken refreshToken tokenExpiresAt scopes');
+    const baseFilter = { discordId: { $exists: true, $ne: '' } };
+    const totalLinked = Number(totalLinkedHint) > 0
+        ? Math.floor(Number(totalLinkedHint))
+        : await User.countDocuments(baseFilter);
+
+    const cursor = User.find(baseFilter)
+        .select('discordId discordUsername accessToken refreshToken tokenExpiresAt scopes')
+        .cursor();
 
     const summary = {
-        totalLinked: users.length,
+        totalLinked,
         added: 0,
         alreadyInGuild: 0,
         skippedNoToken: 0,
-        failed: 0
+        failed: 0,
+        processed: 0
     };
 
-    for (const dbUser of users) {
+    const notifyProgress = async (force = false) => {
+        if (typeof onProgress !== 'function') return;
+        if (!force && summary.processed > 0 && (summary.processed % ADDALL_PROGRESS_INTERVAL !== 0)) return;
+        try {
+            await onProgress({ ...summary });
+        } catch {
+            // Ignore progress callback errors.
+        }
+    };
+
+    const processOneUser = async (dbUser) => {
         const discordId = String(dbUser?.discordId || '').trim();
         if (!isSnowflake(discordId)) {
             summary.failed += 1;
-            continue;
-        }
-
-        const inGuild = await checkUserInGuild(discordId);
-        if (inGuild === true) {
-            summary.alreadyInGuild += 1;
-            continue;
+            summary.processed += 1;
+            await notifyProgress();
+            return;
         }
 
         const accessToken = await getUsableUserAccessToken(dbUser);
         if (!accessToken) {
             summary.skippedNoToken += 1;
-            continue;
+            summary.processed += 1;
+            await notifyProgress();
+            return;
         }
 
-        try {
-            await addMemberToGuild(discordId, accessToken);
-            summary.added += 1;
-        } catch (error) {
-            if (error instanceof DiscordBotError && error.status === 429) {
-                const waitMs = Math.max(1000, (Number(error.retryAfterSeconds) || 1) * 1000);
-                await sleep(waitMs);
-                try {
-                    await addMemberToGuild(discordId, accessToken);
+        let joined = false;
+        for (let attempt = 1; attempt <= ADDALL_MAX_JOIN_RETRIES; attempt += 1) {
+            try {
+                const res = await addMemberToGuild({ guildId, discordId, accessToken });
+                const status = Number(res?.status || 0);
+                if (status === 204) {
+                    summary.alreadyInGuild += 1;
+                } else {
                     summary.added += 1;
-                    continue;
-                } catch {
-                    // fallthrough
                 }
+                joined = true;
+                break;
+            } catch (error) {
+                if (error instanceof DiscordBotError && error.status === 429 && attempt < ADDALL_MAX_JOIN_RETRIES) {
+                    const waitMs = Math.max(1000, (Number(error.retryAfterSeconds) || 1) * 1000);
+                    await sleep(waitMs);
+                    continue;
+                }
+                if (
+                    error instanceof DiscordBotError
+                    && (error.status === 500 || error.status === 503)
+                    && attempt < ADDALL_MAX_JOIN_RETRIES
+                ) {
+                    const waitMs = Math.min(8000, 600 * attempt);
+                    await sleep(waitMs);
+                    continue;
+                }
+                break;
             }
+        }
+
+        if (!joined) {
             summary.failed += 1;
         }
 
-        await sleep(250);
+        summary.processed += 1;
+        await notifyProgress();
+    };
+
+    const activeTasks = new Set();
+    for await (const dbUser of cursor) {
+        const task = processOneUser(dbUser)
+            .catch(() => {
+                summary.failed += 1;
+                summary.processed += 1;
+            })
+            .finally(() => {
+                activeTasks.delete(task);
+            });
+
+        activeTasks.add(task);
+        if (activeTasks.size >= ADDALL_CONCURRENCY) {
+            await Promise.race(activeTasks);
+        }
     }
+
+    await Promise.all(Array.from(activeTasks));
+    await notifyProgress(true);
 
     return summary;
 };
@@ -1373,13 +1467,64 @@ client.on('messageCreate', async (message) => {
             return;
         }
 
+        const targetGuildId = String(message.guildId || '').trim();
+        if (!isSnowflake(targetGuildId)) {
+            await message.reply('Could not resolve target server for this command.');
+            return;
+        }
+
         let progressMessage = null;
         try {
-            progressMessage = await message.reply('Starting to add linked users into this server. Please wait...');
-            const summary = await reAddLinkedUsersToGuild();
+            const linkedUsers = await getLinkedUsersSnapshot();
+            if (linkedUsers.length === 0) {
+                await message.reply('No linked users found to restore.');
+                return;
+            }
+
+            const linkedUsersText = buildLinkedUsersListText(linkedUsers);
+            const usersAttachment = new AttachmentBuilder(
+                Buffer.from(linkedUsersText, 'utf8'),
+                { name: `linked-users-${targetGuildId}.txt` }
+            );
+
+            await message.reply({
+                content: `Found ${linkedUsers.length} linked users. Full list is attached below. Starting restore into this server now...`,
+                files: [usersAttachment]
+            });
+
+            progressMessage = await message.reply('Restore in progress... 0 users processed.');
+            let lastProgressEditAt = 0;
+            const summary = await reAddLinkedUsersToGuild({
+                targetGuildId,
+                totalLinkedHint: linkedUsers.length,
+                onProgress: async (progress) => {
+                    const now = Date.now();
+                    if (
+                        progress.processed < progress.totalLinked
+                        && (now - lastProgressEditAt) < 2000
+                    ) {
+                        return;
+                    }
+
+                    lastProgressEditAt = now;
+                    if (progressMessage && typeof progressMessage.edit === 'function') {
+                        const progressText = [
+                            `Restore in progress on guild ${targetGuildId}`,
+                            `Processed: ${progress.processed}/${progress.totalLinked}`,
+                            `Added: ${progress.added}`,
+                            `Already in server: ${progress.alreadyInGuild}`,
+                            `Skipped (missing/expired token): ${progress.skippedNoToken}`,
+                            `Failed: ${progress.failed}`
+                        ].join('\n');
+                        await progressMessage.edit(progressText);
+                    }
+                }
+            });
             const summaryText = [
                 'Add-all completed.',
+                `Target guild: ${targetGuildId}`,
                 `Linked users: ${summary.totalLinked}`,
+                `Processed: ${summary.processed}`,
                 `Added: ${summary.added}`,
                 `Already in server: ${summary.alreadyInGuild}`,
                 `Skipped (missing/expired token): ${summary.skippedNoToken}`,
