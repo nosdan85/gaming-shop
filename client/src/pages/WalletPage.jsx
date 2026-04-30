@@ -6,7 +6,7 @@ import { ShopContext } from '../context/ShopContext';
 
 const TOPUP_METHODS = [
   { id: 'paypal_ff', label: 'PayPal F&F' },
-  { id: 'cashapp', label: 'Cash App' },
+  { id: 'cashapp', label: 'Cash App Pay' },
   { id: 'ltc', label: 'Litecoin' }
 ];
 
@@ -87,7 +87,7 @@ const WalletPage = () => {
 
   const user = contextUser || localUser;
   const transactions = useMemo(() => Array.isArray(wallet?.transactions) ? wallet.transactions : [], [wallet]);
-  const hasPendingTopup = transactions.some((item) => item.type === 'topup' && item.status === 'pending');
+  const hasPendingDeposit = transactions.some((item) => item.type === 'topup' && item.status === 'pending');
 
   const fetchWallet = useCallback(async ({ quiet = false } = {}) => {
     if (!user?.discordId) {
@@ -111,10 +111,10 @@ const WalletPage = () => {
   }, [fetchWallet]);
 
   useEffect(() => {
-    if (!user?.discordId || !hasPendingTopup) return undefined;
+    if (!user?.discordId || !hasPendingDeposit) return undefined;
     const timer = window.setInterval(() => fetchWallet({ quiet: true }), 10000);
     return () => window.clearInterval(timer);
-  }, [fetchWallet, hasPendingTopup, user?.discordId]);
+  }, [fetchWallet, hasPendingDeposit, user?.discordId]);
 
   const copyText = async (key, value) => {
     const text = String(value || '').trim();
@@ -137,7 +137,7 @@ const WalletPage = () => {
       setCreatedTopup(data);
       await fetchWallet({ quiet: true });
     } catch (err) {
-      setError(err.response?.data?.error || 'Could not create top-up request.');
+      setError(err.response?.data?.error || 'Could not start payment.');
     } finally {
       setCreating(false);
     }
@@ -210,7 +210,7 @@ const WalletPage = () => {
 
             <form onSubmit={createTopup} className="space-y-4">
               <div>
-                <label className="block text-[var(--color-text-secondary)] text-xs uppercase font-gothic mb-2 tracking-wider">Top-up method</label>
+                <label className="block text-[var(--color-text-secondary)] text-xs uppercase font-gothic mb-2 tracking-wider">Deposit method</label>
                 <div className="grid grid-cols-3 gap-2">
                   {TOPUP_METHODS.map((item) => (
                     <button
@@ -244,14 +244,14 @@ const WalletPage = () => {
                 disabled={creating}
                 className="btn-press w-full rounded-[8px] bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] disabled:bg-[var(--color-bg-elevated)] disabled:text-[var(--color-text-secondary)] text-white py-3 font-gothic"
               >
-                {creating ? 'Creating...' : 'Create Top-up Request'}
+                {creating ? 'Preparing payment...' : 'Continue to Payment'}
               </button>
             </form>
 
             {instructions && (
               <div className="mt-5 border-t border-[var(--color-border)] pt-5 space-y-3">
                 <div>
-                  <p className="text-xs uppercase tracking-wider text-[var(--color-text-secondary)] font-gothic">Send payment</p>
+                  <p className="text-xs uppercase tracking-wider text-[var(--color-text-secondary)] font-gothic">Provider-confirmed payment</p>
                   <p className="text-sm text-[var(--color-text-primary)]">{instructions.methodLabel} - ${Number(instructions.amount || 0).toFixed(2)}</p>
                   {instructions.payAmount && (
                     <p className="text-xs text-[var(--color-text-secondary)] mt-1">
@@ -326,7 +326,7 @@ const WalletPage = () => {
             <div className="p-5 border-b border-[var(--color-border)] flex items-center justify-between gap-3">
               <div>
                 <h2 className="text-xl font-gothic text-[var(--color-text-primary)]">Transaction History</h2>
-                <p className="text-sm text-[var(--color-text-secondary)]">Top-ups, purchases, and owner decisions.</p>
+                <p className="text-sm text-[var(--color-text-secondary)]">Provider-confirmed deposits and wallet purchases.</p>
               </div>
               <Link to="/" className="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-error)]">Shop</Link>
             </div>
@@ -406,7 +406,7 @@ const CashAppPayPanel = ({ topupId, instructions, onComplete }) => {
               setMessage('Cash App payment confirmed. Wallet balance updated.');
               await onComplete?.(data);
             } else {
-              setMessage('Payment is pending provider confirmation. This page will update automatically.');
+              setMessage('Waiting for provider confirmation. This page will update automatically.');
               await onComplete?.(data);
             }
           } catch (err) {
@@ -438,7 +438,7 @@ const CashAppPayPanel = ({ topupId, instructions, onComplete }) => {
     <div className="rounded-[8px] border border-[var(--color-border)] bg-[var(--color-bg-main)] p-3 space-y-3">
       <div>
         <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-secondary)] font-gothic">Cash App Pay</p>
-        <p className="text-sm text-[var(--color-text-secondary)]">Approve the payment in Cash App. Your wallet is credited only after Square confirms payment.</p>
+        <p className="text-sm text-[var(--color-text-secondary)]">Confirm the payment in Cash App. Your wallet is credited only after Square confirms payment.</p>
       </div>
       <div id={buttonId} className="min-h-[48px]" />
       {!ready && !error && <p className="text-xs text-[var(--color-text-secondary)]">Loading Cash App Pay...</p>}
@@ -470,7 +470,7 @@ const TransactionRow = ({ item }) => {
             {item.status}
           </span>
           <span className="text-sm font-gothic text-[var(--color-text-primary)]">
-            {item.type === 'purchase' ? 'Purchase' : 'Top-up'} - {item.methodLabel}
+            {item.type === 'purchase' ? 'Purchase' : 'Deposit'} - {item.methodLabel}
           </span>
         </div>
         <p className="text-xs text-[var(--color-text-secondary)] mt-1">

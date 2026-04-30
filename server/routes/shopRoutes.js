@@ -11,7 +11,6 @@ const WalletTransaction = require('../models/WalletTransaction');
 const {
     createOrderTicket,
     createWalletDeliveryTicket,
-    notifyOwnerWalletTopupRequest,
     createPayPalFFTicket,
     createLTCTicket,
     checkUserInGuild,
@@ -1416,19 +1415,15 @@ router.post('/wallet/topup', authRequired, async (req, res) => {
             payCurrency
         });
 
-        const notificationSent = method === 'cashapp'
-            ? false
-            : await notifyOwnerWalletTopupRequest(transaction);
-
         return res.json({
             success: true,
             topup: toWalletTransactionPayload(transaction),
             instructions: buildWalletInstructions({ transaction }),
-            notificationSent
+            notificationSent: false
         });
     } catch (error) {
-        console.error('Wallet top-up error:', error);
-        return res.status(500).json({ error: 'Failed to create top-up request' });
+        console.error('Wallet deposit error:', error);
+        return res.status(500).json({ error: 'Failed to start wallet payment' });
     }
 });
 

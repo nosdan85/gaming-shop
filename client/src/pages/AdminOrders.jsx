@@ -35,7 +35,6 @@ const AdminOrders = () => {
   const [walletAdmin, setWalletAdmin] = useState({ pendingTopups: [], transactions: [] });
   const [loading, setLoading] = useState(true);
   const [isOwner, setIsOwner] = useState(null);
-  const [actioning, setActioning] = useState('');
   const [search, setSearch] = useState('');
 
   const localUser = useMemo(() => {
@@ -84,34 +83,6 @@ const AdminOrders = () => {
     if (isOwner === true) fetchData();
   }, [fetchData, isOwner]);
 
-  const approveTopup = async (topup) => {
-    const txnId = window.prompt(`Transaction ID for ${topup.referenceCode || topup.id}`, topup.txnId || '');
-    if (txnId === null) return;
-    const adminNotes = window.prompt('Admin note (optional)', topup.adminNotes || '') || '';
-    setActioning(`${topup.id}:approve`);
-    try {
-      await axios.post(`/api/shop/wallet/admin/topups/${topup.id}/approve`, { txnId, adminNotes });
-      await fetchData();
-    } catch (err) {
-      alert(err.response?.data?.error || 'Could not approve top-up');
-    } finally {
-      setActioning('');
-    }
-  };
-
-  const rejectTopup = async (topup) => {
-    const adminNotes = window.prompt(`Reject note for ${topup.referenceCode || topup.id}`, topup.adminNotes || '') || '';
-    setActioning(`${topup.id}:reject`);
-    try {
-      await axios.post(`/api/shop/wallet/admin/topups/${topup.id}/reject`, { adminNotes });
-      await fetchData();
-    } catch (err) {
-      alert(err.response?.data?.error || 'Could not reject top-up');
-    } finally {
-      setActioning('');
-    }
-  };
-
   const query = normalizeSearch(search);
   const pendingTopups = walletAdmin.pendingTopups || [];
   const filteredOrders = orders.filter((order) => {
@@ -156,7 +127,7 @@ const AdminOrders = () => {
         <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
           <div>
             <h1 className="text-3xl font-gothic text-[var(--color-text-primary)]">Owner Control</h1>
-            <p className="text-sm text-[var(--color-text-secondary)] mt-1">Approve wallet top-ups and monitor checkout activity.</p>
+            <p className="text-sm text-[var(--color-text-secondary)] mt-1">Monitor provider-confirmed wallet deposits and checkout activity.</p>
           </div>
           <button
             type="button"
@@ -179,13 +150,13 @@ const AdminOrders = () => {
 
         <section className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-[8px] overflow-hidden">
           <div className="p-4 border-b border-[var(--color-border)] flex items-center justify-between">
-            <h2 className="text-xl font-gothic text-[var(--color-text-primary)]">Pending Top-ups</h2>
+            <h2 className="text-xl font-gothic text-[var(--color-text-primary)]">Pending Provider Confirmations</h2>
             <span className="text-sm text-[var(--color-text-secondary)]">{pendingTopups.length} pending</span>
           </div>
           {loading ? (
             <p className="p-4 text-sm text-[var(--color-text-secondary)]">Loading...</p>
           ) : pendingTopups.length === 0 ? (
-            <p className="p-4 text-sm text-[var(--color-text-secondary)]">No pending top-ups.</p>
+            <p className="p-4 text-sm text-[var(--color-text-secondary)]">No pending provider confirmations.</p>
           ) : (
             <div className="divide-y divide-[var(--color-border)]">
               {pendingTopups.map((topup) => (
@@ -202,23 +173,8 @@ const AdminOrders = () => {
                     <p className="text-xs text-[var(--color-text-secondary)] break-words mt-1">Memo: {topup.memoExpected || '-'}</p>
                     <p className="text-xs text-[var(--color-text-secondary)] mt-1">{formatDate(topup.createdAt)}</p>
                   </div>
-                  <div className="flex flex-wrap gap-2 lg:justify-end">
-                    <button
-                      type="button"
-                      onClick={() => approveTopup(topup)}
-                      disabled={Boolean(actioning)}
-                      className="btn-press rounded-[8px] border border-[rgba(31,138,101,0.35)] bg-[rgba(31,138,101,0.14)] px-3 py-2 text-sm text-[var(--color-success)] disabled:opacity-50"
-                    >
-                      {actioning === `${topup.id}:approve` ? 'Saving...' : 'Approve'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => rejectTopup(topup)}
-                      disabled={Boolean(actioning)}
-                      className="btn-press rounded-[8px] border border-[rgba(207,45,86,0.35)] bg-[rgba(207,45,86,0.12)] px-3 py-2 text-sm text-[var(--color-error)] disabled:opacity-50"
-                    >
-                      {actioning === `${topup.id}:reject` ? 'Saving...' : 'Reject'}
-                    </button>
+                  <div className="text-xs text-[var(--color-text-secondary)] lg:text-right">
+                    Waiting for PayPal, Square, or NOWPayments confirmation.
                   </div>
                 </div>
               ))}
