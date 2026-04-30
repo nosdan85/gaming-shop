@@ -116,6 +116,11 @@ const getOwnerRoleId = () => normalizeEnvValue(process.env.DISCORD_OWNER_ROLE_ID
 const getTicketCategoryId = () => normalizeEnvValue(process.env.DISCORD_TICKET_CATEGORY_ID);
 const getOwnerId = () => normalizeEnvValue(process.env.DISCORD_OWNER_ID);
 const getVouchChannelId = () => normalizeEnvValue(process.env.DISCORD_VOUCH_CHANNEL_ID);
+const getWalletNotifyChannelId = () => (
+    normalizeEnvValue(process.env.DISCORD_WALLET_NOTIFY_CHANNEL_ID)
+    || normalizeEnvValue(process.env.DISCORD_LINK_CHANNEL_ID)
+    || normalizeEnvValue(process.env.DISCORD_VOUCH_CHANNEL_ID)
+);
 const getOauthClientId = () => normalizeEnvValue(process.env.DISCORD_CLIENT_ID);
 const getOauthClientSecret = () => normalizeEnvValue(process.env.DISCORD_CLIENT_SECRET);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -1195,6 +1200,14 @@ const buildOrderMention = (discordId) => {
 };
 
 const formatUsdAmount = (value) => `$${Number(value || 0).toFixed(2)}`;
+const formatWalletMethodLabel = (method) => {
+    const normalized = String(method || '').trim().toLowerCase();
+    if (normalized === 'paypal_ff') return 'PayPal Friends & Family';
+    if (normalized === 'cashapp') return 'Cash App';
+    if (normalized === 'ltc') return 'Litecoin';
+    if (normalized === 'wallet') return 'NosMarket wallet';
+    return normalized || '-';
+};
 
 const buildPaymentTicketFields = ({ order, paymentLine, note, orderTotalAmount = null }) => {
     const ownerRoleId = getOwnerRoleId();
@@ -1398,6 +1411,74 @@ const createOrderTicket = async (order) => {
     }
 
     return channelId;
+};
+
+const createWalletDeliveryTicket = async (order) => {
+    const seq = getOrderSequence(order);
+    const channelId = await createTicketChannel({
+        channelName: `order_${seq}`,
+        customerId: order.discordId
+    });
+
+    const embed = new EmbedBuilder()
+        .setColor(0xA7EFC0)
+        .setTitle('Order Delivery')
+        .setDescription(
+            `Hello <@${order.discordId}>. Wallet payment is complete. Staff will use this ticket to deliver your items.`
+        )
+        .addFields([
+            { name: 'Buyer', value: `<@${order.discordId}>`, inline: true },
+            { name: 'Order Total', value: formatUsdAmount(order.totalAmount || order.total || 0), inline: true },
+            { name: 'Payment', value: 'Paid with NosMarket wallet', inline: false },
+            { name: 'Items (Qty + Price)', value: formatOrderItemsWithPrice(order.items), inline: false }
+        ]);
+
+    try {
+        await sendTicketMessage({
+            channelId,
+            content: buildOrderMention(order.discordId),
+            embed
+        });
+    } catch (error) {
+        console.error('Wallet delivery ticket message error:', error?.message || error);
+    }
+
+    return channelId;
+};
+
+const notifyOwnerWalletTopupRequest = async (transaction) => {
+    const channelId = getWalletNotifyChannelId();
+    if (!isSnowflake(channelId)) return false;
+
+    const ownerRoleId = getOwnerRoleId();
+    const ownerMention = isSnowflake(ownerRoleId) ? `<@&${ownerRoleId}>` : '';
+    const embed = new EmbedBuilder()
+        .setColor(0xF7C948)
+        .setTitle('Wallet Top-up Pending')
+        .setDescription('A customer created a wallet top-up request. Approve it in the owner panel after you verify the payment.')
+        .addFields([
+            {
+                name: 'Customer',
+                value: transaction?.discordId ? `<@${transaction.discordId}>` : (transaction?.discordUsername || '-'),
+                inline: true
+            },
+            { name: 'Amount', value: formatUsdAmount(Number(transaction?.amountCents || 0) / 100), inline: true },
+            { name: 'Method', value: formatWalletMethodLabel(transaction?.method), inline: true },
+            { name: 'Reference', value: String(transaction?.referenceCode || '-'), inline: true },
+            { name: 'Memo', value: truncateText(transaction?.memoExpected || '-', 900), inline: false }
+        ]);
+
+    try {
+        await sendTicketMessage({
+            channelId,
+            content: ownerMention || 'Wallet top-up pending',
+            embed
+        });
+        return true;
+    } catch (error) {
+        console.error('Wallet top-up notification error:', error?.message || error);
+        return false;
+    }
 };
 
 client.on('interactionCreate', async (interaction) => {
@@ -1686,6 +1767,8 @@ module.exports = {
     client,
     DiscordBotError,
     createOrderTicket,
+    createWalletDeliveryTicket,
+    notifyOwnerWalletTopupRequest,
     createPayPalFFTicket,
     createLTCTicket,
     checkUserInGuild,

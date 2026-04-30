@@ -1,14 +1,15 @@
 import { useContext, useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { ShopContext } from '../context/ShopContext';
-import { XMarkIcon, CheckBadgeIcon, UserCircleIcon, CurrencyDollarIcon, TicketIcon, ClipboardDocumentListIcon } from '@heroicons/react/24/outline';
+import { XMarkIcon, CheckBadgeIcon, UserCircleIcon, CurrencyDollarIcon, TicketIcon, ClipboardDocumentListIcon, BanknotesIcon } from '@heroicons/react/24/outline';
 import axios from 'axios';
 import { formatCardPrice } from '../utils/priceFormatting';
 import { formatDeliveredUnitsLabel } from '../utils/itemQuantityDisplay';
 
 const BULK_DISCOUNT_THRESHOLD = 10;
 const CHECKOUT_TIMEOUT_MS = 20000;
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const roundMoney = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+const DISCORD_GUILD_ID = String(import.meta.env.VITE_DISCORD_GUILD_ID || '').trim();
 
 const getItemPricing = (item) => {
   const quantity = Number(item?.quantity) || 0;
@@ -62,8 +63,8 @@ const CartModal = () => {
   const [isApplyingCoupon, setIsApplyingCoupon] = useState(false);
   const [appliedCoupon, setAppliedCoupon] = useState(null);
   const [couponError, setCouponError] = useState('');
-  const [customerEmail, setCustomerEmail] = useState('');
-  const [customerEmailTouched, setCustomerEmailTouched] = useState(false);
+  const [wallet, setWallet] = useState(null);
+  const [walletLoading, setWalletLoading] = useState(false);
   const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
   useEffect(() => {
@@ -75,7 +76,6 @@ const CartModal = () => {
         console.error(e);
       }
     }
-    setCustomerEmail(localStorage.getItem('checkoutCustomerEmail') || '');
   }, [isCartOpen]);
 
   const user = contextUser || localUser;
@@ -90,12 +90,37 @@ const CartModal = () => {
   const normalizedCouponCode = couponCode.trim().toUpperCase();
   const appliedDiscountAmount = roundMoney(Number(appliedCoupon?.discountAmount) || 0);
   const totalAfterDiscountValue = roundMoney(Math.max(0, totalValue - appliedDiscountAmount));
-  const normalizedCustomerEmail = customerEmail.trim().toLowerCase();
-  const hasInvalidCustomerEmail = !EMAIL_PATTERN.test(normalizedCustomerEmail);
+  const walletBalance = roundMoney(Number(wallet?.balance) || 0);
+  const hasInsufficientWallet = Boolean(user?.discordId) && !walletLoading && walletBalance + 0.0001 < totalAfterDiscountValue;
 
   useEffect(() => {
     setAppliedCoupon((current) => (current ? null : current));
   }, [cart]);
+
+  useEffect(() => {
+    let alive = true;
+    if (!isCartOpen || !user?.discordId) {
+      setWallet(null);
+      setWalletLoading(false);
+      return undefined;
+    }
+
+    setWalletLoading(true);
+    axios.get('/api/shop/wallet')
+      .then((res) => {
+        if (alive) setWallet(res.data || null);
+      })
+      .catch(() => {
+        if (alive) setWallet(null);
+      })
+      .finally(() => {
+        if (alive) setWalletLoading(false);
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [isCartOpen, user?.discordId]);
 
   const getOAuthUrl = () => {
     const clientId = import.meta.env.VITE_DISCORD_CLIENT_ID || '';
@@ -142,11 +167,6 @@ const CartModal = () => {
     }
   };
 
-  const handleCustomerEmailChange = (value) => {
-    setCustomerEmail(value);
-    setCustomerEmailTouched(true);
-  };
-
   const handleApplyCoupon = async () => {
     if (isApplyingCoupon) return;
     if (cart.length === 0) return;
@@ -189,22 +209,19 @@ const CartModal = () => {
     if (isProcessing) return;
     if (!user || !user.discordId) return alert('Please link Discord first!');
     if (hasInvalidCheckoutTotal) return alert('Checkout total is invalid.');
-    if (hasInvalidCustomerEmail) {
-      setCustomerEmailTouched(true);
-      return alert('Please enter a valid email for payment updates.');
+    if (hasInsufficientWallet) {
+      return alert(`Wallet balance is too low. Add $${roundMoney(totalAfterDiscountValue - walletBalance).toFixed(2)} more before checkout.`);
     }
 
     setIsProcessing(true);
     try {
-      localStorage.setItem('checkoutCustomerEmail', normalizedCustomerEmail);
       let res = null;
       try {
         res = await axios.post(
           '/api/shop/checkout',
           {
             cartItems: cart,
-            couponCode: appliedCoupon?.couponCode || undefined,
-            customerEmail: normalizedCustomerEmail
+            couponCode: appliedCoupon?.couponCode || undefined
           },
           { timeout: CHECKOUT_TIMEOUT_MS }
         );
@@ -215,23 +232,35 @@ const CartModal = () => {
           '/api/shop/checkout',
           {
             cartItems: cart,
-            couponCode: appliedCoupon?.couponCode || undefined,
-            customerEmail: normalizedCustomerEmail
+            couponCode: appliedCoupon?.couponCode || undefined
           },
           { timeout: CHECKOUT_TIMEOUT_MS }
         );
       }
-      const { orderId } = res.data || {};
+      const { orderId, channelId, walletBalance: nextWalletBalance, ticketStatus, ticketError } = res.data || {};
       if (!orderId) {
         throw new Error('Invalid checkout response: missing orderId');
       }
 
+      if (typeof nextWalletBalance === 'number') {
+        setWallet((current) => ({ ...(current || {}), balance: nextWalletBalance }));
+      }
       clearCart();
       setCouponCode('');
       setAppliedCoupon(null);
       setCouponError('');
       setIsCartOpen(false);
-      window.location.href = `/pay?orderId=${orderId}`;
+      const discordChannelUrl = channelId && DISCORD_GUILD_ID
+        ? `https://discord.com/channels/${DISCORD_GUILD_ID}/${channelId}`
+        : '';
+      if (discordChannelUrl) {
+        window.open(discordChannelUrl, '_blank', 'noopener,noreferrer');
+      }
+      if (ticketStatus === 'failed') {
+        alert(`Order ${orderId} paid from wallet, but ticket creation failed: ${ticketError || 'please contact staff.'}`);
+      } else {
+        alert(`Order ${orderId} paid from wallet. Discord delivery ticket created.`);
+      }
     } catch (err) {
       if (err.code === 'ECONNABORTED') {
         alert('Checkout timeout. Please try again in a few seconds.');
@@ -240,6 +269,8 @@ const CartModal = () => {
         setShowJoinModal(true);
       } else if (err.response?.status === 401) {
         alert('Login expired. Please link Discord again.');
+      } else if (err.response?.status === 402 || err.response?.data?.code === 'INSUFFICIENT_WALLET_BALANCE') {
+        alert(`Wallet balance is too low. Add $${Number(err.response?.data?.shortage || 0).toFixed(2)} more before checkout.`);
       } else {
         alert(`Checkout Failed: ${err.response?.data?.error || 'Unknown Error'}`);
       }
@@ -306,12 +337,31 @@ const CartModal = () => {
 
           <div className="bg-[var(--color-bg-main)] p-4 rounded-[8px] border border-[var(--color-border)] mb-4">
             {user && user.discordId ? (
-              <div className="text-center">
-                <div className="flex items-center justify-center gap-2 mb-1">
-                  <CheckBadgeIcon className="w-5 h-5 text-[var(--color-success)]" />
-                  <span className="text-[var(--color-text-primary)] font-gothic font-medium truncate max-w-[150px]">{user.discordUsername || user.username}</span>
+              <div className="space-y-3">
+                <div className="text-center">
+                  <div className="flex items-center justify-center gap-2 mb-1">
+                    <CheckBadgeIcon className="w-5 h-5 text-[var(--color-success)]" />
+                    <span className="text-[var(--color-text-primary)] font-gothic font-medium truncate max-w-[150px]">{user.discordUsername || user.username}</span>
+                  </div>
+                  <button onClick={handleLogout} className="text-[var(--color-error)] text-xs hover:underline">Sign Out</button>
                 </div>
-                <button onClick={handleLogout} className="text-[var(--color-error)] text-xs hover:underline">Sign Out</button>
+                <div className="rounded-[8px] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-secondary)] font-gothic">Wallet</p>
+                      <p className="text-lg font-gothic text-[var(--color-text-primary)]">
+                        {walletLoading ? 'Loading...' : `$${walletBalance.toFixed(2)}`}
+                      </p>
+                    </div>
+                    <Link
+                      to="/wallet"
+                      onClick={() => setIsCartOpen(false)}
+                      className="btn-press text-xs rounded-[8px] px-3 py-2 bg-[var(--color-bg-elevated)] text-[var(--color-text-primary)] hover:text-[var(--color-error)] border border-[var(--color-border)]"
+                    >
+                      Add Funds
+                    </Link>
+                  </div>
+                </div>
               </div>
             ) : (
               <div className="text-center space-y-3">
@@ -335,7 +385,7 @@ const CartModal = () => {
           </div>
 
           <div className="flex-1 overflow-y-auto mb-4 pr-1">
-            <h3 className="text-[var(--color-text-secondary)] text-xs uppercase font-gothic mb-3 tracking-wider">How to pay</h3>
+            <h3 className="text-[var(--color-text-secondary)] text-xs uppercase font-gothic mb-3 tracking-wider">Wallet checkout</h3>
             <div className="space-y-3">
               <div className="flex gap-3">
                 <div className="w-8 h-8 rounded-full bg-[var(--color-bg-elevated)] flex items-center justify-center flex-shrink-0 text-blue-500">
@@ -348,29 +398,29 @@ const CartModal = () => {
               </div>
               <div className="flex gap-3">
                 <div className="w-8 h-8 rounded-full bg-[var(--color-bg-elevated)] flex items-center justify-center flex-shrink-0 text-[var(--color-accent)]">
+                  <BanknotesIcon className="w-4 h-4" />
+                </div>
+                <div>
+                  <p className="text-[var(--color-text-primary)] text-sm font-gothic">2. Add wallet funds</p>
+                  <p className="text-[var(--color-text-secondary)] text-xs font-serif">Use PayPal F&amp;F, Cash App, or Litecoin on the wallet page.</p>
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <div className="w-8 h-8 rounded-full bg-[var(--color-bg-elevated)] flex items-center justify-center flex-shrink-0 text-[var(--color-success)]">
+                  <CurrencyDollarIcon className="w-4 h-4" />
+                </div>
+                <div>
+                  <p className="text-[var(--color-text-primary)] text-sm font-gothic">3. Owner confirms</p>
+                  <p className="text-[var(--color-text-secondary)] text-xs font-serif">Your balance updates after staff verifies the transfer.</p>
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <div className="w-8 h-8 rounded-full bg-[var(--color-bg-elevated)] flex items-center justify-center flex-shrink-0 text-[var(--color-success)]">
                   <TicketIcon className="w-4 h-4" />
                 </div>
                 <div>
-                  <p className="text-[var(--color-text-primary)] text-sm font-gothic">2. Create an Order</p>
-                  <p className="text-[var(--color-text-secondary)] text-xs font-serif">Add items to bag and click &quot;Check Out&quot;.</p>
-                </div>
-              </div>
-              <div className="flex gap-3">
-                <div className="w-8 h-8 rounded-full bg-[var(--color-bg-elevated)] flex items-center justify-center flex-shrink-0 text-[var(--color-success)]">
-                  <CurrencyDollarIcon className="w-4 h-4" />
-                </div>
-                <div>
-                  <p className="text-[var(--color-text-primary)] text-sm font-gothic">3. Open payment page</p>
-                  <p className="text-[var(--color-text-secondary)] text-xs font-serif">After checkout, press the green payment button to create your Discord ticket.</p>
-                </div>
-              </div>
-              <div className="flex gap-3">
-                <div className="w-8 h-8 rounded-full bg-[var(--color-bg-elevated)] flex items-center justify-center flex-shrink-0 text-[var(--color-success)]">
-                  <CurrencyDollarIcon className="w-4 h-4" />
-                </div>
-                <div>
-                  <p className="text-[var(--color-text-primary)] text-sm font-gothic">4. Payment</p>
-                  <p className="text-[var(--color-text-secondary)] text-xs font-serif">Complete payment from the payment page or inside the Discord ticket.</p>
+                  <p className="text-[var(--color-text-primary)] text-sm font-gothic">4. Checkout</p>
+                  <p className="text-[var(--color-text-secondary)] text-xs font-serif">The site deducts wallet balance and opens a Discord delivery ticket.</p>
                 </div>
               </div>
             </div>
@@ -379,22 +429,11 @@ const CartModal = () => {
           {hasInvalidCheckoutTotal && cart.length > 0 && (
             <p className="text-[11px] text-[var(--color-error)] mb-2">Total must be greater than $0.00 to checkout.</p>
           )}
-          <div className="mb-3">
-            <label className="block text-[var(--color-text-secondary)] text-xs uppercase font-gothic mb-1 tracking-wider">
-              Email
-            </label>
-            <input
-              type="email"
-              value={customerEmail}
-              onChange={(e) => handleCustomerEmailChange(e.target.value)}
-              onBlur={() => setCustomerEmailTouched(true)}
-              placeholder="you@example.com"
-              className="w-full bg-transparent border border-[var(--color-border)] rounded-[8px] px-3 py-2.5 text-sm text-[var(--color-text-primary)] placeholder-[var(--color-text-secondary)] focus:outline-none focus:border-[var(--color-accent)] focus-warm"
-            />
-            {customerEmailTouched && hasInvalidCustomerEmail && (
-              <p className="text-[11px] text-[var(--color-error)] mt-1">Enter a valid email for payment updates.</p>
-            )}
-          </div>
+          {hasInsufficientWallet && (
+            <p className="text-[11px] text-[var(--color-error)] mb-2">
+              Add ${roundMoney(totalAfterDiscountValue - walletBalance).toFixed(2)} more to your wallet before checkout.
+            </p>
+          )}
           <div className="mb-3">
             <label className="block text-[var(--color-text-secondary)] text-xs uppercase font-gothic mb-1 tracking-wider">
               Coupon Code
@@ -438,13 +477,17 @@ const CartModal = () => {
               <span>Total after discount</span>
               <span>${totalAfterDiscountValue.toFixed(2)}</span>
             </div>
+            <div className="flex items-center justify-between text-[var(--color-text-secondary)] pt-1">
+              <span>Wallet balance</span>
+              <span>{walletLoading ? 'Loading...' : `$${walletBalance.toFixed(2)}`}</span>
+            </div>
           </div>
           <button
             onClick={handleCheckout}
-            disabled={!user || cart.length === 0 || isProcessing || hasInvalidCheckoutTotal || hasInvalidCustomerEmail}
+            disabled={!user || cart.length === 0 || isProcessing || hasInvalidCheckoutTotal || walletLoading || hasInsufficientWallet}
             className="btn-press w-full bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] disabled:bg-[var(--color-bg-elevated)] disabled:text-[var(--color-text-secondary)] disabled:cursor-not-allowed text-white py-3 md:py-4 rounded-[8px] text-base md:text-lg font-gothic active:scale-95 transition-transform mt-auto"
           >
-            {isProcessing ? 'Processing...' : 'Check Out'}
+            {isProcessing ? 'Processing...' : 'Pay with Wallet'}
           </button>
         </div>
       </div>

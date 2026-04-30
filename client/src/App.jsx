@@ -5,6 +5,7 @@ import Home from './pages/Home';
 import AuthCallback from './pages/AuthCallback';
 import PaymentPage from './pages/PaymentPage';
 import ProofsPage from './pages/ProofsPage';
+import WalletPage from './pages/WalletPage';
 import AdminOrders from './pages/AdminOrders';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminLogin from './pages/AdminLogin';
@@ -56,10 +57,19 @@ function App() {
                 )}
               />
               <Route path="/auth/discord/callback" element={<AuthCallback />} />
+              <Route
+                path="/wallet"
+                element={(
+                  <>
+                    <Navbar />
+                    <WalletPage />
+                  </>
+                )}
+              />
               <Route path="/pay" element={<PaymentPage />} />
               <Route path="/admin/login" element={<AdminLogin />} />
               <Route path="/admin/dashboard" element={<AdminDashboard />} />
-              <Route path="/admin/orders.php" element={<AdminDashboard />} />
+              <Route path="/admin/orders.php" element={<AdminOrders />} />
               <Route path="/admin" element={<AdminOrders />} />
             </Routes>
           </div>

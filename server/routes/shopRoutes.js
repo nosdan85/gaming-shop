@@ -7,8 +7,11 @@ const Order = require('../models/Order');
 const User = require('../models/User');
 const Counter = require('../models/Counter');
 const Proof = require('../models/Proof');
+const WalletTransaction = require('../models/WalletTransaction');
 const {
     createOrderTicket,
+    createWalletDeliveryTicket,
+    notifyOwnerWalletTopupRequest,
     createPayPalFFTicket,
     createLTCTicket,
     checkUserInGuild,
@@ -20,7 +23,6 @@ const {
     buildMemoExpected,
     ensurePayPalFfInstructions
 } = require('../services/paypalFfService');
-const { normalizeEmail } = require('../services/emailService');
 const { discordRequest } = require('../utils/discordApi');
 const { authRequired, getBearerToken, verifyAnyJwtToken } = require('../middleware/authMiddleware');
 const { checkoutLimiter, discordAuthLimiter } = require('../middleware/rateLimit');
@@ -34,7 +36,6 @@ const {
 
 const router = express.Router();
 const OBJECT_ID_PATTERN = /^[a-fA-F0-9]{24}$/;
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_QUANTITY_PER_PRODUCT = 100000;
 const AUTH_CODE_CACHE_TTL_MS = 2 * 60 * 1000;
 const AUTH_RATE_LIMIT_DEFAULT_RETRY_SECONDS = 15;
@@ -51,6 +52,7 @@ const PAYPAL_TICKET_LOCK_WINDOW_MS = 30 * 1000;
 const LTC_TICKET_LOCK_WINDOW_MS = 30 * 1000;
 const DEFAULT_LTC_PAY_ADDRESS = 'ltc1ququ7e6ryccpnu7jgy0l4vukgc3mventxyulyge';
 const DEFAULT_LTC_QR_IMAGE_URL = '/pictures/payments/ltc.png';
+const DEFAULT_CASHAPP_HANDLE = '$yoko276';
 const discordAuthSuccessCache = new Map();
 const discordAuthInFlight = new Map();
 let discordTokenExchangeChain = Promise.resolve();
@@ -118,6 +120,11 @@ const normalizeEnvValue = (value) => {
 const getBackendBaseUrl = () => normalizeEnvValue(process.env.WEBHOOK_BASE_URL || process.env.BACKEND_URL).replace(/\/+$/, '');
 const getClientBaseUrl = () => normalizeEnvValue((process.env.CLIENT_URL || '').split(',')[0] || '').replace(/\/+$/, '');
 const getOriginBaseUrl = (value) => String(value || '').trim().replace(/\/+$/, '');
+const getPayPalPaymentEmail = () => (
+    normalizeEnvValue(process.env.PAYPAL_PAYMENT_EMAIL)
+    || normalizeEnvValue(process.env.PAYPAL_EMAIL)
+);
+const getCashAppHandle = () => normalizeEnvValue(process.env.CASHAPP_HANDLE) || DEFAULT_CASHAPP_HANDLE;
 const getLtcPayAddress = () => normalizeEnvValue(process.env.LTC_PAY_ADDRESS) || DEFAULT_LTC_PAY_ADDRESS;
 const getLtcQrImageUrl = () => normalizeEnvValue(process.env.LTC_QR_IMAGE_URL) || DEFAULT_LTC_QR_IMAGE_URL;
 const getDiscordOauthClientId = () => normalizeEnvValue(process.env.DISCORD_CLIENT_ID);
@@ -408,8 +415,86 @@ const extractPayPalSummary = (captureData) => {
 const amountsMatch = (left, right) => Math.abs(Number(left) - Number(right)) < 0.01;
 const BULK_DISCOUNT_THRESHOLD = 10;
 const roundMoney = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+const moneyToCents = (value) => Math.round((Number(value) + Number.EPSILON) * 100);
+const centsToMoney = (value) => roundMoney((Number(value) || 0) / 100);
 const normalizeText = (value) => String(value || '').trim().toLowerCase();
 const normalizeKeyText = (value) => normalizeText(value).replace(/\s+/g, '');
+const WALLET_TOPUP_METHODS = new Set(['paypal_ff', 'cashapp', 'ltc']);
+const formatWalletMethodLabel = (method) => {
+    const normalized = String(method || '').trim().toLowerCase();
+    if (normalized === 'paypal_ff') return 'PayPal Friends & Family';
+    if (normalized === 'cashapp') return 'Cash App';
+    if (normalized === 'ltc') return 'Litecoin';
+    if (normalized === 'wallet') return 'Wallet';
+    return normalized || '-';
+};
+const buildWalletMemoExpected = ({ referenceCode, discordId }) => `NOS WALLET ${referenceCode} ${discordId}`;
+const toWalletTransactionPayload = (transaction) => {
+    const hasBalanceAfter = transaction?.balanceAfterCents !== null
+        && transaction?.balanceAfterCents !== undefined
+        && Number.isFinite(Number(transaction.balanceAfterCents));
+    return {
+        id: String(transaction?._id || ''),
+        discordId: transaction?.discordId || '',
+        discordUsername: transaction?.discordUsername || '',
+        type: transaction?.type || '',
+        direction: transaction?.direction || '',
+        amountCents: Number(transaction?.amountCents || 0),
+        amount: centsToMoney(transaction?.amountCents || 0),
+        currency: transaction?.currency || 'USD',
+        method: transaction?.method || '',
+        methodLabel: formatWalletMethodLabel(transaction?.method),
+        status: transaction?.status || '',
+        referenceCode: transaction?.referenceCode || '',
+        memoExpected: transaction?.memoExpected || '',
+        paymentAddress: transaction?.paymentAddress || '',
+        txnId: transaction?.txnId || '',
+        orderId: transaction?.orderId || '',
+        items: Array.isArray(transaction?.items) ? transaction.items : [],
+        balanceAfterCents: hasBalanceAfter ? Number(transaction.balanceAfterCents) : null,
+        balanceAfter: hasBalanceAfter ? centsToMoney(transaction.balanceAfterCents) : null,
+        adminNotes: transaction?.adminNotes || '',
+        reviewedBy: transaction?.reviewedBy || '',
+        reviewedAt: transaction?.reviewedAt || null,
+        createdAt: transaction?.createdAt || null,
+        updatedAt: transaction?.updatedAt || null
+    };
+};
+const buildWalletInstructions = ({ transaction }) => {
+    const method = String(transaction?.method || '').trim().toLowerCase();
+    const amount = centsToMoney(transaction?.amountCents || 0);
+    const base = {
+        method,
+        methodLabel: formatWalletMethodLabel(method),
+        amount,
+        currency: 'USD',
+        memoExpected: transaction?.memoExpected || ''
+    };
+
+    if (method === 'paypal_ff') {
+        return {
+            ...base,
+            paypalEmail: getPayPalPaymentEmail(),
+            destination: getPayPalPaymentEmail()
+        };
+    }
+    if (method === 'cashapp') {
+        return {
+            ...base,
+            cashAppHandle: getCashAppHandle(),
+            destination: getCashAppHandle()
+        };
+    }
+    if (method === 'ltc') {
+        return {
+            ...base,
+            payAddress: getLtcPayAddress(),
+            qrImageUrl: getLtcQrImageUrl(),
+            destination: getLtcPayAddress()
+        };
+    }
+    return base;
+};
 const LEGACY_COMBO_KEYS = new Set(['combox2luck+drop', 'combox2luckdrop']);
 const COMBO_LUCK_KEY = 'x2luck';
 const COMBO_DROP_KEY = 'x2drop';
@@ -1141,17 +1226,229 @@ router.post('/coupon/preview', async (req, res) => {
     }
 });
 
+router.get('/wallet', authRequired, async (req, res) => {
+    try {
+        const discordId = String(req.user?.discordId || '').trim();
+        if (!discordId) return res.status(401).json({ error: 'Authentication required' });
+
+        const dbUser = await User.findOne({ discordId }).lean();
+        if (!dbUser) return res.status(401).json({ error: 'Discord account not linked' });
+
+        const transactions = await WalletTransaction.find({ discordId })
+            .sort({ createdAt: -1 })
+            .limit(80)
+            .lean();
+
+        return res.json({
+            balanceCents: Number(dbUser.walletBalanceCents || 0),
+            balance: centsToMoney(dbUser.walletBalanceCents || 0),
+            currency: 'USD',
+            paypalEmail: getPayPalPaymentEmail(),
+            cashAppHandle: getCashAppHandle(),
+            ltcPayAddress: getLtcPayAddress(),
+            ltcQrImageUrl: getLtcQrImageUrl(),
+            transactions: transactions.map(toWalletTransactionPayload)
+        });
+    } catch (error) {
+        console.error('Wallet fetch error:', error);
+        return res.status(500).json({ error: 'Failed to load wallet' });
+    }
+});
+
+router.post('/wallet/topup', authRequired, async (req, res) => {
+    try {
+        const discordId = String(req.user?.discordId || '').trim();
+        if (!discordId) return res.status(401).json({ error: 'Authentication required' });
+
+        const method = String(req.body?.method || '').trim().toLowerCase();
+        if (!WALLET_TOPUP_METHODS.has(method)) {
+            return res.status(400).json({ error: 'Invalid top-up method' });
+        }
+
+        const amountCents = moneyToCents(req.body?.amount);
+        if (!Number.isFinite(amountCents) || amountCents < 100) {
+            return res.status(400).json({ error: 'Top-up amount must be at least $1.00' });
+        }
+        if (amountCents > 1000000) {
+            return res.status(400).json({ error: 'Top-up amount is too large' });
+        }
+
+        const dbUser = await User.findOne({ discordId });
+        if (!dbUser) return res.status(401).json({ error: 'Discord account not linked' });
+
+        const counter = await Counter.findOneAndUpdate(
+            { id: 'walletTopup' },
+            { $inc: { seq: 1 } },
+            { new: true, upsert: true }
+        );
+        const referenceCode = `TOP${counter.seq}`;
+        const memoExpected = buildWalletMemoExpected({ referenceCode, discordId });
+        const paymentAddress = method === 'paypal_ff'
+            ? getPayPalPaymentEmail()
+            : (method === 'cashapp' ? getCashAppHandle() : getLtcPayAddress());
+        if (!paymentAddress) {
+            return res.status(500).json({ error: `${formatWalletMethodLabel(method)} destination is not configured` });
+        }
+
+        const transaction = await WalletTransaction.create({
+            discordId,
+            discordUsername: dbUser.discordUsername || '',
+            type: 'topup',
+            direction: 'credit',
+            amountCents,
+            currency: 'USD',
+            method,
+            status: 'pending',
+            referenceCode,
+            memoExpected,
+            paymentAddress
+        });
+
+        const notificationSent = await notifyOwnerWalletTopupRequest(transaction);
+
+        return res.json({
+            success: true,
+            topup: toWalletTransactionPayload(transaction),
+            instructions: buildWalletInstructions({ transaction }),
+            notificationSent
+        });
+    } catch (error) {
+        console.error('Wallet top-up error:', error);
+        return res.status(500).json({ error: 'Failed to create top-up request' });
+    }
+});
+
+router.get('/wallet/admin', authRequired, async (req, res) => {
+    try {
+        const discordId = String(req.user?.discordId || '').trim();
+        if (!discordId) return res.status(401).json({ error: 'Authentication required' });
+
+        const isOwner = await canAccessOwnerEndpoints(discordId);
+        if (!isOwner) return res.status(403).json({ error: 'Forbidden' });
+
+        const [pendingTopups, transactions] = await Promise.all([
+            WalletTransaction.find({ type: 'topup', status: 'pending' })
+                .sort({ createdAt: 1 })
+                .limit(100)
+                .lean(),
+            WalletTransaction.find({})
+                .sort({ createdAt: -1 })
+                .limit(150)
+                .lean()
+        ]);
+
+        return res.json({
+            pendingTopups: pendingTopups.map(toWalletTransactionPayload),
+            transactions: transactions.map(toWalletTransactionPayload)
+        });
+    } catch (error) {
+        console.error('Wallet admin fetch error:', error);
+        return res.status(500).json({ error: 'Failed to load wallet admin data' });
+    }
+});
+
+router.post('/wallet/admin/topups/:transactionId/approve', authRequired, async (req, res) => {
+    try {
+        const ownerDiscordId = String(req.user?.discordId || '').trim();
+        if (!ownerDiscordId) return res.status(401).json({ error: 'Authentication required' });
+
+        const isOwner = await canAccessOwnerEndpoints(ownerDiscordId);
+        if (!isOwner) return res.status(403).json({ error: 'Forbidden' });
+
+        const transactionId = String(req.params?.transactionId || '').trim();
+        if (!OBJECT_ID_PATTERN.test(transactionId)) {
+            return res.status(400).json({ error: 'Invalid transaction id' });
+        }
+
+        const txnId = String(req.body?.txnId || req.body?.txn_id || '').trim().slice(0, 120);
+        const adminNotes = String(req.body?.adminNotes || req.body?.admin_notes || '').trim().slice(0, 1000);
+        const transaction = await WalletTransaction.findOneAndUpdate(
+            { _id: transactionId, type: 'topup', status: 'pending' },
+            {
+                $set: {
+                    status: 'completed',
+                    txnId,
+                    adminNotes,
+                    reviewedBy: ownerDiscordId,
+                    reviewedAt: new Date()
+                }
+            },
+            { new: true }
+        );
+
+        if (!transaction) {
+            return res.status(409).json({ error: 'Top-up is not pending or does not exist' });
+        }
+
+        const creditedUser = await User.findOneAndUpdate(
+            { discordId: transaction.discordId },
+            { $inc: { walletBalanceCents: transaction.amountCents } },
+            { new: true }
+        );
+        if (!creditedUser) {
+            return res.status(500).json({ error: 'Could not credit wallet user' });
+        }
+
+        transaction.balanceAfterCents = Number(creditedUser.walletBalanceCents || 0);
+        await transaction.save();
+
+        return res.json({
+            success: true,
+            balanceCents: Number(creditedUser.walletBalanceCents || 0),
+            balance: centsToMoney(creditedUser.walletBalanceCents || 0),
+            topup: toWalletTransactionPayload(transaction)
+        });
+    } catch (error) {
+        console.error('Wallet top-up approve error:', error);
+        return res.status(500).json({ error: 'Failed to approve top-up' });
+    }
+});
+
+router.post('/wallet/admin/topups/:transactionId/reject', authRequired, async (req, res) => {
+    try {
+        const ownerDiscordId = String(req.user?.discordId || '').trim();
+        if (!ownerDiscordId) return res.status(401).json({ error: 'Authentication required' });
+
+        const isOwner = await canAccessOwnerEndpoints(ownerDiscordId);
+        if (!isOwner) return res.status(403).json({ error: 'Forbidden' });
+
+        const transactionId = String(req.params?.transactionId || '').trim();
+        if (!OBJECT_ID_PATTERN.test(transactionId)) {
+            return res.status(400).json({ error: 'Invalid transaction id' });
+        }
+
+        const adminNotes = String(req.body?.adminNotes || req.body?.admin_notes || '').trim().slice(0, 1000);
+        const transaction = await WalletTransaction.findOneAndUpdate(
+            { _id: transactionId, type: 'topup', status: 'pending' },
+            {
+                $set: {
+                    status: 'rejected',
+                    adminNotes,
+                    reviewedBy: ownerDiscordId,
+                    reviewedAt: new Date()
+                }
+            },
+            { new: true }
+        );
+
+        if (!transaction) {
+            return res.status(409).json({ error: 'Top-up is not pending or does not exist' });
+        }
+
+        return res.json({ success: true, topup: toWalletTransactionPayload(transaction) });
+    } catch (error) {
+        console.error('Wallet top-up reject error:', error);
+        return res.status(500).json({ error: 'Failed to reject top-up' });
+    }
+});
+
 router.post('/checkout', authRequired, checkoutLimiter, async (req, res) => {
     try {
         const discordId = req.user?.discordId;
         const cartItems = Array.isArray(req.body?.cartItems) ? req.body.cartItems : [];
         const couponCodeRaw = req.body?.couponCode;
-        const customerEmail = normalizeEmail(req.body?.customerEmail || req.body?.customer_email);
         if (!discordId || cartItems.length === 0) {
             return res.status(400).json({ error: 'Invalid request payload' });
-        }
-        if (!customerEmail || !EMAIL_PATTERN.test(customerEmail)) {
-            return res.status(400).json({ error: 'A valid customer email is required' });
         }
 
         const dbUser = await User.findOne({ discordId });
@@ -1188,58 +1485,137 @@ router.post('/checkout', authRequired, checkoutLimiter, async (req, res) => {
             couponCode
         } = cartSummary;
 
-        const ticketMode = isPanelTicketMode() ? 'panel' : 'bot';
+        const totalCents = moneyToCents(totalAmount);
+        if (!Number.isFinite(totalCents) || totalCents <= 0) {
+            return res.status(400).json({ error: 'Invalid checkout total' });
+        }
+
+        const debitedUser = await User.findOneAndUpdate(
+            {
+                discordId,
+                walletBalanceCents: { $gte: totalCents }
+            },
+            { $inc: { walletBalanceCents: -totalCents } },
+            { new: true }
+        );
+        if (!debitedUser) {
+            const freshUser = await User.findOne({ discordId }).lean();
+            const balanceCents = Number(freshUser?.walletBalanceCents || 0);
+            return res.status(402).json({
+                error: 'Insufficient wallet balance',
+                code: 'INSUFFICIENT_WALLET_BALANCE',
+                balanceCents,
+                balance: centsToMoney(balanceCents),
+                requiredCents: totalCents,
+                required: centsToMoney(totalCents),
+                shortageCents: Math.max(0, totalCents - balanceCents),
+                shortage: centsToMoney(Math.max(0, totalCents - balanceCents))
+            });
+        }
+
         let newOrder = null;
         let orderId = '';
-        for (let attempt = 0; attempt < 3; attempt += 1) {
-            const counter = await Counter.findOneAndUpdate(
-                { id: 'orderId' },
-                { $inc: { seq: 1 } },
-                { new: true, upsert: true }
-            );
-            orderId = `nm_${counter.seq}`;
+        let products = [];
+        try {
+            for (let attempt = 0; attempt < 3; attempt += 1) {
+                const counter = await Counter.findOneAndUpdate(
+                    { id: 'orderId' },
+                    { $inc: { seq: 1 } },
+                    { new: true, upsert: true }
+                );
+                orderId = `nm_${counter.seq}`;
 
-            try {
-                const products = items.map((item) => ({
-                    product: item.product || null,
-                    name: item.name || '',
-                    quantity: Number(item.quantity || 1),
-                    price: Number(item.price || 0)
-                }));
-                newOrder = new Order({
-                    orderId,
-                    customerEmail,
-                    discordId,
-                    discordUsername: dbUser.discordUsername || '',
-                    items,
-                    products,
-                    subtotalAmount,
-                    discountAmount,
-                    discountPercent,
-                    couponCode,
-                    total: totalAmount,
-                    totalAmount,
-                    paymentMethod: 'paypal_ff',
-                    paymentStatus: 'pending',
-                    memoExpected: buildMemoExpected({ orderId, items }),
-                    status: ticketMode === 'panel' ? 'Waiting Payment' : 'Pending',
-                    ticketStatus: ticketMode === 'panel' ? 'panel' : 'pending',
-                    ticketError: ''
-                });
-                await newOrder.save();
-                break;
-            } catch (saveError) {
-                const duplicateOrderId = Number(saveError?.code) === 11000 && saveError?.keyPattern?.orderId;
-                if (!duplicateOrderId || attempt >= 2) {
-                    throw saveError;
+                try {
+                    products = items.map((item) => ({
+                        product: item.product || null,
+                        name: item.name || '',
+                        quantity: Number(item.quantity || 1),
+                        price: Number(item.price || 0)
+                    }));
+                    newOrder = new Order({
+                        orderId,
+                        customerEmail: '',
+                        discordId,
+                        discordUsername: dbUser.discordUsername || '',
+                        items,
+                        products,
+                        subtotalAmount,
+                        discountAmount,
+                        discountPercent,
+                        couponCode,
+                        total: totalAmount,
+                        totalAmount,
+                        paymentMethod: 'wallet',
+                        paymentStatus: 'paid',
+                        memoExpected: '',
+                        txnId: `wallet_${orderId}_${Date.now()}`,
+                        paidAt: new Date(),
+                        status: 'Completed',
+                        ticketStatus: 'pending',
+                        ticketError: ''
+                    });
+                    await newOrder.save();
+                    break;
+                } catch (saveError) {
+                    const duplicateOrderId = Number(saveError?.code) === 11000 && saveError?.keyPattern?.orderId;
+                    if (!duplicateOrderId || attempt >= 2) {
+                        throw saveError;
+                    }
                 }
             }
+        } catch (saveError) {
+            await User.updateOne({ discordId }, { $inc: { walletBalanceCents: totalCents } }).catch(() => {});
+            throw saveError;
         }
+
         if (!newOrder) {
+            await User.updateOne({ discordId }, { $inc: { walletBalanceCents: totalCents } }).catch(() => {});
             return res.status(503).json({ error: 'Could not create order right now. Please retry.' });
         }
 
-        const panelUrl = isPanelTicketMode() ? getTicketPanelUrl() : '';
+        await WalletTransaction.create({
+            discordId,
+            discordUsername: dbUser.discordUsername || '',
+            type: 'purchase',
+            direction: 'debit',
+            amountCents: totalCents,
+            currency: 'USD',
+            method: 'wallet',
+            status: 'completed',
+            orderId: newOrder.orderId,
+            txnId: newOrder.txnId || '',
+            items: products,
+            balanceAfterCents: Number(debitedUser.walletBalanceCents || 0)
+        }).catch((transactionError) => {
+            console.error('Wallet purchase transaction log error:', transactionError);
+        });
+
+        let channelId = null;
+        let ticketStatus = 'pending';
+        let ticketError = '';
+        const ticketConfigError = getDiscordTicketConfigError();
+        if (ticketConfigError) {
+            ticketStatus = 'failed';
+            ticketError = ticketConfigError;
+            await Order.findByIdAndUpdate(newOrder._id, { ticketStatus, ticketError }).catch(() => {});
+        } else {
+            try {
+                channelId = await Promise.resolve(createWalletDeliveryTicket(newOrder));
+                ticketStatus = channelId ? 'created' : 'failed';
+                ticketError = channelId ? '' : 'Could not create delivery ticket channel';
+                await Order.findByIdAndUpdate(newOrder._id, {
+                    channelId,
+                    ticketStatus,
+                    ticketError
+                }).catch(() => {});
+            } catch (ticketCreateError) {
+                const { payload } = buildTicketErrorResponse(ticketCreateError);
+                ticketStatus = 'failed';
+                ticketError = payload?.error || 'Ticket creation failed.';
+                await Order.findByIdAndUpdate(newOrder._id, { ticketStatus, ticketError }).catch(() => {});
+                console.error('Wallet delivery ticket error:', ticketCreateError);
+            }
+        }
 
         return res.json({
             success: true,
@@ -1249,15 +1625,16 @@ router.post('/checkout', authRequired, checkoutLimiter, async (req, res) => {
             discountPercent: newOrder.discountPercent || 0,
             couponCode: newOrder.couponCode || '',
             totalAmount: newOrder.totalAmount,
-            customerEmail: newOrder.customerEmail || '',
-            paymentMethod: newOrder.paymentMethod || 'paypal_ff',
-            paymentStatus: newOrder.paymentStatus || 'pending',
-            memoExpected: newOrder.memoExpected || '',
-            ticketMode,
-            channelId: null,
-            ticketStatus: newOrder.ticketStatus,
-            ...(panelUrl ? { panelUrl } : {}),
-            ticketError: ''
+            customerEmail: '',
+            paymentMethod: 'wallet',
+            paymentStatus: 'paid',
+            memoExpected: '',
+            walletBalanceCents: Number(debitedUser.walletBalanceCents || 0),
+            walletBalance: centsToMoney(debitedUser.walletBalanceCents || 0),
+            ticketMode: 'bot',
+            channelId,
+            ticketStatus,
+            ticketError
         });
     } catch (err) {
         console.error('Checkout error:', err);
@@ -2093,6 +2470,8 @@ router.get('/orders', authRequired, async (req, res) => {
             memoExpected: order.memoExpected || '',
             txnId: order.txnId || '',
             status: order.status,
+            ticketStatus: order.ticketStatus || '',
+            channelId: order.channelId || '',
             isPaid: order.status === 'Completed' || order.paymentStatus === 'paid',
             items: order.items,
             createdAt: order.createdAt
