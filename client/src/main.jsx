@@ -5,11 +5,11 @@ import './index.css'
 import { BrowserRouter } from 'react-router-dom'
 
 try {
-  const storedTheme = String(localStorage.getItem('nos_theme_preference_v2') || '').trim().toLowerCase()
+  const storedTheme = String(localStorage.getItem('nos_theme_preference_v3') || '').trim().toLowerCase()
   if (storedTheme === 'dark' || storedTheme === 'light') {
     document.documentElement.setAttribute('data-theme', storedTheme)
   } else {
-    document.documentElement.setAttribute('data-theme', 'dark')
+    document.documentElement.setAttribute('data-theme', 'light')
   }
 } catch {
   // Ignore theme bootstrap errors.

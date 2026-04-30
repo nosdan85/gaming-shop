@@ -190,7 +190,7 @@ const ProofsPage = () => {
               return (
                 <article
                   key={proof.id}
-                  className="rounded-[10px] overflow-hidden border border-[var(--color-border)] bg-[var(--color-bg-secondary)] shadow-none hover:shadow-[rgba(0,0,0,0.14)_0px_28px_70px]"
+                  className="rounded-[10px] overflow-hidden border border-[var(--color-border)] bg-[var(--color-bg-secondary)] shadow-none hover:shadow-[rgba(17,24,39,0.08)_0px_18px_42px]"
                 >
                   <button
                     type="button"

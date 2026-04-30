@@ -138,7 +138,7 @@ const Home = () => {
               placeholder="Search products..."
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
-              className="w-full pl-12 pr-4 py-3 md:py-4 bg-transparent border border-[var(--color-border)] rounded-[8px] text-[var(--color-text-primary)] placeholder-[var(--color-text-secondary)] focus:outline-none focus:border-[var(--color-border-medium)] focus:shadow-[rgba(0,0,0,0.1)_0px_4px_12px] transition-all"
+              className="w-full pl-12 pr-4 py-3 md:py-4 bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-[8px] text-[var(--color-text-primary)] placeholder-[var(--color-text-secondary)] focus:outline-none focus:border-[var(--color-accent)] focus:shadow-[rgba(47,111,237,0.12)_0px_0px_0px_4px] transition-all"
             />
           </div>
         </div>
@@ -226,7 +226,7 @@ const Home = () => {
 
       {showProofNotice && (
         <div className="fixed z-[85] top-20 md:top-24 left-3 right-3 md:left-auto md:right-6">
-          <div className="relative w-full md:w-[430px] rounded-[10px] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] shadow-[rgba(0,0,0,0.14)_0px_28px_70px]">
+          <div className="relative w-full md:w-[430px] rounded-[10px] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] shadow-[rgba(17,24,39,0.1)_0px_20px_52px]">
             <button
               type="button"
               onClick={closeProofNotice}

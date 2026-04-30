@@ -83,7 +83,7 @@ const ProductCard = ({ product, onOpenDetail }) => {
 
   return (
     <div
-      className="card-apple p-4 md:p-5 flex flex-col h-full group cursor-pointer border border-[var(--color-border)] hover:border-[var(--color-border-medium)] transition-all duration-200 relative overflow-hidden rounded-[8px] bg-[var(--color-bg-secondary)] hover:shadow-[rgba(0,0,0,0.14)_0px_28px_70px,rgba(0,0,0,0.1)_0px_14px_32px]"
+      className="card-apple p-4 md:p-5 flex flex-col h-full group cursor-pointer border border-[var(--color-border)] hover:border-[var(--color-border-medium)] transition-all duration-200 relative overflow-hidden rounded-[8px] bg-[var(--color-bg-secondary)] hover:shadow-[rgba(17,24,39,0.08)_0px_18px_42px,rgba(17,24,39,0.05)_0px_6px_16px]"
       onClick={() => {
         if (onOpenDetail) onOpenDetail(product);
       }}
@@ -152,7 +152,7 @@ const ProductCard = ({ product, onOpenDetail }) => {
             <button
               type="button"
               onClick={handleAddToCart}
-              className="btn-press shrink-0 bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white p-2 rounded-full transition-all transform hover:scale-105 active:scale-90 shadow-none hover:shadow-[rgba(0,0,0,0.1)_0px_4px_12px] flex items-center justify-center focus:outline-none"
+              className="btn-press shrink-0 bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white p-2 rounded-full transition-all transform hover:scale-105 active:scale-90 shadow-none hover:shadow-[rgba(47,111,237,0.18)_0px_6px_14px] flex items-center justify-center focus:outline-none"
               title="Add to Cart"
             >
               <PlusIcon className="w-5 h-5" />

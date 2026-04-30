@@ -26,7 +26,7 @@ const AdminLogin = () => {
 
     return (
         <div className="flex items-center justify-center h-screen bg-[var(--color-bg-main)]">
-            <form onSubmit={handleSubmit} className="bg-[var(--color-bg-secondary)] p-8 rounded-[10px] border border-[var(--color-border)] shadow-[rgba(0,0,0,0.14)_0px_28px_70px]">
+            <form onSubmit={handleSubmit} className="bg-[var(--color-bg-secondary)] p-8 rounded-[10px] border border-[var(--color-border)] shadow-[rgba(17,24,39,0.1)_0px_20px_52px]">
                 <h2 className="text-2xl font-gothic tracking-[-0.72px] mb-4 text-[var(--color-text-primary)]">Admin Access</h2>
                 <input
                     type="password"

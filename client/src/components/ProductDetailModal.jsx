@@ -78,11 +78,11 @@ const ProductDetailModal = ({ product, onClose }) => {
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
       <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity"
+        className="absolute inset-0 bg-slate-900/30 backdrop-blur-sm transition-opacity"
         onClick={onClose}
       ></div>
 
-      <div className="relative bg-[var(--color-bg-main)] w-full max-w-3xl md:max-w-[90rem] rounded-[10px] shadow-[rgba(0,0,0,0.14)_0px_28px_70px,rgba(0,0,0,0.1)_0px_14px_32px] overflow-hidden border border-[var(--color-border)] animate-pop-in flex flex-col md:flex-row">
+      <div className="relative bg-[var(--color-bg-main)] w-full max-w-3xl md:max-w-[90rem] rounded-[10px] shadow-[rgba(17,24,39,0.12)_0px_24px_60px,rgba(17,24,39,0.06)_0px_8px_24px] overflow-hidden border border-[var(--color-border)] animate-pop-in flex flex-col md:flex-row">
         <button
           onClick={onClose}
           className="btn-press absolute top-4 right-4 z-10 p-2 bg-[var(--color-bg-elevated)] rounded-full text-[var(--color-text-primary)] hover:text-[var(--color-error)] transition"
