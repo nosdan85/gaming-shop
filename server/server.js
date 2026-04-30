@@ -91,7 +91,15 @@ app.use(express.json({
         req.rawBody = buffer.toString();
     }
 }));
+app.use(express.urlencoded({
+    extended: false,
+    verify: (req, res, buffer) => {
+        req.rawBody = buffer.toString();
+    }
+}));
 
+app.use('/ipn.php', require('./routes/paypalIpnRoutes'));
+app.use('/api/shop/paypal/ipn', require('./routes/paypalIpnRoutes'));
 app.use('/api', apiLimiter);
 app.use('/api/shop', require('./routes/shopRoutes'));
 app.use('/api/admin', require('./routes/adminRoutes'));

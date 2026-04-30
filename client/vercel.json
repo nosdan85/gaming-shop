@@ -1,6 +1,10 @@
 {
   "routes": [
     {
+      "src": "/ipn.php",
+      "dest": "https://gaming-shop-2.onrender.com/ipn.php"
+    },
+    {
       "handle": "filesystem"
     },
     {

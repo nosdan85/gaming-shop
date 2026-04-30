@@ -7,6 +7,7 @@ import { formatDeliveredUnitsLabel } from '../utils/itemQuantityDisplay';
 
 const BULK_DISCOUNT_THRESHOLD = 10;
 const CHECKOUT_TIMEOUT_MS = 20000;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const roundMoney = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 
 const getItemPricing = (item) => {
@@ -61,6 +62,8 @@ const CartModal = () => {
   const [isApplyingCoupon, setIsApplyingCoupon] = useState(false);
   const [appliedCoupon, setAppliedCoupon] = useState(null);
   const [couponError, setCouponError] = useState('');
+  const [customerEmail, setCustomerEmail] = useState('');
+  const [customerEmailTouched, setCustomerEmailTouched] = useState(false);
   const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
   useEffect(() => {
@@ -72,6 +75,7 @@ const CartModal = () => {
         console.error(e);
       }
     }
+    setCustomerEmail(localStorage.getItem('checkoutCustomerEmail') || '');
   }, [isCartOpen]);
 
   const user = contextUser || localUser;
@@ -86,10 +90,11 @@ const CartModal = () => {
   const normalizedCouponCode = couponCode.trim().toUpperCase();
   const appliedDiscountAmount = roundMoney(Number(appliedCoupon?.discountAmount) || 0);
   const totalAfterDiscountValue = roundMoney(Math.max(0, totalValue - appliedDiscountAmount));
+  const normalizedCustomerEmail = customerEmail.trim().toLowerCase();
+  const hasInvalidCustomerEmail = !EMAIL_PATTERN.test(normalizedCustomerEmail);
 
   useEffect(() => {
-    if (!appliedCoupon) return;
-    setAppliedCoupon(null);
+    setAppliedCoupon((current) => (current ? null : current));
   }, [cart]);
 
   const getOAuthUrl = () => {
@@ -137,6 +142,11 @@ const CartModal = () => {
     }
   };
 
+  const handleCustomerEmailChange = (value) => {
+    setCustomerEmail(value);
+    setCustomerEmailTouched(true);
+  };
+
   const handleApplyCoupon = async () => {
     if (isApplyingCoupon) return;
     if (cart.length === 0) return;
@@ -179,16 +189,22 @@ const CartModal = () => {
     if (isProcessing) return;
     if (!user || !user.discordId) return alert('Please link Discord first!');
     if (hasInvalidCheckoutTotal) return alert('Checkout total is invalid.');
+    if (hasInvalidCustomerEmail) {
+      setCustomerEmailTouched(true);
+      return alert('Please enter a valid email for payment updates.');
+    }
 
     setIsProcessing(true);
     try {
+      localStorage.setItem('checkoutCustomerEmail', normalizedCustomerEmail);
       let res = null;
       try {
         res = await axios.post(
           '/api/shop/checkout',
           {
             cartItems: cart,
-            couponCode: appliedCoupon?.couponCode || undefined
+            couponCode: appliedCoupon?.couponCode || undefined,
+            customerEmail: normalizedCustomerEmail
           },
           { timeout: CHECKOUT_TIMEOUT_MS }
         );
@@ -199,7 +215,8 @@ const CartModal = () => {
           '/api/shop/checkout',
           {
             cartItems: cart,
-            couponCode: appliedCoupon?.couponCode || undefined
+            couponCode: appliedCoupon?.couponCode || undefined,
+            customerEmail: normalizedCustomerEmail
           },
           { timeout: CHECKOUT_TIMEOUT_MS }
         );
@@ -364,6 +381,22 @@ const CartModal = () => {
           )}
           <div className="mb-3">
             <label className="block text-[var(--color-text-secondary)] text-xs uppercase font-gothic mb-1 tracking-wider">
+              Email
+            </label>
+            <input
+              type="email"
+              value={customerEmail}
+              onChange={(e) => handleCustomerEmailChange(e.target.value)}
+              onBlur={() => setCustomerEmailTouched(true)}
+              placeholder="you@example.com"
+              className="w-full bg-transparent border border-[var(--color-border)] rounded-[8px] px-3 py-2.5 text-sm text-[var(--color-text-primary)] placeholder-[var(--color-text-secondary)] focus:outline-none focus:border-[var(--color-accent)] focus-warm"
+            />
+            {customerEmailTouched && hasInvalidCustomerEmail && (
+              <p className="text-[11px] text-[var(--color-error)] mt-1">Enter a valid email for payment updates.</p>
+            )}
+          </div>
+          <div className="mb-3">
+            <label className="block text-[var(--color-text-secondary)] text-xs uppercase font-gothic mb-1 tracking-wider">
               Coupon Code
             </label>
             <div className="flex items-center gap-2">
@@ -408,7 +441,7 @@ const CartModal = () => {
           </div>
           <button
             onClick={handleCheckout}
-            disabled={!user || cart.length === 0 || isProcessing || hasInvalidCheckoutTotal}
+            disabled={!user || cart.length === 0 || isProcessing || hasInvalidCheckoutTotal || hasInvalidCustomerEmail}
             className="btn-press w-full bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] disabled:bg-[var(--color-bg-elevated)] disabled:text-[var(--color-text-secondary)] disabled:cursor-not-allowed text-white py-3 md:py-4 rounded-[8px] text-base md:text-lg font-gothic active:scale-95 transition-transform mt-auto"
           >
             {isProcessing ? 'Processing...' : 'Check Out'}

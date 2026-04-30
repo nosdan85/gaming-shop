@@ -16,6 +16,11 @@ const {
     DiscordBotError
 } = require('../bot');
 const { createPayPalOrder, capturePayPalOrder } = require('../services/paymentService');
+const {
+    buildMemoExpected,
+    ensurePayPalFfInstructions
+} = require('../services/paypalFfService');
+const { normalizeEmail } = require('../services/emailService');
 const { discordRequest } = require('../utils/discordApi');
 const { authRequired, getBearerToken, verifyAnyJwtToken } = require('../middleware/authMiddleware');
 const { checkoutLimiter, discordAuthLimiter } = require('../middleware/rateLimit');
@@ -29,6 +34,7 @@ const {
 
 const router = express.Router();
 const OBJECT_ID_PATTERN = /^[a-fA-F0-9]{24}$/;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_QUANTITY_PER_PRODUCT = 100000;
 const AUTH_CODE_CACHE_TTL_MS = 2 * 60 * 1000;
 const AUTH_RATE_LIMIT_DEFAULT_RETRY_SECONDS = 15;
@@ -395,7 +401,8 @@ const extractPayPalSummary = (captureData) => {
     const amountValue = Number(capture?.amount?.value || purchaseUnit?.amount?.value || 0);
     const currency = capture?.amount?.currency_code || purchaseUnit?.amount?.currency_code || '';
     const referenceId = purchaseUnit?.reference_id || '';
-    return { amountValue, currency, referenceId };
+    const txnId = capture?.id || '';
+    return { amountValue, currency, referenceId, txnId };
 };
 
 const amountsMatch = (left, right) => Math.abs(Number(left) - Number(right)) < 0.01;
@@ -1139,8 +1146,12 @@ router.post('/checkout', authRequired, checkoutLimiter, async (req, res) => {
         const discordId = req.user?.discordId;
         const cartItems = Array.isArray(req.body?.cartItems) ? req.body.cartItems : [];
         const couponCodeRaw = req.body?.couponCode;
+        const customerEmail = normalizeEmail(req.body?.customerEmail || req.body?.customer_email);
         if (!discordId || cartItems.length === 0) {
             return res.status(400).json({ error: 'Invalid request payload' });
+        }
+        if (!customerEmail || !EMAIL_PATTERN.test(customerEmail)) {
+            return res.status(400).json({ error: 'A valid customer email is required' });
         }
 
         const dbUser = await User.findOne({ discordId });
@@ -1189,16 +1200,28 @@ router.post('/checkout', authRequired, checkoutLimiter, async (req, res) => {
             orderId = `nm_${counter.seq}`;
 
             try {
+                const products = items.map((item) => ({
+                    product: item.product || null,
+                    name: item.name || '',
+                    quantity: Number(item.quantity || 1),
+                    price: Number(item.price || 0)
+                }));
                 newOrder = new Order({
                     orderId,
+                    customerEmail,
                     discordId,
                     discordUsername: dbUser.discordUsername || '',
                     items,
+                    products,
                     subtotalAmount,
                     discountAmount,
                     discountPercent,
                     couponCode,
+                    total: totalAmount,
                     totalAmount,
+                    paymentMethod: 'paypal_ff',
+                    paymentStatus: 'pending',
+                    memoExpected: buildMemoExpected({ orderId, items }),
                     status: ticketMode === 'panel' ? 'Waiting Payment' : 'Pending',
                     ticketStatus: ticketMode === 'panel' ? 'panel' : 'pending',
                     ticketError: ''
@@ -1226,6 +1249,10 @@ router.post('/checkout', authRequired, checkoutLimiter, async (req, res) => {
             discountPercent: newOrder.discountPercent || 0,
             couponCode: newOrder.couponCode || '',
             totalAmount: newOrder.totalAmount,
+            customerEmail: newOrder.customerEmail || '',
+            paymentMethod: newOrder.paymentMethod || 'paypal_ff',
+            paymentStatus: newOrder.paymentStatus || 'pending',
+            memoExpected: newOrder.memoExpected || '',
             ticketMode,
             channelId: null,
             ticketStatus: newOrder.ticketStatus,
@@ -1256,6 +1283,7 @@ router.get('/order-payment-info', authRequired, async (req, res) => {
             : 0;
         return res.json({
             orderId: order.orderId,
+            customerEmail: order.customerEmail || '',
             subtotalAmount: Number(order.subtotalAmount || order.totalAmount || 0),
             discountAmount: Number(order.discountAmount || 0),
             discountPercent: Number(order.discountPercent || 0),
@@ -1269,7 +1297,10 @@ router.get('/order-payment-info', authRequired, async (req, res) => {
                 }))
                 : [],
             status: order.status,
-            isPaid: order.status === 'Completed',
+            paymentMethod: order.paymentMethod || 'paypal_ff',
+            paymentStatus: order.paymentStatus || (order.status === 'Completed' ? 'paid' : 'pending'),
+            memoExpected: order.memoExpected || buildMemoExpected(order),
+            isPaid: order.status === 'Completed' || order.paymentStatus === 'paid',
             channelId: order.channelId || null,
             ticketStatus: normalizedTicketStatus,
             ticketError: order.ticketError || '',
@@ -1312,6 +1343,17 @@ router.post('/create-payment', authRequired, async (req, res) => {
             return res.status(400).json({ error: 'Order is already paid' });
         }
 
+        if (method === 'paypal_ff') {
+            const instructions = await ensurePayPalFfInstructions(order, { sendEmail: true });
+            return res.json({
+                type: 'paypal_ff',
+                email: instructions?.paypalEmail || process.env.PAYPAL_EMAIL || '',
+                memoExpected: instructions?.memoExpected || buildMemoExpected(order),
+                paymentStatus: instructions?.order?.paymentStatus || 'pending',
+                instructionEmailSentAt: instructions?.order?.paymentInstructionEmailSentAt || null
+            });
+        }
+
         if (method === 'paypal') {
             const backendBaseUrl = getBackendBaseUrl() || getOriginBaseUrl(`${req.protocol}://${req.get('host')}`);
             const clientBaseUrl = getClientBaseUrl() || getOriginBaseUrl(req.headers.origin);
@@ -1343,7 +1385,10 @@ router.post('/create-payment', authRequired, async (req, res) => {
         }
 
         if (method === 'ltc') {
-            await Order.findByIdAndUpdate(order._id, { paymentMethod: 'ltc' });
+            await Order.findByIdAndUpdate(order._id, {
+                paymentMethod: 'ltc',
+                paymentStatus: 'pending'
+            });
             return res.json({
                 type: 'ltc',
                 payAddress: getLtcPayAddress(),
@@ -1388,6 +1433,9 @@ router.post('/paypal/capture-ajax', authRequired, async (req, res) => {
 
         await Order.findByIdAndUpdate(order._id, {
             status: 'Completed',
+            paymentStatus: 'paid',
+            txnId: summary.txnId || order.txnId || '',
+            paidAt: new Date(),
             paymentMethod: 'paypal'
         });
         return res.json({ success: true });
@@ -1426,6 +1474,9 @@ router.get('/paypal/capture', async (req, res) => {
 
         await Order.findByIdAndUpdate(order._id, {
             status: 'Completed',
+            paymentStatus: 'paid',
+            txnId: summary.txnId || order.txnId || '',
+            paidAt: new Date(),
             paymentMethod: 'paypal'
         });
 
@@ -1459,7 +1510,13 @@ router.post('/webhook/nowpayments', async (req, res) => {
             const payCurrency = String(req.body?.pay_currency || 'ltc').toLowerCase();
             await Order.findOneAndUpdate(
                 { orderId },
-                { status: 'Completed', paymentMethod: payCurrency }
+                {
+                    status: 'Completed',
+                    paymentStatus: 'paid',
+                    txnId: String(req.body?.payment_id || req.body?.purchase_id || ''),
+                    paidAt: new Date(),
+                    paymentMethod: payCurrency
+                }
             );
         }
 
@@ -1537,6 +1594,7 @@ router.post('/create-ticket-paypal-ff', authRequired, async (req, res) => {
 
         const { order, status, error } = await getOwnedOrder(orderId, req.user.discordId);
         if (!order) return res.status(status).json({ error });
+        const instructions = await ensurePayPalFfInstructions(order);
 
         if (isPanelTicketMode()) {
             await Order.findByIdAndUpdate(order._id, { paymentMethod: 'paypal_ff' });
@@ -1544,7 +1602,8 @@ router.post('/create-ticket-paypal-ff', authRequired, async (req, res) => {
                 mode: 'panel',
                 panelUrl: getTicketPanelUrl(),
                 orderId: order.orderId,
-                email: process.env.PAYPAL_EMAIL || ''
+                email: instructions?.paypalEmail || process.env.PAYPAL_EMAIL || '',
+                memoExpected: instructions?.memoExpected || buildMemoExpected(order)
             });
         }
 
@@ -1558,7 +1617,8 @@ router.post('/create-ticket-paypal-ff', authRequired, async (req, res) => {
                 success: true,
                 alreadyExists: true,
                 channelId: order.paypalTicketChannelId,
-                email: process.env.PAYPAL_EMAIL || ''
+                email: instructions?.paypalEmail || process.env.PAYPAL_EMAIL || '',
+                memoExpected: instructions?.memoExpected || buildMemoExpected(order)
             });
         }
 
@@ -1576,7 +1636,8 @@ router.post('/create-ticket-paypal-ff', authRequired, async (req, res) => {
                     success: true,
                     alreadyExists: true,
                     channelId: fresh.paypalTicketChannelId,
-                    email: process.env.PAYPAL_EMAIL || ''
+                    email: instructions?.paypalEmail || process.env.PAYPAL_EMAIL || '',
+                    memoExpected: instructions?.memoExpected || buildMemoExpected(order)
                 });
             }
 
@@ -1587,14 +1648,16 @@ router.post('/create-ticket-paypal-ff', authRequired, async (req, res) => {
                         'PayPal ticket is already being created. Please wait a moment.',
                         'PAYPAL_TICKET_CREATION_IN_PROGRESS'
                     ),
-                    email: process.env.PAYPAL_EMAIL || ''
+                    email: instructions?.paypalEmail || process.env.PAYPAL_EMAIL || '',
+                    memoExpected: instructions?.memoExpected || buildMemoExpected(order)
                 });
             }
 
             return res.status(409).json({
                 error: 'PayPal ticket cannot be created right now. Please retry shortly.',
                 code: 'PAYPAL_TICKET_NOT_READY',
-                email: process.env.PAYPAL_EMAIL || ''
+                email: instructions?.paypalEmail || process.env.PAYPAL_EMAIL || '',
+                memoExpected: instructions?.memoExpected || buildMemoExpected(order)
             });
         }
 
@@ -1637,7 +1700,8 @@ router.post('/create-ticket-paypal-ff', authRequired, async (req, res) => {
                     success: true,
                     alreadyExists: true,
                     channelId: fresh.paypalTicketChannelId,
-                    email: process.env.PAYPAL_EMAIL || ''
+                    email: instructions?.paypalEmail || process.env.PAYPAL_EMAIL || '',
+                    memoExpected: instructions?.memoExpected || buildMemoExpected(order)
                 });
             }
             await Order.updateOne(
@@ -1665,7 +1729,8 @@ router.post('/create-ticket-paypal-ff', authRequired, async (req, res) => {
         return res.json({
             success: true,
             channelId: channelId || null,
-            email: process.env.PAYPAL_EMAIL || ''
+            email: instructions?.paypalEmail || process.env.PAYPAL_EMAIL || '',
+            memoExpected: instructions?.memoExpected || buildMemoExpected(order)
         });
     } catch (err) {
         console.error('Create PayPal F&F ticket error:', err);
@@ -2019,12 +2084,16 @@ router.get('/orders', authRequired, async (req, res) => {
         const orders = await Order.find({}).sort({ createdAt: -1 }).limit(100);
         return res.json(orders.map((order) => ({
             orderId: order.orderId,
+            customerEmail: order.customerEmail || '',
             discordId: order.discordId,
             discordUsername: order.discordUsername,
             totalAmount: order.totalAmount,
             paymentMethod: order.paymentMethod || '-',
+            paymentStatus: order.paymentStatus || (order.status === 'Completed' ? 'paid' : 'pending'),
+            memoExpected: order.memoExpected || '',
+            txnId: order.txnId || '',
             status: order.status,
-            isPaid: order.status === 'Completed',
+            isPaid: order.status === 'Completed' || order.paymentStatus === 'paid',
             items: order.items,
             createdAt: order.createdAt
         })));

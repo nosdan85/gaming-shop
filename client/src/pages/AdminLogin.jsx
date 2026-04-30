@@ -14,14 +14,14 @@ const AdminLogin = () => {
         try {
             const res = await axios.post('/api/admin/login', { password });
             login(res.data.token);
-            navigate('/admin/dashboard');
+            navigate('/admin/orders.php');
         } catch (err) {
             alert(err.response?.data?.message || 'Wrong password');
         }
     };
 
     if (isAdminToken(token)) {
-        return <Navigate to="/admin/dashboard" replace />;
+        return <Navigate to="/admin/orders.php" replace />;
     }
 
     return (

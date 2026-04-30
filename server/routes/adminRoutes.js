@@ -1,6 +1,12 @@
 const express = require('express');
 const router = express.Router();
-const { getStats, getAllOrders, updateOrderStatus } = require('../controllers/adminController');
+const {
+    getStats,
+    getAllOrders,
+    updateOrderStatus,
+    markOrderPaidManually,
+    recheckOrderIpn
+} = require('../controllers/adminController');
 const jwt = require('jsonwebtoken');
 const { adminLoginLimiter } = require('../middleware/rateLimit');
 
@@ -49,5 +55,7 @@ router.use(adminAuth);
 router.get('/stats', getStats);
 router.get('/orders', getAllOrders);
 router.put('/order/:id', updateOrderStatus);
+router.post('/order/:id/mark-paid', markOrderPaidManually);
+router.post('/order/:id/recheck-ipn', recheckOrderIpn);
 
 module.exports = router;

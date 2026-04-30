@@ -373,15 +373,21 @@ const PaymentPage = () => {
   const handlePayPalFF = async () => {
     setPaypalFFLoading(true);
     try {
-      const res = await axios.get('/api/shop/paypal-email', { timeout: REQUEST_TIMEOUT_MS });
+      const res = await axios.post(
+        '/api/shop/create-payment',
+        { orderId, method: 'paypal_ff' },
+        { timeout: REQUEST_TIMEOUT_MS }
+      );
       setPaypalFFData({
         channelId: orderInfo?.paypalTicketChannelId || null,
-        email: res.data?.email || DEFAULT_PAYPAL_EMAIL
+        email: res.data?.email || DEFAULT_PAYPAL_EMAIL,
+        memoExpected: res.data?.memoExpected || orderInfo?.memoExpected || ''
       });
     } catch {
       setPaypalFFData({
         channelId: orderInfo?.paypalTicketChannelId || null,
-        email: DEFAULT_PAYPAL_EMAIL
+        email: DEFAULT_PAYPAL_EMAIL,
+        memoExpected: orderInfo?.memoExpected || ''
       });
     } finally {
       setPaypalFFLoading(false);
@@ -400,7 +406,7 @@ const PaymentPage = () => {
         { orderId },
         { timeout: TICKET_REQUEST_TIMEOUT_MS }
       );
-      const { channelId, email } = res.data || {};
+      const { channelId, email, memoExpected } = res.data || {};
       if (res.data?.mode === 'panel' && res.data?.panelUrl) {
         window.open(res.data.panelUrl, '_blank');
         alert(`Discord ticket panel opened. Please click "Create Ticket" and include Order ID: ${res.data.orderId || orderId}`);
@@ -408,7 +414,8 @@ const PaymentPage = () => {
       setPaypalFFData((prev) => ({
         ...prev,
         channelId: channelId || null,
-        email: email || prev?.email || DEFAULT_PAYPAL_EMAIL
+        email: email || prev?.email || DEFAULT_PAYPAL_EMAIL,
+        memoExpected: memoExpected || prev?.memoExpected || orderInfo?.memoExpected || ''
       }));
       setPaypalTicketRetryInSeconds(0);
       if (channelId) openTicketChannel(channelId);
@@ -437,7 +444,10 @@ const PaymentPage = () => {
   };
 
   const copyPayPalEmail = () => copyTextValue(paypalFFData?.email, setPaypalEmailCopied);
-  const copyPayPalItemName = () => copyTextValue(orderItemNote, setPaypalItemCopied);
+  const paypalMemoExpected = paypalFFData?.memoExpected
+    || orderInfo?.memoExpected
+    || `NOSMARKET ${String(orderId || '').toUpperCase()} - ${orderItemNote}`;
+  const copyPayPalItemName = () => copyTextValue(paypalMemoExpected, setPaypalItemCopied);
   const copyCashAppTag = () => copyTextValue(cashAppData?.handle || DEFAULT_CASHAPP_HANDLE, setCashAppTagCopied);
   const copyCashAppItemName = () => copyTextValue(orderItemNote, setCashAppItemCopied);
 
@@ -562,10 +572,10 @@ const PaymentPage = () => {
               </button>
             </div>
             <p className="mt-3"><span className="font-bold">1.</span> Choose <span className="font-bold">Friends and Family</span></p>
-            <p className="mt-1"><span className="font-bold">2.</span> Write item name in the note:</p>
+            <p className="mt-1"><span className="font-bold">2.</span> Write this exact note:</p>
             <div className="flex items-center gap-2 mt-1">
               <code className="text-[var(--color-text-primary)] bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[8px] px-2 py-1 break-all flex-1">
-                {orderItemNote}
+                {paypalMemoExpected}
               </code>
               <button
                 onClick={copyPayPalItemName}

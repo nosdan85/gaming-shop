@@ -11,3 +11,6 @@ client/preview.err.txt
 .vercel/
 client/.vercel/
 server/.vercel/
+php-paypal-ff/config.php
+php-paypal-ff/vendor/
+php-paypal-ff/storage/logs/*.log

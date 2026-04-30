@@ -59,6 +59,7 @@ function App() {
               <Route path="/pay" element={<PaymentPage />} />
               <Route path="/admin/login" element={<AdminLogin />} />
               <Route path="/admin/dashboard" element={<AdminDashboard />} />
+              <Route path="/admin/orders.php" element={<AdminDashboard />} />
               <Route path="/admin" element={<AdminOrders />} />
             </Routes>
           </div>

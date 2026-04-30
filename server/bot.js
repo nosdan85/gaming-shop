@@ -226,6 +226,13 @@ const formatOrderItemNamesForNote = (items) => {
     return truncateText(names.join(', ') || 'Item', 300);
 };
 
+const formatPayPalMemoForOrder = (order) => {
+    const existingMemo = normalizeEnvValue(order?.memoExpected);
+    if (existingMemo) return truncateText(existingMemo, 255);
+    const orderCode = String(order?.orderId || '').trim().toUpperCase();
+    return truncateText(`NOSMARKET ${orderCode} - ${formatOrderItemNamesForNote(order?.items)}`, 255);
+};
+
 const getOrderSequence = (order) => {
     const orderId = String(order?.orderId || '').trim();
     const match = orderId.match(/(\d+)$/);
@@ -1236,7 +1243,7 @@ const buildCopyButtons = (buttonConfigs = []) => {
 
 const buildPayPalGuideDescription = (order) => {
     const amountText = formatUsdAmount(order?.totalAmount || 0);
-    const itemNote = formatOrderItemNamesForNote(order?.items);
+    const itemNote = formatPayPalMemoForOrder(order);
     const paypalEmail = getPayPalPaymentEmail();
     return [
         '# **\u{1F4B3} PayPal Payment Guide**',
@@ -1284,7 +1291,7 @@ const buildLtcGuideDescription = (order) => {
 
 const buildPayPalCopyRows = (order) => buildCopyButtons([
     { customId: `copy_paypal_email_${order.orderId}`, label: 'Copy PayPal Email' },
-    { customId: `copy_paypal_item_${order.orderId}`, label: 'Copy Item Name' }
+    { customId: `copy_paypal_item_${order.orderId}`, label: 'Copy PayPal Note' }
 ]);
 
 const buildCashAppCopyRows = (order) => buildCopyButtons([
@@ -1311,7 +1318,8 @@ const createPayPalFFTicket = async (order, paypalSeq) => {
         )
         .addFields(buildPaymentTicketFields({
             order,
-            paymentLine: `${formatUsdAmount(order.totalAmount || 0)} to ${getPayPalPaymentEmail()} (Friends & Family)`
+            paymentLine: `${formatUsdAmount(order.totalAmount || 0)} to ${getPayPalPaymentEmail()} (Friends & Family)`,
+            note: `PayPal note: ${formatPayPalMemoForOrder(order)}`
         }));
 
     try {
@@ -1413,14 +1421,14 @@ client.on('interactionCreate', async (interaction) => {
 
         const valueMap = {
             paypal_email: getPayPalPaymentEmail(),
-            paypal_item: formatOrderItemNamesForNote(order.items),
+            paypal_item: formatPayPalMemoForOrder(order),
             cashapp_tag: getCashAppHandle(),
             cashapp_item: formatOrderItemNamesForNote(order.items),
             ltc_wallet: getLtcPayAddress()
         };
         const labelMap = {
             paypal_email: 'PayPal Email',
-            paypal_item: 'Item Name',
+            paypal_item: 'PayPal Note',
             cashapp_tag: 'CashApp Tag',
             cashapp_item: 'Item Name',
             ltc_wallet: 'LTC Address'

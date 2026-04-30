@@ -83,10 +83,10 @@ const Navbar = () => {
       links.push({ label: 'Discord', href: RESOLVED_DISCORD_URL, isExternal: true });
     }
     if (isOwner) {
-      links.push({ label: 'Admin', href: '/admin', isExternal: false });
+      links.push({ label: 'Admin', href: '/admin/orders.php', isExternal: false });
     }
     return links;
-  }, [isOwner, user?.discordId]);
+  }, [isOwner]);
 
   return (
     <nav className="fixed top-0 left-0 w-full z-50 bg-[var(--color-bg-main)] backdrop-blur-md border-b border-[var(--color-border)]">
