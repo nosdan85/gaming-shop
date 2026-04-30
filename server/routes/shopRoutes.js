@@ -18,7 +18,7 @@ const {
     checkUserHasOwnerRole,
     DiscordBotError
 } = require('../bot');
-const { createPayPalOrder, capturePayPalOrder } = require('../services/paymentService');
+const { createPayPalOrder, capturePayPalOrder, createLTCInvoice } = require('../services/paymentService');
 const {
     buildMemoExpected,
     ensurePayPalFfInstructions
@@ -33,6 +33,7 @@ const {
     isSupportedCouponCode,
     getCouponDiscountPercent
 } = require('../utils/couponCodes');
+const { creditPendingWalletTopup } = require('../services/walletService');
 
 const router = express.Router();
 const OBJECT_ID_PATTERN = /^[a-fA-F0-9]{24}$/;
@@ -448,6 +449,11 @@ const toWalletTransactionPayload = (transaction) => {
         referenceCode: transaction?.referenceCode || '',
         memoExpected: transaction?.memoExpected || '',
         paymentAddress: transaction?.paymentAddress || '',
+        provider: transaction?.provider || '',
+        providerPaymentId: transaction?.providerPaymentId || '',
+        payAmount: Number.isFinite(Number(transaction?.payAmount)) ? Number(transaction.payAmount) : null,
+        payCurrency: transaction?.payCurrency || '',
+        checkoutUrl: transaction?.checkoutUrl || '',
         txnId: transaction?.txnId || '',
         orderId: transaction?.orderId || '',
         items: Array.isArray(transaction?.items) ? transaction.items : [],
@@ -486,11 +492,16 @@ const buildWalletInstructions = ({ transaction }) => {
         };
     }
     if (method === 'ltc') {
+        const hasProviderPayment = Boolean(transaction?.providerPaymentId);
         return {
             ...base,
             payAddress: getLtcPayAddress(),
-            qrImageUrl: getLtcQrImageUrl(),
-            destination: getLtcPayAddress()
+            qrImageUrl: hasProviderPayment ? '' : getLtcQrImageUrl(),
+            destination: transaction?.paymentAddress || getLtcPayAddress(),
+            provider: transaction?.provider || '',
+            providerPaymentId: transaction?.providerPaymentId || '',
+            payAmount: Number.isFinite(Number(transaction?.payAmount)) ? Number(transaction.payAmount) : null,
+            payCurrency: transaction?.payCurrency || 'ltc'
         };
     }
     return base;
@@ -1283,9 +1294,30 @@ router.post('/wallet/topup', authRequired, async (req, res) => {
         );
         const referenceCode = `TOP${counter.seq}`;
         const memoExpected = buildWalletMemoExpected({ referenceCode, discordId });
-        const paymentAddress = method === 'paypal_ff'
+        let paymentAddress = method === 'paypal_ff'
             ? getPayPalPaymentEmail()
             : (method === 'cashapp' ? getCashAppHandle() : getLtcPayAddress());
+        let provider = '';
+        let providerPaymentId = '';
+        let payAmount = null;
+        let payCurrency = '';
+
+        if (method === 'ltc' && normalizeEnvValue(process.env.NOWPAYMENTS_API_KEY)) {
+            const ltcPayment = await createLTCInvoice(referenceCode, centsToMoney(amountCents), {
+                orderDescription: `NosMarket wallet top-up ${referenceCode}`
+            });
+            if (!ltcPayment?.paymentId || !ltcPayment?.payAddress || !ltcPayment?.payAmount) {
+                return res.status(503).json({ error: 'Litecoin auto-confirmation provider is temporarily unavailable' });
+            }
+            provider = 'nowpayments';
+            providerPaymentId = String(ltcPayment.paymentId || '');
+            paymentAddress = String(ltcPayment.payAddress || '');
+            payAmount = Number(ltcPayment.payAmount);
+            payCurrency = String(ltcPayment.payCurrency || 'ltc').toLowerCase();
+        } else if (method === 'ltc') {
+            return res.status(503).json({ error: 'Litecoin auto-confirmation is not configured (missing NOWPAYMENTS_API_KEY or BACKEND_URL)' });
+        }
+
         if (!paymentAddress) {
             return res.status(500).json({ error: `${formatWalletMethodLabel(method)} destination is not configured` });
         }
@@ -1301,7 +1333,11 @@ router.post('/wallet/topup', authRequired, async (req, res) => {
             status: 'pending',
             referenceCode,
             memoExpected,
-            paymentAddress
+            paymentAddress,
+            provider,
+            providerPaymentId,
+            payAmount,
+            payCurrency
         });
 
         const notificationSent = await notifyOwnerWalletTopupRequest(transaction);
@@ -1881,16 +1917,44 @@ router.post('/webhook/nowpayments', async (req, res) => {
         }
 
         const paymentStatus = String(req.body?.payment_status || '').toLowerCase();
-        const orderId = req.body?.order_id;
+        const orderId = String(req.body?.order_id || '').trim();
+        const providerPaymentId = String(req.body?.payment_id || req.body?.purchase_id || '').trim();
         const finalStatuses = new Set(['finished', 'confirmed']);
         if (orderId && finalStatuses.has(paymentStatus)) {
             const payCurrency = String(req.body?.pay_currency || 'ltc').toLowerCase();
+            const walletOr = [{ referenceCode: orderId }];
+            if (providerPaymentId) {
+                walletOr.push({ providerPaymentId }, { txnId: providerPaymentId });
+            }
+            const walletTopup = await WalletTransaction.findOne({
+                type: 'topup',
+                method: 'ltc',
+                $or: walletOr
+            }).lean();
+            if (walletTopup) {
+                const walletCredit = await creditPendingWalletTopup({
+                    filter: {
+                        method: 'ltc',
+                        $or: walletOr
+                    },
+                    txnId: providerPaymentId,
+                    source: 'nowpayments',
+                    adminNotes: `NOWPayments status=${paymentStatus}, currency=${payCurrency}`
+                });
+                return res.json({
+                    received: true,
+                    walletCredited: walletCredit.ok,
+                    walletStatus: walletCredit.status,
+                    referenceCode: walletTopup.referenceCode
+                });
+            }
+
             await Order.findOneAndUpdate(
                 { orderId },
                 {
                     status: 'Completed',
                     paymentStatus: 'paid',
-                    txnId: String(req.body?.payment_id || req.body?.purchase_id || ''),
+                    txnId: providerPaymentId,
                     paidAt: new Date(),
                     paymentMethod: payCurrency
                 }

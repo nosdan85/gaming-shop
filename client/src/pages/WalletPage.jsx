@@ -224,6 +224,11 @@ const WalletPage = () => {
                 <div>
                   <p className="text-xs uppercase tracking-wider text-[var(--color-text-secondary)] font-gothic">Send payment</p>
                   <p className="text-sm text-[var(--color-text-primary)]">{instructions.methodLabel} - ${Number(instructions.amount || 0).toFixed(2)}</p>
+                  {instructions.payAmount && (
+                    <p className="text-xs text-[var(--color-text-secondary)] mt-1">
+                      Send exactly {Number(instructions.payAmount).toFixed(8)} {String(instructions.payCurrency || 'LTC').toUpperCase()}
+                    </p>
+                  )}
                 </div>
                 <div className="rounded-[8px] border border-[var(--color-border)] bg-[var(--color-bg-main)] p-3">
                   <div className="flex items-start justify-between gap-3">

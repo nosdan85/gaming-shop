@@ -80,12 +80,13 @@ async function capturePayPalOrder(paypalOrderId) {
     }
 }
 
-async function createLTCInvoice(orderId, totalAmountUSD) {
+async function createLTCInvoice(orderId, totalAmountUSD, options = {}) {
     const apiKey = process.env.NOWPAYMENTS_API_KEY;
     const backendBaseUrl = getBackendBaseUrl();
     if (!apiKey || !backendBaseUrl) return null;
 
     try {
+        const callbackUrl = options.ipnCallbackUrl || `${backendBaseUrl}/api/shop/webhook/nowpayments`;
         const res = await axios.post(
             'https://api.nowpayments.io/v1/payment',
             {
@@ -93,7 +94,8 @@ async function createLTCInvoice(orderId, totalAmountUSD) {
                 price_currency: 'usd',
                 pay_currency: 'ltc',
                 order_id: orderId,
-                ipn_callback_url: `${backendBaseUrl}/api/shop/webhook/nowpayments`
+                order_description: options.orderDescription || orderId,
+                ipn_callback_url: callbackUrl
             },
             { headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json' } }
         );
@@ -102,7 +104,10 @@ async function createLTCInvoice(orderId, totalAmountUSD) {
             payAddress: res.data?.pay_address,
             payAmount: res.data?.pay_amount,
             payCurrency: res.data?.pay_currency,
-            paymentId: res.data?.payment_id
+            paymentId: res.data?.payment_id,
+            paymentStatus: res.data?.payment_status,
+            priceAmount: res.data?.price_amount,
+            priceCurrency: res.data?.price_currency
         };
     } catch (err) {
         console.error('NOWPayments error:', err.response?.data || err.message);

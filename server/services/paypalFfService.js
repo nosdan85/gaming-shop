@@ -2,6 +2,8 @@ const axios = require('axios');
 const qs = require('qs');
 const Order = require('../models/Order');
 const PaymentLog = require('../models/PaymentLog');
+const WalletTransaction = require('../models/WalletTransaction');
+const { creditPendingWalletTopup } = require('./walletService');
 const {
     normalizeEmail,
     sendPaymentInstructionsEmail,
@@ -10,6 +12,7 @@ const {
 } = require('./emailService');
 
 const ORDER_CODE_PATTERN = /\bnm[_-]?\d+\b/i;
+const WALLET_REFERENCE_PATTERN = /\bTOP\d+\b/i;
 const DEFAULT_PAYPAL_VERIFY_TIMEOUT_MS = 15000;
 
 const normalizeEnvValue = (value) => {
@@ -212,6 +215,10 @@ const extractMemoText = (payload = {}) => [
 ].map((value) => normalizeText(value)).filter(Boolean).join(' ');
 
 const extractOrderIdFromPayload = (payload = {}) => normalizeOrderCode(extractMemoText(payload));
+const extractWalletReferenceFromPayload = (payload = {}) => {
+    const match = extractMemoText(payload).match(WALLET_REFERENCE_PATTERN);
+    return match ? match[0].toUpperCase() : '';
+};
 
 const getPaymentAmount = (payload = {}) => {
     const amount = Number(payload.mc_gross ?? payload.payment_gross ?? 0);
@@ -289,11 +296,85 @@ const processPayPalIpnRaw = async ({
     }
 
     const orderId = extractOrderIdFromPayload(parsedPayload);
-    if (!orderId) {
+    const walletReferenceCode = extractWalletReferenceFromPayload(parsedPayload);
+    if (!orderId && !walletReferenceCode) {
         return updateLogAndReturn(log, {
             processingStatus: 'memo_mismatch',
-            message: 'Could not find order code in memo/custom fields.'
+            message: 'Could not find order or wallet reference in memo/custom fields.'
         }, { ok: false, status: 'memo_mismatch', log });
+    }
+
+    const txnId = normalizeText(parsedPayload.txn_id || '');
+    if (!txnId) {
+        return updateLogAndReturn(log, {
+            processingStatus: 'failed',
+            message: 'Missing txn_id in verified IPN payload.'
+        }, { ok: false, status: 'missing_txn_id', log });
+    }
+
+    const currency = getPaymentCurrency(parsedPayload);
+    const expectedCurrency = getExpectedCurrency();
+    if (currency && expectedCurrency && currency !== expectedCurrency) {
+        return updateLogAndReturn(log, {
+            processingStatus: 'currency_mismatch',
+            message: `Expected ${expectedCurrency}, received ${currency}.`
+        }, { ok: false, status: 'currency_mismatch', log });
+    }
+
+    const paidAmount = getPaymentAmount(parsedPayload);
+
+    if (walletReferenceCode) {
+        const topup = await WalletTransaction.findOne({
+            referenceCode: walletReferenceCode,
+            type: 'topup',
+            method: 'paypal_ff'
+        }).lean();
+        if (!topup) {
+            return updateLogAndReturn(log, {
+                orderId: walletReferenceCode,
+                processingStatus: 'order_not_found',
+                message: `Wallet top-up ${walletReferenceCode} was not found.`
+            }, { ok: false, status: 'wallet_topup_not_found', log });
+        }
+        log.orderId = walletReferenceCode;
+
+        const expectedAmount = roundMoney(Number(topup.amountCents || 0) / 100);
+        if (paidAmount + 0.009 < expectedAmount) {
+            return updateLogAndReturn(log, {
+                orderId: walletReferenceCode,
+                processingStatus: 'amount_mismatch',
+                message: `Expected at least ${expectedAmount.toFixed(2)}, received ${paidAmount.toFixed(2)}.`
+            }, { ok: false, status: 'amount_mismatch', log, walletTopup: topup });
+        }
+
+        const duplicateOrderTxn = await Order.findOne({ txnId, paymentStatus: 'paid' }).lean();
+        if (duplicateOrderTxn) {
+            return updateLogAndReturn(log, {
+                orderId: walletReferenceCode,
+                processingStatus: 'duplicate',
+                message: `txn_id is already attached to order ${duplicateOrderTxn.orderId}.`
+            }, { ok: false, status: 'duplicate_txn', log, walletTopup: topup });
+        }
+
+        const walletCredit = await creditPendingWalletTopup({
+            filter: { _id: topup._id, method: 'paypal_ff' },
+            txnId,
+            source,
+            adminNotes: `PayPal IPN receiver=${receiverEmail || '(empty)'}`
+        });
+
+        return updateLogAndReturn(log, {
+            orderId: walletReferenceCode,
+            processingStatus: walletCredit.ok ? 'paid' : (walletCredit.status === 'duplicate' ? 'duplicate' : 'failed'),
+            message: walletCredit.ok
+                ? `Wallet top-up ${walletReferenceCode} credited.`
+                : walletCredit.message || `Wallet top-up ${walletReferenceCode} was not credited.`
+        }, {
+            ok: walletCredit.ok,
+            status: walletCredit.ok ? 'paid' : walletCredit.status,
+            log,
+            walletTopup: walletCredit.transaction || topup
+        });
     }
 
     const order = await Order.findOne({ orderId });
@@ -306,38 +387,26 @@ const processPayPalIpnRaw = async ({
     }
     log.orderId = order.orderId;
 
-    const txnId = normalizeText(parsedPayload.txn_id || '');
-    if (!txnId) {
+    const duplicateOrder = await Order.findOne({
+        txnId,
+        _id: { $ne: order._id },
+        paymentStatus: 'paid'
+    }).lean();
+    if (duplicateOrder) {
         return updateLogAndReturn(log, {
-            processingStatus: 'failed',
-            message: 'Missing txn_id in verified IPN payload.'
-        }, { ok: false, status: 'missing_txn_id', log, order });
+            processingStatus: 'duplicate',
+            message: `txn_id is already attached to order ${duplicateOrder.orderId}.`
+        }, { ok: false, status: 'duplicate_txn', log, order });
     }
 
-    if (txnId) {
-        const duplicateOrder = await Order.findOne({
-            txnId,
-            _id: { $ne: order._id },
-            paymentStatus: 'paid'
-        }).lean();
-        if (duplicateOrder) {
-            return updateLogAndReturn(log, {
-                processingStatus: 'duplicate',
-                message: `txn_id is already attached to order ${duplicateOrder.orderId}.`
-            }, { ok: false, status: 'duplicate_txn', log, order });
-        }
-    }
-
-    const currency = getPaymentCurrency(parsedPayload);
-    const expectedCurrency = getExpectedCurrency();
-    if (currency && expectedCurrency && currency !== expectedCurrency) {
+    const duplicateWalletTxn = await WalletTransaction.findOne({ txnId, status: 'completed' }).lean();
+    if (duplicateWalletTxn) {
         return updateLogAndReturn(log, {
-            processingStatus: 'currency_mismatch',
-            message: `Expected ${expectedCurrency}, received ${currency}.`
-        }, { ok: false, status: 'currency_mismatch', log, order });
+            processingStatus: 'duplicate',
+            message: `txn_id is already attached to wallet top-up ${duplicateWalletTxn.referenceCode || duplicateWalletTxn._id}.`
+        }, { ok: false, status: 'duplicate_txn', log, order });
     }
 
-    const paidAmount = getPaymentAmount(parsedPayload);
     const expectedAmount = roundMoney(order.totalAmount || order.total || 0);
     if (paidAmount + 0.009 < expectedAmount) {
         return updateLogAndReturn(log, {

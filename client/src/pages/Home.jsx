@@ -5,7 +5,7 @@ import ProductCard from '../components/ProductCard';
 import ProductDetailModal from '../components/ProductDetailModal';
 import { MagnifyingGlassIcon, ShieldCheckIcon, XMarkIcon } from '@heroicons/react/24/outline';
 
-const GAMES = ['Sailor Piece'];
+const COLLECTIONS = ['Digital Items'];
 const CATEGORIES = ['All', 'Chest', 'Reroll', 'Shard', 'Seal', 'Relic', 'Sets', 'Combo'];
 const KNOWN_CATEGORY_LOOKUP = new Map(
   CATEGORIES
@@ -62,7 +62,7 @@ const getCachedProducts = () => {
 const Home = () => {
   const navigate = useNavigate();
   const [products, setProducts] = useState(() => getCachedProducts());
-  const [activeGame, setActiveGame] = useState('Sailor Piece');
+  const [activeCollection, setActiveCollection] = useState('Digital Items');
   const [activeCategory, setActiveCategory] = useState('All');
   const [categoryAnimKey, setCategoryAnimKey] = useState(0);
   const [selectedProduct, setSelectedProduct] = useState(null);
@@ -144,17 +144,17 @@ const Home = () => {
         </div>
 
         <div className="flex justify-center gap-6 mb-8 overflow-x-auto pb-4 scrollbar-hide">
-          {GAMES.map((game) => (
+          {COLLECTIONS.map((collection) => (
             <button
-              key={game}
-              onClick={() => setActiveGame(game)}
+              key={collection}
+              onClick={() => setActiveCollection(collection)}
               className={`text-lg font-gothic transition-all whitespace-nowrap ${
-                activeGame === game
+                activeCollection === collection
                   ? 'text-[var(--color-text-primary)] border-b-2 border-[var(--color-text-primary)] pb-1'
                   : 'text-[var(--color-text-secondary)] hover:text-[var(--color-error)]'
               }`}
             >
-              {game}
+              {collection}
             </button>
           ))}
         </div>
@@ -210,6 +210,12 @@ const Home = () => {
           </div>
         )}
       </div>
+
+      <footer className="max-w-7xl mx-auto px-3 sm:px-4 mt-16 pt-6 border-t border-[var(--color-border)]">
+        <p className="text-xs md:text-sm text-[var(--color-text-secondary)] leading-relaxed text-center">
+          This website only provides a marketplace for user-to-user digital item transactions and does not operate, publish, host, or distribute any online game.
+        </p>
+      </footer>
 
       {selectedProduct && (
         <ProductDetailModal
