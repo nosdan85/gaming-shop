@@ -36,6 +36,34 @@ const formatDate = (value) => {
   }
 };
 
+const getSquareScriptUrl = (environment) => (
+  String(environment || '').toLowerCase() === 'production'
+    ? 'https://web.squarecdn.com/v1/square.js'
+    : 'https://sandbox.web.squarecdn.com/v1/square.js'
+);
+
+const loadSquareScript = (environment) => new Promise((resolve, reject) => {
+  if (window.Square) {
+    resolve(window.Square);
+    return;
+  }
+
+  const src = getSquareScriptUrl(environment);
+  const existing = document.querySelector(`script[src="${src}"]`);
+  if (existing) {
+    existing.addEventListener('load', () => resolve(window.Square), { once: true });
+    existing.addEventListener('error', reject, { once: true });
+    return;
+  }
+
+  const script = document.createElement('script');
+  script.src = src;
+  script.async = true;
+  script.onload = () => resolve(window.Square);
+  script.onerror = reject;
+  document.head.appendChild(script);
+});
+
 const WalletPage = () => {
   const { user: contextUser } = useContext(ShopContext);
   const [localUser, setLocalUser] = useState(null);
@@ -146,6 +174,7 @@ const WalletPage = () => {
   }
 
   const instructions = createdTopup?.instructions || null;
+  const createdTopupId = createdTopup?.topup?.id || '';
 
   return (
     <main className="min-h-screen bg-[var(--color-bg-main)] pt-24 px-4 pb-10">
@@ -230,48 +259,65 @@ const WalletPage = () => {
                     </p>
                   )}
                 </div>
-                <div className="rounded-[8px] border border-[var(--color-border)] bg-[var(--color-bg-main)] p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-secondary)] font-gothic">Destination</p>
-                      <p className="text-sm text-[var(--color-text-primary)] break-all">{instructions.destination || '-'}</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => copyText('destination', instructions.destination)}
-                      className="btn-press p-2 rounded-[8px] bg-[var(--color-bg-elevated)] text-[var(--color-text-primary)] hover:text-[var(--color-error)]"
-                      title="Copy destination"
-                    >
-                      <ClipboardDocumentIcon className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-                <div className="rounded-[8px] border border-[var(--color-border)] bg-[var(--color-bg-main)] p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-secondary)] font-gothic">Memo / note</p>
-                      <p className="text-sm text-[var(--color-text-primary)] break-words">{instructions.memoExpected}</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => copyText('memo', instructions.memoExpected)}
-                      className="btn-press p-2 rounded-[8px] bg-[var(--color-bg-elevated)] text-[var(--color-text-primary)] hover:text-[var(--color-error)]"
-                      title="Copy memo"
-                    >
-                      <ClipboardDocumentIcon className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-                {instructions.qrImageUrl && (
-                  <img
-                    src={instructions.qrImageUrl}
-                    alt="Litecoin payment QR"
-                    className="w-36 h-36 object-contain rounded-[8px] border border-[var(--color-border)] bg-white p-2"
+                {instructions.method === 'cashapp' ? (
+                  <CashAppPayPanel
+                    topupId={createdTopupId}
+                    instructions={instructions}
+                    onComplete={async (data) => {
+                      setCreatedTopup((current) => ({
+                        ...(current || {}),
+                        topup: data?.topup || current?.topup,
+                        instructions: current?.instructions || instructions
+                      }));
+                      await fetchWallet({ quiet: true });
+                    }}
                   />
+                ) : (
+                  <>
+                    <div className="rounded-[8px] border border-[var(--color-border)] bg-[var(--color-bg-main)] p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-secondary)] font-gothic">Destination</p>
+                          <p className="text-sm text-[var(--color-text-primary)] break-all">{instructions.destination || '-'}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => copyText('destination', instructions.destination)}
+                          className="btn-press p-2 rounded-[8px] bg-[var(--color-bg-elevated)] text-[var(--color-text-primary)] hover:text-[var(--color-error)]"
+                          title="Copy destination"
+                        >
+                          <ClipboardDocumentIcon className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="rounded-[8px] border border-[var(--color-border)] bg-[var(--color-bg-main)] p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-secondary)] font-gothic">Memo / note</p>
+                          <p className="text-sm text-[var(--color-text-primary)] break-words">{instructions.memoExpected}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => copyText('memo', instructions.memoExpected)}
+                          className="btn-press p-2 rounded-[8px] bg-[var(--color-bg-elevated)] text-[var(--color-text-primary)] hover:text-[var(--color-error)]"
+                          title="Copy memo"
+                        >
+                          <ClipboardDocumentIcon className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                    {instructions.qrImageUrl && (
+                      <img
+                        src={instructions.qrImageUrl}
+                        alt="Litecoin payment QR"
+                        className="w-36 h-36 object-contain rounded-[8px] border border-[var(--color-border)] bg-white p-2"
+                      />
+                    )}
+                    <p className="text-xs text-[var(--color-text-secondary)]">
+                      {copiedKey ? 'Copied.' : 'After sending, the pending status updates here automatically when the provider confirms payment.'}
+                    </p>
+                  </>
                 )}
-                <p className="text-xs text-[var(--color-text-secondary)]">
-                  {copiedKey ? 'Copied.' : 'After sending, wait for owner approval. The pending status updates here automatically.'}
-                </p>
               </div>
             )}
           </section>
@@ -297,6 +343,109 @@ const WalletPage = () => {
         </div>
       </section>
     </main>
+  );
+};
+
+const CashAppPayPanel = ({ topupId, instructions, onComplete }) => {
+  const [ready, setReady] = useState(false);
+  const [processing, setProcessing] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const buttonId = `cash-app-pay-${String(topupId || 'topup').replace(/[^a-zA-Z0-9_-]/g, '')}`;
+
+  useEffect(() => {
+    let cancelled = false;
+    let cashAppPay = null;
+
+    const setup = async () => {
+      setReady(false);
+      setError('');
+      setMessage('');
+      const square = instructions?.square || {};
+      if (!topupId || !square.applicationId || !square.locationId) {
+        setError('Cash App Pay is not configured.');
+        return;
+      }
+
+      try {
+        const Square = await loadSquareScript(square.environment);
+        if (!Square?.payments || cancelled) return;
+
+        const payments = Square.payments(square.applicationId, square.locationId);
+        const paymentRequest = payments.paymentRequest({
+          countryCode: 'US',
+          currencyCode: 'USD',
+          total: {
+            amount: Number(instructions.amount || 0).toFixed(2),
+            label: 'NosMarket wallet top-up'
+          }
+        });
+
+        cashAppPay = await payments.cashAppPay(paymentRequest, {
+          redirectURL: window.location.href,
+          referenceId: instructions.memoExpected || topupId
+        });
+        if (cancelled) return;
+
+        cashAppPay.addEventListener('ontokenization', async (event) => {
+          const tokenResult = event?.detail?.tokenResult || event?.detail?.result || event?.tokenResult || {};
+          const sourceId = tokenResult.token || tokenResult.sourceId || '';
+          if (String(tokenResult.status || '').toUpperCase() !== 'OK' || !sourceId) {
+            setError(tokenResult.errors?.[0]?.message || 'Cash App did not return a payment token.');
+            return;
+          }
+
+          setProcessing(true);
+          setError('');
+          setMessage('Confirming payment...');
+          try {
+            const { data } = await axios.post(`/api/shop/wallet/topup/square/${encodeURIComponent(topupId)}/complete`, {
+              sourceId
+            });
+            if (data?.success) {
+              setMessage('Cash App payment confirmed. Wallet balance updated.');
+              await onComplete?.(data);
+            } else {
+              setMessage('Payment is pending provider confirmation. This page will update automatically.');
+              await onComplete?.(data);
+            }
+          } catch (err) {
+            setError(err.response?.data?.error || 'Could not confirm Cash App payment.');
+          } finally {
+            setProcessing(false);
+          }
+        });
+
+        await cashAppPay.attach(`#${buttonId}`);
+        if (!cancelled) setReady(true);
+      } catch (err) {
+        if (!cancelled) setError(err?.message || 'Could not load Cash App Pay.');
+      }
+    };
+
+    setup();
+
+    return () => {
+      cancelled = true;
+      if (cashAppPay?.destroy) {
+        const result = cashAppPay.destroy();
+        if (result?.catch) result.catch(() => {});
+      }
+    };
+  }, [buttonId, instructions, onComplete, topupId]);
+
+  return (
+    <div className="rounded-[8px] border border-[var(--color-border)] bg-[var(--color-bg-main)] p-3 space-y-3">
+      <div>
+        <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-secondary)] font-gothic">Cash App Pay</p>
+        <p className="text-sm text-[var(--color-text-secondary)]">Approve the payment in Cash App. Your wallet is credited only after Square confirms payment.</p>
+      </div>
+      <div id={buttonId} className="min-h-[48px]" />
+      {!ready && !error && <p className="text-xs text-[var(--color-text-secondary)]">Loading Cash App Pay...</p>}
+      {processing && <p className="text-xs text-[var(--color-text-secondary)]">Processing...</p>}
+      {message && <p className="text-xs text-[var(--color-success)]">{message}</p>}
+      {error && <p className="text-xs text-[var(--color-error)]">{error}</p>}
+    </div>
   );
 };
 

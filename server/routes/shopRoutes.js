@@ -34,6 +34,12 @@ const {
     getCouponDiscountPercent
 } = require('../utils/couponCodes');
 const { creditPendingWalletTopup } = require('../services/walletService');
+const {
+    createSquareCashAppPayment,
+    getSquareConfigError,
+    getSquarePublicConfig,
+    verifySquareWebhookSignature
+} = require('../services/squareService');
 
 const router = express.Router();
 const OBJECT_ID_PATTERN = /^[a-fA-F0-9]{24}$/;
@@ -485,10 +491,17 @@ const buildWalletInstructions = ({ transaction }) => {
         };
     }
     if (method === 'cashapp') {
+        const squareConfig = getSquarePublicConfig();
         return {
             ...base,
-            cashAppHandle: getCashAppHandle(),
-            destination: getCashAppHandle()
+            provider: transaction?.provider || 'square',
+            destination: 'Cash App Pay',
+            square: {
+                enabled: squareConfig.enabled,
+                applicationId: squareConfig.applicationId,
+                locationId: squareConfig.locationId,
+                environment: squareConfig.environment
+            }
         };
     }
     if (method === 'ltc') {
@@ -505,6 +518,59 @@ const buildWalletInstructions = ({ transaction }) => {
         };
     }
     return base;
+};
+const creditSquareWalletPayment = async ({ payment, source = 'square' }) => {
+    const paymentId = String(payment?.id || '').trim();
+    const referenceCode = String(payment?.reference_id || '').trim();
+    const paymentStatus = String(payment?.status || '').trim().toLowerCase();
+    const amountCents = Number(payment?.amount_money?.amount || 0);
+    const currency = String(payment?.amount_money?.currency || '').trim().toUpperCase();
+    const matchConditions = [];
+    if (paymentId) {
+        matchConditions.push({ providerPaymentId: paymentId }, { txnId: paymentId });
+    }
+    if (referenceCode) {
+        matchConditions.push({ referenceCode });
+    }
+    if (!paymentId || matchConditions.length === 0) {
+        return { ok: false, status: 'missing_payment_id', message: 'Square payment id is missing.' };
+    }
+
+    const transaction = await WalletTransaction.findOne({
+        type: 'topup',
+        method: 'cashapp',
+        provider: 'square',
+        $or: matchConditions
+    });
+    if (!transaction) {
+        return { ok: false, status: 'topup_not_found', message: 'Square wallet top-up was not found.' };
+    }
+    if (transaction.status === 'completed') {
+        return { ok: true, status: 'already_completed', transaction };
+    }
+    if (paymentStatus !== 'completed') {
+        return { ok: false, status: paymentStatus || 'not_completed', transaction };
+    }
+    if (currency && currency !== 'USD') {
+        transaction.adminNotes = `Square currency mismatch: expected USD, received ${currency}.`;
+        await transaction.save();
+        return { ok: false, status: 'currency_mismatch', transaction };
+    }
+    if (!Number.isFinite(amountCents) || amountCents < Number(transaction.amountCents || 0)) {
+        transaction.adminNotes = `Square amount mismatch: expected ${transaction.amountCents} cents, received ${amountCents} cents.`;
+        await transaction.save();
+        return { ok: false, status: 'amount_mismatch', transaction };
+    }
+
+    transaction.providerPaymentId = paymentId;
+    await transaction.save();
+
+    return creditPendingWalletTopup({
+        filter: { _id: transaction._id, method: 'cashapp', provider: 'square' },
+        txnId: paymentId,
+        source,
+        adminNotes: `Square Cash App Pay status=${paymentStatus}`
+    });
 };
 const LEGACY_COMBO_KEYS = new Set(['combox2luck+drop', 'combox2luckdrop']);
 const COMBO_LUCK_KEY = 'x2luck';
@@ -1256,6 +1322,7 @@ router.get('/wallet', authRequired, async (req, res) => {
             currency: 'USD',
             paypalEmail: getPayPalPaymentEmail(),
             cashAppHandle: getCashAppHandle(),
+            square: getSquarePublicConfig(),
             ltcPayAddress: getLtcPayAddress(),
             ltcQrImageUrl: getLtcQrImageUrl(),
             transactions: transactions.map(toWalletTransactionPayload)
@@ -1302,6 +1369,15 @@ router.post('/wallet/topup', authRequired, async (req, res) => {
         let payAmount = null;
         let payCurrency = '';
 
+        if (method === 'cashapp') {
+            const squareConfigError = getSquareConfigError();
+            if (squareConfigError) {
+                return res.status(503).json({ error: `Cash App Pay auto-confirmation is not configured (${squareConfigError})` });
+            }
+            provider = 'square';
+            paymentAddress = 'Cash App Pay';
+        }
+
         if (method === 'ltc' && normalizeEnvValue(process.env.NOWPAYMENTS_API_KEY)) {
             const ltcPayment = await createLTCInvoice(referenceCode, centsToMoney(amountCents), {
                 orderDescription: `NosMarket wallet top-up ${referenceCode}`
@@ -1340,7 +1416,9 @@ router.post('/wallet/topup', authRequired, async (req, res) => {
             payCurrency
         });
 
-        const notificationSent = await notifyOwnerWalletTopupRequest(transaction);
+        const notificationSent = method === 'cashapp'
+            ? false
+            : await notifyOwnerWalletTopupRequest(transaction);
 
         return res.json({
             success: true,
@@ -1351,6 +1429,90 @@ router.post('/wallet/topup', authRequired, async (req, res) => {
     } catch (error) {
         console.error('Wallet top-up error:', error);
         return res.status(500).json({ error: 'Failed to create top-up request' });
+    }
+});
+
+router.post('/wallet/topup/square/:transactionId/complete', authRequired, async (req, res) => {
+    try {
+        const discordId = String(req.user?.discordId || '').trim();
+        if (!discordId) return res.status(401).json({ error: 'Authentication required' });
+
+        const transactionId = String(req.params?.transactionId || '').trim();
+        if (!OBJECT_ID_PATTERN.test(transactionId)) {
+            return res.status(400).json({ error: 'Invalid transaction id' });
+        }
+
+        const sourceId = String(req.body?.sourceId || req.body?.source_id || '').trim();
+        if (!sourceId) {
+            return res.status(400).json({ error: 'Missing Square source id' });
+        }
+
+        const transaction = await WalletTransaction.findOne({
+            _id: transactionId,
+            discordId,
+            type: 'topup',
+            method: 'cashapp',
+            provider: 'square'
+        });
+        if (!transaction) {
+            return res.status(404).json({ error: 'Cash App top-up request not found' });
+        }
+        if (transaction.status === 'completed') {
+            return res.json({
+                success: true,
+                alreadyCompleted: true,
+                topup: toWalletTransactionPayload(transaction)
+            });
+        }
+        if (transaction.status !== 'pending') {
+            return res.status(409).json({ error: `Top-up is ${transaction.status}` });
+        }
+
+        const squarePayment = await createSquareCashAppPayment({
+            sourceId,
+            amountCents: Number(transaction.amountCents || 0),
+            referenceCode: transaction.referenceCode,
+            buyerDiscordId: discordId
+        });
+        if (!squarePayment.ok || !squarePayment.payment?.id) {
+            return res.status(502).json({
+                error: squarePayment.error || 'Square payment failed',
+                status: squarePayment.status || 'failed'
+            });
+        }
+
+        transaction.providerPaymentId = String(squarePayment.payment.id || '');
+        transaction.txnId = String(squarePayment.payment.id || '');
+        await transaction.save();
+
+        const creditResult = await creditSquareWalletPayment({
+            payment: squarePayment.payment,
+            source: 'square_checkout'
+        });
+        const freshUser = await User.findOne({ discordId }).lean();
+        const freshTransaction = await WalletTransaction.findById(transaction._id).lean();
+
+        if (!creditResult.ok) {
+            return res.status(202).json({
+                success: false,
+                status: creditResult.status,
+                paymentStatus: squarePayment.status,
+                topup: toWalletTransactionPayload(freshTransaction || transaction),
+                balanceCents: Number(freshUser?.walletBalanceCents || 0),
+                balance: centsToMoney(freshUser?.walletBalanceCents || 0)
+            });
+        }
+
+        return res.json({
+            success: true,
+            paymentStatus: squarePayment.status,
+            topup: toWalletTransactionPayload(freshTransaction || creditResult.transaction || transaction),
+            balanceCents: Number(freshUser?.walletBalanceCents || 0),
+            balance: centsToMoney(freshUser?.walletBalanceCents || 0)
+        });
+    } catch (error) {
+        console.error('Square Cash App wallet complete error:', error);
+        return res.status(500).json({ error: 'Failed to complete Cash App payment' });
     }
 });
 
@@ -1964,6 +2126,50 @@ router.post('/webhook/nowpayments', async (req, res) => {
         return res.json({ received: true });
     } catch (err) {
         console.error('NOWPayments webhook error:', err);
+        return res.status(500).json({ error: 'Webhook error' });
+    }
+});
+
+router.post('/webhook/square', async (req, res) => {
+    try {
+        const signature = req.headers['x-square-hmacsha256-signature'];
+        const notificationUrl = normalizeEnvValue(process.env.SQUARE_WEBHOOK_URL)
+            || `${getBackendBaseUrl()}/api/shop/webhook/square`;
+        if (!normalizeEnvValue(process.env.SQUARE_WEBHOOK_SIGNATURE_KEY)) {
+            return res.status(503).json({ error: 'Square webhook is disabled (missing SQUARE_WEBHOOK_SIGNATURE_KEY)' });
+        }
+        if (!verifySquareWebhookSignature({
+            rawBody: req.rawBody || '',
+            signature,
+            notificationUrl
+        })) {
+            return res.status(401).json({ error: 'Invalid Square webhook signature' });
+        }
+
+        const eventType = String(req.body?.type || '').trim();
+        const payment = req.body?.data?.object?.payment || null;
+        if (!payment?.id) {
+            return res.json({ received: true, ignored: true, eventType });
+        }
+
+        const paymentStatus = String(payment?.status || '').trim().toLowerCase();
+        if (paymentStatus !== 'completed') {
+            return res.json({ received: true, ignored: true, eventType, paymentStatus });
+        }
+
+        const creditResult = await creditSquareWalletPayment({
+            payment,
+            source: 'square_webhook'
+        });
+
+        return res.json({
+            received: true,
+            walletCredited: creditResult.ok,
+            walletStatus: creditResult.status,
+            referenceCode: creditResult.transaction?.referenceCode || payment.reference_id || ''
+        });
+    } catch (error) {
+        console.error('Square webhook error:', error);
         return res.status(500).json({ error: 'Webhook error' });
     }
 });
