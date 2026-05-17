@@ -58,10 +58,13 @@ const Ticker = ({ items }) => {
 };
 
 // ─── Banner + Best Seller Row Component ────────────────────────────────────────
-// Banner: 4/6 width, auto height | Best Seller: 2/6 width, same height as banner
-const BannerAndBestSellerRow = ({ banners, bestSeller, allProducts, bannerHeight, onBannerHeightChange }) => {
+// Banner: 4/6 width, auto height | Best Seller: 2/6 width, multiple products, auto-scroll right, loops
+const BannerAndBestSellerRow = ({ banners, bestSellers, allProducts, bannerHeight, onBannerHeightChange }) => {
   const [current, setCurrent] = useState(0);
-  const timerRef = useRef(null);
+  const [bsCurrent, setBsCurrent] = useState(0);
+  const bannerTimerRef = useRef(null);
+  const bsScrollRef = useRef(null);
+  const bsAnimRef = useRef(null);
 
   const nextBanner = useCallback(() => {
     setCurrent((prev) => (prev + 1) % banners.length);
@@ -71,12 +74,44 @@ const BannerAndBestSellerRow = ({ banners, bestSeller, allProducts, bannerHeight
 
   useEffect(() => {
     if (!banners || banners.length <= 1) return;
-    timerRef.current = setInterval(nextBanner, 4000);
-    return () => clearInterval(timerRef.current);
+    bannerTimerRef.current = setInterval(nextBanner, 4000);
+    return () => clearInterval(bannerTimerRef.current);
   }, [nextBanner, banners]);
 
-  const product = bestSeller ? allProducts.find((p) => String(p._id) === String(bestSeller)) : null;
-  const hasContent = (banners && banners.length > 0) || product;
+  // Best seller auto-scroll
+  const startBsScroll = useCallback(() => {
+    if (!bsScrollRef.current || bestSellers.length <= 1) return;
+    const el = bsScrollRef.current;
+    const scroll = () => {
+      if (!el) return;
+      el.scrollLeft += 1;
+      if (el.scrollLeft >= el.scrollWidth - el.clientWidth) {
+        el.scrollLeft = 0;
+      }
+      bsAnimRef.current = requestAnimationFrame(scroll);
+    };
+    bsAnimRef.current = requestAnimationFrame(scroll);
+  }, [bestSellers.length]);
+
+  useEffect(() => {
+    startBsScroll();
+    return () => {
+      if (bsAnimRef.current) cancelAnimationFrame(bsAnimRef.current);
+    };
+  }, [startBsScroll]);
+
+  const pauseBsScroll = () => { if (bsAnimRef.current) cancelAnimationFrame(bsAnimRef.current); };
+
+  const scrollBsLeft = () => {
+    if (!bsScrollRef.current) return;
+    bsScrollRef.current.scrollBy({ left: -200, behavior: 'smooth' });
+  };
+  const scrollBsRight = () => {
+    if (!bsScrollRef.current) return;
+    bsScrollRef.current.scrollBy({ left: 200, behavior: 'smooth' });
+  };
+
+  const hasContent = (banners && banners.length > 0) || (bestSellers && bestSellers.length > 0);
 
   if (!hasContent) return null;
 
@@ -131,7 +166,7 @@ const BannerAndBestSellerRow = ({ banners, bestSeller, allProducts, bannerHeight
                 {banners.map((_, i) => (
                   <button
                     key={i}
-                    onClick={() => { clearInterval(timerRef.current); setCurrent(i); }}
+                    onClick={() => { clearInterval(bannerTimerRef.current); setCurrent(i); }}
                     className={`h-1.5 rounded-full transition-all ${i === current ? 'bg-white w-5' : 'bg-white/50 w-1.5'}`}
                   />
                 ))}
@@ -141,42 +176,49 @@ const BannerAndBestSellerRow = ({ banners, bestSeller, allProducts, bannerHeight
         </div>
       </div>
 
-      {/* Best Seller — 2/6 width, same height as banner */}
+      {/* Best Sellers — 2/6 width, carousel of multiple products, auto-scrolls right, loops */}
       <div className="flex-[2] flex flex-col">
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-gothic text-[var(--color-text-primary)] uppercase tracking-wider">Best Seller</h3>
-          {product && (
+          <h3 className="text-sm font-gothic text-[var(--color-text-primary)] uppercase tracking-wider">Best Sellers</h3>
+          {bestSellers.length > 1 && (
             <div className="flex gap-1">
               <button
-                onClick={prevBanner}
+                onClick={scrollBsLeft}
                 className="btn-press w-8 h-8 rounded-full bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:text-[var(--color-accent)] hover:border-[var(--color-accent)] flex items-center justify-center transition-all"
-                title="Previous"
+                title="Scroll left"
               >
                 <ChevronLeftIcon className="w-4 h-4" />
               </button>
               <button
-                onClick={nextBanner}
+                onClick={scrollBsRight}
                 className="btn-press w-8 h-8 rounded-full bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:text-[var(--color-accent)] hover:border-[var(--color-accent)] flex items-center justify-center transition-all"
-                title="Next"
+                title="Scroll right"
               >
                 <ChevronRightIcon className="w-4 h-4" />
               </button>
             </div>
           )}
         </div>
-        {product ? (
+        {bestSellers.length > 0 ? (
           <div
-            className="flex-1 bg-[var(--color-bg-secondary)] rounded-[12px] border border-[var(--color-border)] overflow-hidden"
+            ref={bsScrollRef}
+            className="flex-1 flex gap-2 overflow-x-auto pb-1 scrollbar-hide rounded-[12px] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-2"
             style={{ minHeight: bannerHeight }}
+            onMouseEnter={pauseBsScroll}
+            onMouseLeave={startBsScroll}
           >
-            <ProductCard product={product} onOpenDetail={() => {}} />
+            {bestSellers.map((product) => (
+              <div key={product._id} className="shrink-0 w-[160px]">
+                <ProductCard product={product} onOpenDetail={() => {}} />
+              </div>
+            ))}
           </div>
         ) : (
           <div
             className="flex-1 flex items-center justify-center bg-[var(--color-bg-secondary)] rounded-[12px] border border-[var(--color-border)] text-[var(--color-text-secondary)] text-sm"
             style={{ minHeight: bannerHeight }}
           >
-            No best seller set
+            No best sellers set
           </div>
         )}
       </div>
@@ -277,8 +319,10 @@ const Home = () => {
   if (sortBy === 'low-high') filteredProducts = [...filteredProducts].sort((a, b) => (a.price || 0) - (b.price || 0));
   else if (sortBy === 'high-low') filteredProducts = [...filteredProducts].sort((a, b) => (b.price || 0) - (a.price || 0));
 
-  // Best sellers — single product (first one in the list)
-  const bestSeller = config.bestSellerIds?.[0] || null;
+  // Best sellers — array of products for the carousel
+  const bestSellers = (config.bestSellerIds || [])
+    .map((id) => safeProducts.find((p) => String(p._id) === String(id)))
+    .filter(Boolean);
 
   // Products grouped by game for section view
   const productsByGame = games.reduce((acc, game) => {
@@ -351,7 +395,7 @@ const Home = () => {
             {/* ── Banner + Best Seller row ── */}
             <BannerAndBestSellerRow
               banners={config.banners}
-              bestSeller={bestSeller}
+              bestSellers={bestSellers}
               allProducts={safeProducts}
               bannerHeight={bannerHeight}
               onBannerHeightChange={setBannerHeight}
