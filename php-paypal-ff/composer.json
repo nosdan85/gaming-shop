@@ -1,0 +1,12 @@
+{
+  "name": "nosmarket/paypal-ff-gmail-scanner",
+  "description": "Pure PHP PayPal Friends and Family payment module using Gmail IMAP scanning.",
+  "type": "project",
+  "require": {
+    "php": ">=8.0",
+    "ext-imap": "*",
+    "ext-pdo": "*",
+    "ext-pdo_mysql": "*",
+    "phpmailer/phpmailer": "^6.9"
+  }
+}

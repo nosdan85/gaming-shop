@@ -1,0 +1,378 @@
+import { useEffect, useRef, useState } from 'react';
+import axios from 'axios';
+import { useAuth } from '../context/AuthContext';
+
+const MAX_AUTH_RETRIES = 2;
+const BASE_RETRY_DELAY_MS = 2000;
+const MAX_RETRY_DELAY_MS = 15000;
+const AUTH_REQUEST_TIMEOUT_MS = 15000;
+const OAUTH_REDIRECT_STORAGE_KEY = 'discordOauthRedirectUri';
+const CONFIGURED_API_BASE_URL = String(import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
+const CAN_USE_VERCEL_EXCHANGE_FALLBACK = !CONFIGURED_API_BASE_URL;
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const createTimeoutError = () => {
+    const timeoutError = new Error('Auth request timed out');
+    timeoutError.code = 'AUTH_REQUEST_TIMEOUT';
+    return timeoutError;
+};
+
+const withTimeout = (promise, timeoutMs = AUTH_REQUEST_TIMEOUT_MS) => {
+    const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(createTimeoutError()), timeoutMs);
+    });
+    return Promise.race([promise, timeoutPromise]);
+};
+
+const getConfiguredRedirectUri = () => {
+    const rawRedirectUri = import.meta.env.VITE_DISCORD_REDIRECT_URI;
+    return typeof rawRedirectUri === 'string' ? rawRedirectUri.trim() : '';
+};
+
+const getStoredRedirectUri = () => {
+    try {
+        return String(localStorage.getItem(OAUTH_REDIRECT_STORAGE_KEY) || '').trim();
+    } catch {
+        return '';
+    }
+};
+
+const saveRedirectUri = (redirectUri) => {
+    try {
+        if (!redirectUri) return;
+        localStorage.setItem(OAUTH_REDIRECT_STORAGE_KEY, redirectUri);
+    } catch {
+        // Ignore storage failures.
+    }
+};
+
+const clearStoredRedirectUri = () => {
+    try {
+        localStorage.removeItem(OAUTH_REDIRECT_STORAGE_KEY);
+    } catch {
+        // Ignore storage failures.
+    }
+};
+
+const resolveRedirectUri = () => {
+    const configured = getConfiguredRedirectUri();
+    if (configured) return configured;
+    const stored = getStoredRedirectUri();
+    if (stored) return stored;
+    return `${window.location.origin}/auth/discord/callback`;
+};
+
+const createOAuthUrl = () => {
+    const clientId = import.meta.env.VITE_DISCORD_CLIENT_ID || '';
+    const redirectUri = resolveRedirectUri();
+    saveRedirectUri(redirectUri);
+    const params = new URLSearchParams({
+        client_id: clientId,
+        redirect_uri: redirectUri,
+        response_type: 'code',
+        scope: 'identify guilds.join'
+    });
+    return `https://discord.com/oauth2/authorize?${params.toString()}`;
+};
+
+const postAuthCode = async (code, redirectUri) => {
+    const payload = { code, redirect_uri: redirectUri };
+
+    try {
+        return await withTimeout(axios.post('/api/shop/auth/discord', payload));
+    } catch (error) {
+        if (!CAN_USE_VERCEL_EXCHANGE_FALLBACK) {
+            throw error;
+        }
+
+        const status = Number(error?.response?.status) || 0;
+        const networkCode = String(error?.code || '').toUpperCase();
+        const isNotFound = status === 404 || status === 405 || status === 501;
+        const isNetworkPathIssue = !error?.response
+            && networkCode !== 'AUTH_REQUEST_TIMEOUT'
+            && networkCode !== 'ECONNABORTED';
+        const shouldFallbackToVercelExchange = isNotFound || isNetworkPathIssue;
+
+        if (!shouldFallbackToVercelExchange) {
+            throw error;
+        }
+
+        // Fallback path for environments without /api/shop rewrite.
+        return withTimeout(axios.post('/api/discord-exchange', payload, {
+            // Force same-origin Vercel function instead of axios global baseURL.
+            baseURL: window.location.origin
+        }));
+    }
+};
+
+const normalizeRetryAfterToMs = (value) => {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    if (n > 1000) return Math.round(n);
+    return Math.round(n * 1000);
+};
+
+const getRetryDelayMs = (error, attempt) => {
+    const headerDelay = normalizeRetryAfterToMs(error?.response?.headers?.['retry-after']);
+    const bodyDelay = normalizeRetryAfterToMs(
+        error?.response?.data?.retry_after ?? error?.response?.data?.retryAfterSeconds
+    );
+    const backoffDelay = Math.min(
+        MAX_RETRY_DELAY_MS,
+        Math.round(BASE_RETRY_DELAY_MS * Math.pow(2, Math.max(0, attempt - 1)))
+    );
+    return Math.min(MAX_RETRY_DELAY_MS, Math.max(headerDelay, bodyDelay, backoffDelay));
+};
+
+const isRateLimitedError = (error) => {
+    const data = error?.response?.data || {};
+    const statusCode = error?.response?.status;
+    return data?.code === 'DISCORD_RATE_LIMIT' || statusCode === 429;
+};
+const isServiceUnavailableError = (error) => Number(error?.response?.status) === 503;
+
+const isInvalidOauthCodeError = (error) => {
+    const statusCode = error?.response?.status;
+    const raw = error?.response?.data?.error || error?.message || '';
+    const text = String(raw).toLowerCase();
+    return statusCode === 400 && (text.includes('invalid "code"') || text.includes('invalid grant'));
+};
+
+const AuthCallback = () => {
+    const { loginDiscord } = useAuth();
+    const inFlight = useRef(false);
+    const loginDiscordRef = useRef(loginDiscord);
+    const [nonce, setNonce] = useState(0);
+    const [status, setStatus] = useState('Processing Discord login...');
+    const [debugInfo, setDebugInfo] = useState('');
+    const [canRetry, setCanRetry] = useState(false);
+    const [retryInSeconds, setRetryInSeconds] = useState(0);
+    const [needsFreshOauth, setNeedsFreshOauth] = useState(false);
+
+    useEffect(() => {
+        loginDiscordRef.current = loginDiscord;
+    }, [loginDiscord]);
+
+    useEffect(() => {
+        if (retryInSeconds <= 0) return undefined;
+        const timer = setInterval(() => {
+            setRetryInSeconds((s) => (s > 0 ? s - 1 : 0));
+        }, 1000);
+        return () => clearInterval(timer);
+    }, [retryInSeconds]);
+
+    useEffect(() => {
+        let cancelled = false;
+
+        const handleAuth = async () => {
+            const params = new URLSearchParams(window.location.search);
+            const oauthError = String(params.get('error') || '').trim();
+            const oauthErrorDescription = String(params.get('error_description') || '').trim();
+            const code = params.get('code');
+
+            if (oauthError) {
+                setStatus('Discord authorization was not completed');
+                setDebugInfo(
+                    `${oauthErrorDescription || oauthError}\n\n` +
+                    'Please press "Login Again" to start a fresh Discord login.'
+                );
+                setCanRetry(true);
+                setNeedsFreshOauth(true);
+                return;
+            }
+
+            if (!code) {
+                setStatus('Error: no authorization code found.');
+                setCanRetry(false);
+                return;
+            }
+
+            if (inFlight.current) return;
+            inFlight.current = true;
+
+            try {
+                const redirectUri = resolveRedirectUri();
+                saveRedirectUri(redirectUri);
+                setDebugInfo('');
+                setCanRetry(false);
+                setRetryInSeconds(0);
+                setNeedsFreshOauth(false);
+
+                for (let attempt = 1; attempt <= MAX_AUTH_RETRIES; attempt += 1) {
+                    if (cancelled) return;
+                    try {
+                        setStatus(
+                            attempt === 1
+                                ? 'Verifying with server...'
+                                : `Retrying Discord login (${attempt}/${MAX_AUTH_RETRIES})...`
+                        );
+
+                        const response = await postAuthCode(code, redirectUri);
+
+                        const userData = response.data?.user;
+                        const token = response.data?.token;
+                        if (!userData || !token) {
+                            setStatus('Login failed');
+                            setDebugInfo('Missing user/token from server response.');
+                            setCanRetry(true);
+                            return;
+                        }
+
+                        loginDiscordRef.current(userData, token);
+                        clearStoredRedirectUri();
+                        setStatus('Success! Redirecting...');
+                        setTimeout(() => {
+                            if (!cancelled) window.location.href = '/';
+                        }, 400);
+                        return;
+                    } catch (error) {
+                        const timeout = error?.code === 'ECONNABORTED' || error?.code === 'AUTH_REQUEST_TIMEOUT';
+                        const rateLimit = isRateLimitedError(error);
+                        const serviceUnavailable = isServiceUnavailableError(error);
+                        const shouldRetry = attempt < MAX_AUTH_RETRIES && timeout;
+
+                        if (shouldRetry) {
+                            const delayMs = getRetryDelayMs(error, attempt);
+                            setStatus(
+                                `Discord is busy, retrying in ${Math.ceil(delayMs / 1000)}s... (${attempt}/${MAX_AUTH_RETRIES})`
+                            );
+                            await sleep(delayMs);
+                            continue;
+                        }
+
+                        const data = error.response?.data || {};
+                        const statusCode = error.response?.status;
+                        const normalizedErrorText = String(data?.error || '').toLowerCase();
+
+                        if (normalizedErrorText.includes('invalid_client')) {
+                            setStatus('Discord app credentials are invalid');
+                            setDebugInfo(
+                                'Server OAuth credentials are invalid (DISCORD_CLIENT_ID / DISCORD_CLIENT_SECRET).\n\n' +
+                                'Ask admin to update Vercel environment variables, then retry login.'
+                            );
+                            setCanRetry(true);
+                            return;
+                        }
+
+                        if (rateLimit) {
+                            const retryAfterSeconds = Number(data?.retryAfterSeconds) || 0;
+                            setStatus('Discord is temporarily rate limited');
+                            setDebugInfo(
+                                `${data?.error || 'Discord temporary block.'}\n\n` +
+                                (retryAfterSeconds > 0
+                                    ? `Suggested wait: about ${retryAfterSeconds}s before retry.\n\n`
+                                    : '') +
+                                'Please wait a bit, then press Retry Login once.'
+                            );
+                            setCanRetry(true);
+                            setRetryInSeconds(Math.max(0, Math.ceil(retryAfterSeconds)));
+                            return;
+                        }
+                        if (serviceUnavailable) {
+                            const backendHint = CAN_USE_VERCEL_EXCHANGE_FALLBACK
+                                ? 'Check backend env/proxy routing (Vercel bridge or BACKEND_URL).'
+                                : `Check VITE_API_URL (${CONFIGURED_API_BASE_URL}) and backend OAuth env.`;
+                            setStatus('Discord login temporarily unavailable');
+                            setDebugInfo(
+                                `${data?.error || 'Backend auth endpoint is unavailable.'}\n\n` +
+                                `Code: ${data?.code || 'none'}\n\n` +
+                                `${backendHint}`
+                            );
+                            setCanRetry(true);
+                            return;
+                        }
+                        if (isInvalidOauthCodeError(error)) {
+                            setStatus('Discord login code expired');
+                            setDebugInfo(
+                                'OAuth code is no longer valid (expired/used).\n\n' +
+                                'Please press "Login Again" to start a fresh Discord login.'
+                            );
+                            setCanRetry(true);
+                            setNeedsFreshOauth(true);
+                            return;
+                        }
+                        if (timeout) {
+                            setStatus('Discord login timeout');
+                            setDebugInfo('Server took too long to reply. Please press Retry Login.');
+                            setCanRetry(true);
+                            return;
+                        }
+
+                        setStatus('Discord login failed');
+                        setDebugInfo(
+                            `Error: ${data?.error || error.message}\n\n` +
+                            `HTTP: ${statusCode || 'unknown'}`
+                        );
+                        setCanRetry(true);
+                        return;
+                    }
+                }
+
+            } catch (error) {
+                const data = error.response?.data || {};
+                const statusCode = error.response?.status;
+                setStatus('Discord login failed');
+                setDebugInfo(
+                    `Error: ${data?.error || error.message}\n\n` +
+                    `HTTP: ${statusCode || 'unknown'}`
+                );
+                setCanRetry(true);
+            } finally {
+                inFlight.current = false;
+            }
+        };
+
+        handleAuth();
+        return () => {
+            cancelled = true;
+        };
+    }, [nonce]);
+
+    const handleRetry = () => {
+        if (inFlight.current || retryInSeconds > 0) return;
+        if (needsFreshOauth) {
+            window.location.href = createOAuthUrl();
+            return;
+        }
+        setStatus('Retrying Discord login...');
+        setDebugInfo('');
+        setCanRetry(false);
+        setRetryInSeconds(0);
+        setNeedsFreshOauth(false);
+        setNonce((x) => x + 1);
+    };
+
+    return (
+        <div className="min-h-screen flex flex-col items-center justify-center bg-[var(--color-bg-main)] text-[var(--color-text-primary)] p-4">
+            <h2 className="text-2xl font-gothic mb-4">{status}</h2>
+            {debugInfo && (
+                <div className="bg-[rgba(207,45,86,0.1)] p-4 rounded-[8px] border border-[rgba(207,45,86,0.3)] max-w-2xl w-full overflow-auto">
+                    <h3 className="font-gothic text-[var(--color-error)] mb-2">Error Log:</h3>
+                    <pre className="text-sm font-mono whitespace-pre-wrap">{debugInfo}</pre>
+                    <div className="mt-4 flex gap-2">
+                        {canRetry && (
+                            <button
+                                onClick={handleRetry}
+                                disabled={retryInSeconds > 0}
+                                className="bg-[#5865F2] hover:bg-[#4752C4] disabled:bg-[#39408f] disabled:cursor-not-allowed text-white px-4 py-2 rounded"
+                            >
+                                {retryInSeconds > 0
+                                    ? `Retry Login (${retryInSeconds}s)`
+                                    : (needsFreshOauth ? 'Login Again' : 'Retry Login')}
+                            </button>
+                        )}
+                        <button
+                            onClick={() => { window.location.href = '/'; }}
+                            className="bg-[var(--color-bg-elevated)] hover:text-[var(--color-error)] text-[var(--color-text-primary)] px-4 py-2 rounded-[8px]"
+                        >
+                            Back to Home
+                        </button>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+export default AuthCallback;
