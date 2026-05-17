@@ -1207,57 +1207,45 @@ const AdminOrders = () => {
               )}
             </section>
 
-            {/* Best sellers management */}
+            {/* Best seller management */}
             <section className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-[8px] p-4">
-              <h2 className="text-xl font-gothic text-[var(--color-text-primary)] mb-2">Best Sellers</h2>
-              <p className="text-sm text-[var(--color-text-secondary)] mb-4">Select products to show in the Best Sellers carousel on the homepage.</p>
+              <h2 className="text-xl font-gothic text-[var(--color-text-primary)] mb-2">Best Seller</h2>
+              <p className="text-sm text-[var(--color-text-secondary)] mb-4">Select the product to feature as the Best Seller on the homepage.</p>
               {configLoading ? (
                 <p className="text-[var(--color-text-secondary)] text-sm">Loading...</p>
               ) : (
-                <div className="max-h-80 overflow-y-auto border border-[var(--color-border)] rounded-[8px]">
-                  {bestSellerOptions.map((product) => {
-                    const isSelected = homepageConfig.bestSellerIds.some((id) => String(id) === String(product._id));
-                    return (
-                      <div
-                        key={product._id}
-                        onClick={async () => {
-                          let next;
-                          if (isSelected) {
-                            next = homepageConfig.bestSellerIds.filter((id) => String(id) !== String(product._id));
-                          } else {
-                            next = [...homepageConfig.bestSellerIds, product._id];
-                          }
-                          try {
-                            const res = await axios.put('/api/shop/owner/config/best-sellers', { bestSellerIds: next });
-                            setHomepageConfig((c) => ({ ...c, bestSellerIds: res.data?.bestSellerIds || [] }));
-                          } catch (err) {
-                            alert(err.response?.data?.error || 'Update failed.');
-                          }
-                        }}
-                        className={`flex items-center gap-3 p-3 cursor-pointer border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-bg-elevated)] transition-colors ${
-                          isSelected ? 'bg-[var(--color-accent)]/10' : ''
-                        }`}
-                      >
-                        <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 ${
-                          isSelected ? 'border-[var(--color-accent)] bg-[var(--color-accent)]' : 'border-[var(--color-border)]'
-                        }`}>
-                          {isSelected && <span className="text-white text-xs">✓</span>}
-                        </div>
-                        <img
-                          src={getProductImageUrl(product.image || '')}
-                          alt={product.name}
-                          className="w-8 h-8 object-contain rounded bg-[var(--color-bg-main)] shrink-0"
-                          onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                        />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-gothic text-[var(--color-text-primary)] truncate">{product.name}</p>
-                          <p className="text-xs text-[var(--color-text-secondary)]">{product.category} — ${product.price}</p>
-                        </div>
-                      </div>
-                    );
-                  })}
-                  {bestSellerOptions.length === 0 && (
-                    <p className="p-3 text-[var(--color-text-secondary)] text-sm">No products available. Add products in the Products tab first.</p>
+                <div className="flex flex-col md:flex-row gap-4 items-start">
+                  <div className="flex-1">
+                    <select
+                      value={homepageConfig.bestSellerIds?.[0] || ''}
+                      onChange={async (e) => {
+                        const selectedId = e.target.value;
+                        try {
+                          const res = await axios.put('/api/shop/owner/config/best-sellers', {
+                            bestSellerIds: selectedId ? [selectedId] : []
+                          });
+                          setHomepageConfig((c) => ({ ...c, bestSellerIds: res.data?.bestSellerIds || [] }));
+                        } catch (err) {
+                          alert(err.response?.data?.error || 'Update failed.');
+                        }
+                      }}
+                      className="w-full bg-[var(--color-bg-main)] border border-[var(--color-border)] rounded-[8px] px-3 py-2.5 text-sm text-[var(--color-text-primary)]"
+                    >
+                      <option value="">— None —</option>
+                      {bestSellerOptions.map((p) => (
+                        <option key={p._id} value={p._id}>{p.name} (${p.price})</option>
+                      ))}
+                    </select>
+                  </div>
+                  {homepageConfig.bestSellerIds?.[0] && (
+                    <div className="shrink-0">
+                      <img
+                        src={getProductImageUrl(bestSellerOptions.find((p) => String(p._id) === String(homepageConfig.bestSellerIds[0]))?.image || '')}
+                        alt="Preview"
+                        className="h-20 w-auto object-contain rounded-[8px] border border-[var(--color-border)] bg-[var(--color-bg-main)] p-1"
+                        onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                      />
+                    </div>
                   )}
                 </div>
               )}

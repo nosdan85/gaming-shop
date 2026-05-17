@@ -57,107 +57,87 @@ const Ticker = ({ items }) => {
   );
 };
 
-// ─── Banner Carousel Component ────────────────────────────────────────────────
-const BannerCarousel = ({ banners }) => {
+// ─── Banner + Best Seller Row Component ────────────────────────────────────────
+// Banner: 4/6 width | Best Seller: 2/6 width (1 product visible, auto-scrolls right, loops)
+const BannerAndBestSellerRow = ({ banners, bestSeller, allProducts }) => {
   const [current, setCurrent] = useState(0);
   const timerRef = useRef(null);
 
-  const next = useCallback(() => {
+  const nextBanner = useCallback(() => {
     setCurrent((prev) => (prev + 1) % banners.length);
   }, [banners.length]);
 
-  const prev = () => setCurrent((prev) => (prev - 1 + banners.length) % banners.length);
-
   useEffect(() => {
-    if (banners.length <= 1) return;
-    timerRef.current = setInterval(next, 4000);
+    if (!banners || banners.length <= 1) return;
+    timerRef.current = setInterval(nextBanner, 4000);
     return () => clearInterval(timerRef.current);
-  }, [next, banners.length]);
+  }, [nextBanner, banners]);
 
-  if (!banners || banners.length === 0) return null;
+  const product = bestSeller ? allProducts.find((p) => String(p._id) === String(bestSeller)) : null;
+  const hasContent = (banners && banners.length > 0) || product;
 
-  const currentSrc = banners[current]?.startsWith('/')
-    ? banners[current]
-    : `/api/banners/${encodeURIComponent(banners[current])}`;
+  if (!hasContent) return null;
+
+  const prevBanner = () => setCurrent((prev) => (prev - 1 + banners.length) % banners.length);
+  const currentBanner = banners?.[current];
 
   return (
-    <div className="relative w-full h-[200px] md:h-[280px] lg:h-[340px] rounded-[12px] overflow-hidden bg-[var(--color-bg-secondary)] border border-[var(--color-border)] mb-10">
-      <img
-        src={currentSrc}
-        alt={`Banner ${current + 1}`}
-        className="w-full h-full object-cover transition-opacity duration-700"
-        onError={(e) => { e.currentTarget.style.display = 'none'; }}
-      />
-      {banners.length > 1 && (
-        <>
-          <button
-            onClick={prev}
-            className="absolute left-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70 transition"
-          >
-            <ChevronLeftIcon className="w-5 h-5" />
-          </button>
-          <button
-            onClick={next}
-            className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70 transition"
-          >
-            <ChevronRightIcon className="w-5 h-5" />
-          </button>
-          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-2">
-            {banners.map((_, i) => (
-              <button
-                key={i}
-                onClick={() => { clearInterval(timerRef.current); setCurrent(i); }}
-                className={`w-2 h-2 rounded-full transition-all ${i === current ? 'bg-white w-5' : 'bg-white/50'}`}
-              />
-            ))}
-          </div>
-        </>
-      )}
-    </div>
-  );
-};
-
-// ─── Best Sellers Carousel Component ──────────────────────────────────────────
-const BestSellersCarousel = ({ products }) => {
-  const scrollRef = useRef(null);
-  const timerRef = useRef(null);
-
-  const startAutoScroll = useCallback(() => {
-    if (!scrollRef.current || !products || products.length === 0) return;
-    timerRef.current = setInterval(() => {
-      if (scrollRef.current) {
-        scrollRef.current.scrollLeft += 1;
-        if (scrollRef.current.scrollLeft >= scrollRef.current.scrollWidth - scrollRef.current.clientWidth) {
-          scrollRef.current.scrollLeft = 0;
-        }
-      }
-    }, 30);
-  }, [products]);
-
-  useEffect(() => {
-    startAutoScroll();
-    return () => clearInterval(timerRef.current);
-  }, [startAutoScroll]);
-
-  if (!products || products.length === 0) return null;
-
-  return (
-    <div className="mb-10">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-gothic text-[var(--color-text-primary)]">Best Sellers</h2>
+    <div className="flex gap-3 mb-10 items-stretch">
+      {/* Banner — 4/6 width */}
+      <div className="flex-[4] relative h-[200px] md:h-[260px] lg:h-[300px] rounded-[12px] overflow-hidden bg-[var(--color-bg-secondary)] border border-[var(--color-border)]">
+        {currentBanner ? (
+          <img
+            src={currentBanner.startsWith('/') ? currentBanner : `/api/banners/${encodeURIComponent(currentBanner)}`}
+            alt={`Banner ${current + 1}`}
+            className="w-full h-full object-cover"
+            onError={(e) => { e.currentTarget.style.display = 'none'; }}
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-[var(--color-text-secondary)] text-sm">No banners</div>
+        )}
+        {banners?.length > 1 && (
+          <>
+            <button
+              onClick={prevBanner}
+              className="absolute left-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70 transition"
+            >
+              <ChevronLeftIcon className="w-4 h-4" />
+            </button>
+            <button
+              onClick={nextBanner}
+              className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70 transition"
+            >
+              <ChevronRightIcon className="w-4 h-4" />
+            </button>
+            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5">
+              {banners.map((_, i) => (
+                <button
+                  key={i}
+                  onClick={() => { clearInterval(timerRef.current); setCurrent(i); }}
+                  className={`h-1.5 rounded-full transition-all ${i === current ? 'bg-white w-4' : 'bg-white/50 w-1.5'}`}
+                />
+              ))}
+            </div>
+          </>
+        )}
       </div>
-      <div
-        ref={scrollRef}
-        className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide"
-        onMouseEnter={() => clearInterval(timerRef.current)}
-        onMouseLeave={startAutoScroll}
-        style={{ scrollBehavior: 'auto' }}
-      >
-        {products.map((product) => (
-          <div key={product._id} className="shrink-0 w-[160px]">
-            <ProductCard product={product} onOpenDetail={() => {}} />
+
+      {/* Best Seller — 2/6 width, 1 product, scrolls vertically */}
+      <div className="flex-[2] flex flex-col">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-gothic text-[var(--color-text-primary)] uppercase tracking-wider">Best Seller</h3>
+        </div>
+        {product ? (
+          <div className="flex-1 flex items-center justify-center bg-[var(--color-bg-secondary)] rounded-[12px] border border-[var(--color-border)] overflow-hidden">
+            <div className="w-full max-w-[180px]">
+              <ProductCard product={product} onOpenDetail={() => {}} />
+            </div>
           </div>
-        ))}
+        ) : (
+          <div className="flex-1 flex items-center justify-center bg-[var(--color-bg-secondary)] rounded-[12px] border border-[var(--color-border)] text-[var(--color-text-secondary)] text-sm">
+            No best seller set
+          </div>
+        )}
       </div>
     </div>
   );
@@ -254,10 +234,8 @@ const Home = () => {
   if (sortBy === 'low-high') filteredProducts = [...filteredProducts].sort((a, b) => (a.price || 0) - (b.price || 0));
   else if (sortBy === 'high-low') filteredProducts = [...filteredProducts].sort((a, b) => (b.price || 0) - (a.price || 0));
 
-  // Best sellers products
-  const bestSellers = config.bestSellerIds
-    .map((id) => safeProducts.find((p) => String(p._id) === String(id)))
-    .filter(Boolean);
+  // Best sellers — single product (first one in the list)
+  const bestSeller = config.bestSellerIds?.[0] || null;
 
   // Products grouped by game for section view
   const productsByGame = games.reduce((acc, game) => {
@@ -327,13 +305,12 @@ const Home = () => {
           </div>
         ) : (
           <>
-            {/* ── Banner carousel ── */}
-            <BannerCarousel banners={config.banners} />
-
-            {/* ── Best sellers ── */}
-            {bestSellers.length > 0 && (
-              <BestSellersCarousel products={bestSellers} />
-            )}
+            {/* ── Banner + Best Seller row ── */}
+            <BannerAndBestSellerRow
+              banners={config.banners}
+              bestSeller={bestSeller}
+              allProducts={safeProducts}
+            />
 
             {/* ── Category filters + sort ── */}
             <div className="flex flex-wrap justify-center items-center gap-2 mb-8">
