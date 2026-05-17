@@ -1,8 +1,30 @@
 {
+  "version": 2,
+  "cleanUrls": true,
   "routes": [
+    {
+      "src": "/products/(.*)",
+      "dest": "/products/$1"
+    },
+    {
+      "src": "/pictures/(.*)",
+      "dest": "/pictures/$1"
+    },
+    {
+      "src": "/favicon.png",
+      "dest": "/favicon.png"
+    },
+    {
+      "src": "/site-logo.png",
+      "dest": "/site-logo.png"
+    },
     {
       "src": "/ipn.php",
       "dest": "https://gaming-shop-2.onrender.com/ipn.php"
+    },
+    {
+      "src": "/api/(.*)",
+      "dest": "https://gaming-shop-2.onrender.com/api/$1"
     },
     {
       "handle": "filesystem"
