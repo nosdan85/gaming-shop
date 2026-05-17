@@ -1,0 +1,13 @@
+const mongoose = require('mongoose');
+
+const gameSchema = new mongoose.Schema({
+    name: { type: String, required: true, trim: true },
+    slug: { type: String, required: true, trim: true, unique: true },
+    image: { type: String, default: '' },
+    active: { type: Boolean, default: true }
+}, { timestamps: true });
+
+gameSchema.index({ slug: 1 }, { unique: true });
+gameSchema.index({ active: 1 });
+
+module.exports = mongoose.model('Game', gameSchema);

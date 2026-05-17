@@ -3,6 +3,7 @@ import { Navigate } from 'react-router-dom';
 import axios from 'axios';
 import { ShopContext } from '../context/ShopContext';
 import { getProductImageUrl } from '../utils/productImage';
+import { COUNTRY_TIMEZONES } from '../utils/timezones';
 
 const formatDate = (value) => {
   if (!value) return '-';
@@ -56,10 +57,23 @@ const AdminOrders = () => {
   const [imagePickerOpen, setImagePickerOpen] = useState(false);
   const [productFormOpen, setProductFormOpen] = useState(false);
 
+  // ── Games state ────────────────────────────────────────────────────────────
+  const [games, setGames] = useState([]);
+  const [gamesLoading, setGamesLoading] = useState(false);
+  const [editingGame, setEditingGame] = useState(null);
+  const [gameForm, setGameForm] = useState({ name: '', slug: '', image: '', active: true });
+  const [gameFormOpen, setGameFormOpen] = useState(false);
+  const [gameFormErrors, setGameFormErrors] = useState({});
+  const [gameUploading, setGameUploading] = useState(false);
+
+  // ── Homepage config state ──────────────────────────────────────────────────
+  const [homepageConfig, setHomepageConfig] = useState({ banners: [], bestSellerIds: [] });
+  const [configLoading, setConfigLoading] = useState(false);
+  const [bannerUploading, setBannerUploading] = useState(false);
+  const [bestSellerOptions, setBestSellerOptions] = useState([]);
+
   // ── Delivery slots state ───────────────────────────────────────────────────
-  const [slotOwnerTimezone, setSlotOwnerTimezone] = useState(
-    Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
-  );
+  const [slotOwnerTimezone, setSlotOwnerTimezone] = useState('Asia/Ho_Chi_Minh');
   const [slotDate, setSlotDate] = useState('');
   const [slotRanges, setSlotRanges] = useState([{ startTime: '', endTime: '', note: '' }]);
   const [slotNote, setSlotNote] = useState('');
@@ -130,6 +144,40 @@ const AdminOrders = () => {
     }
   }, []);
 
+  // ── Games fetch ─────────────────────────────────────────────────────────────
+  const fetchGames = useCallback(async () => {
+    setGamesLoading(true);
+    try {
+      const res = await axios.get('/api/shop/owner/games');
+      setGames(Array.isArray(res.data) ? res.data : []);
+    } catch {
+      setGames([]);
+    } finally {
+      setGamesLoading(false);
+    }
+  }, []);
+
+  // ── Homepage config fetch ──────────────────────────────────────────────────
+  const fetchHomepageConfig = useCallback(async () => {
+    setConfigLoading(true);
+    try {
+      const [configRes, productsRes] = await Promise.all([
+        axios.get('/api/shop/config'),
+        axios.get('/api/shop/owner/products')
+      ]);
+      setHomepageConfig({
+        banners: Array.isArray(configRes.data?.banners) ? configRes.data.banners : [],
+        bestSellerIds: Array.isArray(configRes.data?.bestSellerIds) ? configRes.data.bestSellerIds : []
+      });
+      setBestSellerOptions(Array.isArray(productsRes.data?.products) ? productsRes.data.products : []);
+    } catch {
+      setHomepageConfig({ banners: [], bestSellerIds: [] });
+      setBestSellerOptions([]);
+    } finally {
+      setConfigLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!localUser?.discordId) {
       setIsOwner(false);
@@ -147,17 +195,28 @@ const AdminOrders = () => {
   }, [fetchData, isOwner]);
 
   useEffect(() => {
-    if (isOwner === true && activeTab === 'products') fetchProducts();
-  }, [isOwner, activeTab, fetchProducts]);
+    if (isOwner === true && activeTab === 'products') {
+      fetchProducts();
+      fetchGames();
+    }
+  }, [isOwner, activeTab, fetchProducts, fetchGames]);
 
   useEffect(() => {
     if (isOwner === true && activeTab === 'slots') fetchManagedSlots();
   }, [isOwner, activeTab, fetchManagedSlots]);
 
+  useEffect(() => {
+    if (isOwner === true && activeTab === 'games') fetchGames();
+  }, [isOwner, activeTab, fetchGames]);
+
+  useEffect(() => {
+    if (isOwner === true && activeTab === 'homepage') fetchHomepageConfig();
+  }, [isOwner, activeTab, fetchHomepageConfig]);
+
   // ── Products helpers ───────────────────────────────────────────────────────
   const openAddProduct = () => {
     setEditingProduct(null);
-    setProductForm({ name: '', price: '', originalPriceString: '', bulkPrice: '', bulkPriceString: '', image: '', desc: '', category: 'Chest' });
+    setProductForm({ name: '', price: '', originalPriceString: '', bulkPrice: '', bulkPriceString: '', image: '', desc: '', category: 'Chest', gameId: '' });
     setProductFormErrors({});
     setImagePickerOpen(false);
     setProductFormOpen(true);
@@ -173,7 +232,8 @@ const AdminOrders = () => {
       bulkPriceString: product.bulkPriceString || '',
       image: product.image || '',
       desc: product.desc || '',
-      category: product.category || 'Chest'
+      category: product.category || 'Chest',
+      gameId: product.gameId || ''
     });
     setProductFormErrors({});
     setImagePickerOpen(false);
@@ -230,7 +290,8 @@ const AdminOrders = () => {
         bulkPriceString: productForm.bulkPriceString.trim(),
         image: productForm.image,
         desc: productForm.desc.trim(),
-        category: productForm.category
+        category: productForm.category,
+        gameId: productForm.gameId || null
       };
       if (editingProduct) {
         await axios.put(`/api/shop/owner/products/${editingProduct._id}`, payload);
@@ -369,7 +430,7 @@ const AdminOrders = () => {
 
         {/* ── Tabs ──────────────────────────────────────────────────────── */}
         <div className="flex gap-1 border-b border-[var(--color-border)]">
-          {['orders', 'slots', 'products'].map((tab) => (
+          {['orders', 'slots', 'products', 'games', 'homepage'].map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -379,7 +440,7 @@ const AdminOrders = () => {
                   : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'
               }`}
             >
-              {tab === 'orders' ? 'Orders & Wallet' : tab === 'slots' ? 'Delivery Slots' : 'Products'}
+              {tab === 'orders' ? 'Orders & Wallet' : tab === 'slots' ? 'Delivery Slots' : tab === 'products' ? 'Products' : tab === 'games' ? 'Games' : 'Homepage'}
             </button>
           ))}
         </div>
@@ -538,12 +599,25 @@ const AdminOrders = () => {
               <div className="grid md:grid-cols-2 gap-3 mb-3">
                 <div>
                   <label className="block text-[var(--color-text-secondary)] text-xs uppercase font-gothic mb-1">Owner Timezone</label>
-                  <input
-                    value={slotOwnerTimezone}
-                    onChange={(e) => setSlotOwnerTimezone(e.target.value)}
-                    placeholder="e.g. Asia/Ho_Chi_Minh"
-                    className="w-full bg-[var(--color-bg-main)] border border-[var(--color-border)] rounded-[8px] px-3 py-2 text-sm text-[var(--color-text-primary)]"
-                  />
+                  <div className="flex gap-2">
+                    <select
+                      value={slotOwnerTimezone}
+                      onChange={(e) => setSlotOwnerTimezone(e.target.value)}
+                      className="flex-1 bg-[var(--color-bg-main)] border border-[var(--color-border)] rounded-[8px] px-3 py-2 text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)] cursor-pointer"
+                    >
+                      {COUNTRY_TIMEZONES.map((tz) => (
+                        <option key={tz.code} value={tz.zone} className="bg-[var(--color-bg-secondary)] text-[var(--color-text-primary)]">
+                          {tz.flag} {tz.country} ({tz.zone})
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      value={slotOwnerTimezone}
+                      onChange={(e) => setSlotOwnerTimezone(e.target.value)}
+                      placeholder="Custom IANA zone"
+                      className="w-40 bg-[var(--color-bg-main)] border border-[var(--color-border)] rounded-[8px] px-3 py-2 text-sm text-[var(--color-text-primary)]"
+                    />
+                  </div>
                 </div>
                 <div>
                   <label className="block text-[var(--color-text-secondary)] text-xs uppercase font-gothic mb-1">Date</label>
@@ -740,6 +814,15 @@ const AdminOrders = () => {
                       </select>
                     </div>
                     <div>
+                      <label className="block text-[var(--color-text-secondary)] text-xs uppercase font-gothic mb-1">Game</label>
+                      <select value={productForm.gameId || ''} onChange={(e) => setProductField('gameId', e.target.value)}
+                        className="w-full bg-[var(--color-bg-main)] border border-[var(--color-border)] rounded-[8px] px-3 py-2 text-sm text-[var(--color-text-primary)]"
+                      >
+                        <option value="">— No Game —</option>
+                        {games.map((g) => <option key={g._id} value={g._id}>{g.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
                       <label className="block text-[var(--color-text-secondary)] text-xs uppercase font-gothic mb-1">Description</label>
                       <textarea value={productForm.desc} onChange={(e) => setProductField('desc', e.target.value)}
                         rows={3} placeholder="Optional description"
@@ -883,6 +966,300 @@ const AdminOrders = () => {
                     ))}
                   </tbody>
                 </table>
+              )}
+            </section>
+          </>
+        )}
+
+        {/* ══════════════════════════════════════════════════════════════════ */}
+        {/* GAMES TAB                                                         */}
+        {/* ══════════════════════════════════════════════════════════════════ */}
+        {activeTab === 'games' && (
+          <>
+            {/* Game form panel */}
+            {(gameFormOpen || editingGame) && (
+              <section className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-[8px] p-4 mb-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-gothic text-[var(--color-text-primary)]">
+                    {editingGame ? 'Edit Game' : 'Add Game'}
+                  </h2>
+                  <button
+                    onClick={() => { setGameFormOpen(false); setEditingGame(null); setGameForm({ name: '', slug: '', image: '', active: true }); setGameFormErrors({}); }}
+                    className="text-[var(--color-text-secondary)] hover:text-[var(--color-error)] text-sm"
+                  >
+                    Cancel
+                  </button>
+                </div>
+                <div className="grid md:grid-cols-2 gap-3 mb-3">
+                  <div>
+                    <label className="block text-[var(--color-text-secondary)] text-xs uppercase font-gothic mb-1">
+                      Name * {gameFormErrors.name && <span className="text-[var(--color-error)]">— {gameFormErrors.name}</span>}
+                    </label>
+                    <input
+                      value={gameForm.name}
+                      onChange={(e) => setGameForm((f) => ({ ...f, name: e.target.value }))}
+                      placeholder="e.g. Genshin Impact"
+                      className="w-full bg-[var(--color-bg-main)] border border-[var(--color-border)] rounded-[8px] px-3 py-2 text-sm text-[var(--color-text-primary)]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[var(--color-text-secondary)] text-xs uppercase font-gothic mb-1">
+                      Slug * {gameFormErrors.slug && <span className="text-[var(--color-error)]">— {gameFormErrors.slug}</span>}
+                    </label>
+                    <input
+                      value={gameForm.slug}
+                      onChange={(e) => setGameForm((f) => ({ ...f, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-') }))}
+                      placeholder="e.g. genshin-impact"
+                      className="w-full bg-[var(--color-bg-main)] border border-[var(--color-border)] rounded-[8px] px-3 py-2 text-sm text-[var(--color-text-primary)]"
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-3 items-center mb-3">
+                  <label className="flex items-center gap-2 text-sm text-[var(--color-text-primary)] cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={gameForm.active}
+                      onChange={(e) => setGameForm((f) => ({ ...f, active: e.target.checked }))}
+                      className="w-4 h-4 accent-[var(--color-accent)]"
+                    />
+                    Active (visible on shop)
+                  </label>
+                </div>
+                <button
+                  onClick={async () => {
+                    const errors = {};
+                    if (!gameForm.name.trim()) errors.name = 'Required';
+                    if (!gameForm.slug.trim()) errors.slug = 'Required';
+                    if (Object.keys(errors).length > 0) { setGameFormErrors(errors); return; }
+                    setGameUploading(true);
+                    try {
+                      if (editingGame) {
+                        await axios.put(`/api/shop/owner/games/${editingGame._id}`, gameForm);
+                      } else {
+                        await axios.post('/api/shop/owner/games', gameForm);
+                      }
+                      fetchGames();
+                      setGameFormOpen(false);
+                      setEditingGame(null);
+                      setGameForm({ name: '', slug: '', image: '', active: true });
+                    } catch (err) {
+                      alert(err.response?.data?.error || 'Save failed.');
+                    } finally {
+                      setGameUploading(false);
+                    }
+                  }}
+                  disabled={gameUploading}
+                  className="btn-press bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white px-4 py-2 rounded-[8px] text-sm font-gothic disabled:opacity-50"
+                >
+                  {gameUploading ? 'Saving...' : (editingGame ? 'Update Game' : 'Add Game')}
+                </button>
+              </section>
+            )}
+
+            {/* Add game button */}
+            {!gameFormOpen && !editingGame && (
+              <button
+                onClick={() => setGameFormOpen(true)}
+                className="btn-press mb-4 px-4 py-2 rounded-[8px] bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white text-sm font-gothic"
+              >
+                + Add Game
+              </button>
+            )}
+
+            {/* Games list */}
+            <section className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-[8px] overflow-x-auto">
+              <div className="p-4 border-b border-[var(--color-border)]">
+                <h2 className="text-xl font-gothic text-[var(--color-text-primary)]">Games ({games.length})</h2>
+              </div>
+              {gamesLoading ? (
+                <p className="p-4 text-[var(--color-text-secondary)] text-sm">Loading...</p>
+              ) : games.length === 0 ? (
+                <p className="p-4 text-[var(--color-text-secondary)] text-sm">No games yet. Add one above.</p>
+              ) : (
+                <table className="w-full min-w-[500px] text-left text-sm">
+                  <thead className="bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)]">
+                    <tr>
+                      <th className="p-3">Name</th>
+                      <th className="p-3">Slug</th>
+                      <th className="p-3">Status</th>
+                      <th className="p-3">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {games.map((game) => (
+                      <tr key={game._id} className="border-t border-[var(--color-border)]">
+                        <td className="p-3 font-gothic text-[var(--color-text-primary)]">{game.name}</td>
+                        <td className="p-3 text-[var(--color-text-secondary)] font-mono text-xs">{game.slug}</td>
+                        <td className="p-3">
+                          <span className={`px-2 py-0.5 rounded-full text-xs ${game.active ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                            {game.active ? 'Active' : 'Inactive'}
+                          </span>
+                        </td>
+                        <td className="p-3">
+                          <button
+                            onClick={() => {
+                              setEditingGame(game);
+                              setGameForm({ name: game.name, slug: game.slug, image: game.image || '', active: game.active });
+                              setGameFormOpen(true);
+                            }}
+                            className="btn-press px-2 py-1 rounded-[8px] border border-[var(--color-border)] text-xs text-[var(--color-text-primary)] mr-2"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={async () => {
+                              if (!window.confirm(`Delete game "${game.name}"?`)) return;
+                              try {
+                                await axios.delete(`/api/shop/owner/games/${game._id}`);
+                                fetchGames();
+                              } catch (err) {
+                                alert(err.response?.data?.error || 'Delete failed.');
+                              }
+                            }}
+                            className="btn-press px-2 py-1 rounded-[8px] border border-[var(--color-error)] text-xs text-[var(--color-error)]"
+                          >
+                            Delete
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </section>
+          </>
+        )}
+
+        {/* ══════════════════════════════════════════════════════════════════ */}
+        {/* HOMEPAGE CONFIG TAB                                               */}
+        {/* ══════════════════════════════════════════════════════════════════ */}
+        {activeTab === 'homepage' && (
+          <>
+            {/* Banner management */}
+            <section className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-[8px] p-4 mb-4">
+              <h2 className="text-xl font-gothic text-[var(--color-text-primary)] mb-4">Homepage Banners</h2>
+              {configLoading ? (
+                <p className="text-[var(--color-text-secondary)] text-sm">Loading...</p>
+              ) : (
+                <>
+                  {/* Banner preview grid */}
+                  {homepageConfig.banners.length > 0 && (
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
+                      {homepageConfig.banners.map((banner, idx) => (
+                        <div key={idx} className="relative group rounded-[8px] overflow-hidden border border-[var(--color-border)]">
+                          <img
+                            src={`/api/banners/${encodeURIComponent(banner)}`}
+                            alt={`Banner ${idx + 1}`}
+                            className="w-full h-24 object-cover"
+                            onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                          />
+                          <button
+                            onClick={async () => {
+                              try {
+                                const res = await axios.delete(`/api/shop/owner/config/banners/${encodeURIComponent(banner)}`);
+                                setHomepageConfig((c) => ({ ...c, banners: res.data?.banners || [] }));
+                              } catch (err) {
+                                alert(err.response?.data?.error || 'Delete failed.');
+                              }
+                            }}
+                            className="absolute top-1 right-1 w-6 h-6 rounded-full bg-red-600 text-white text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {homepageConfig.banners.length === 0 && (
+                    <p className="text-[var(--color-text-secondary)] text-sm mb-4">No banners uploaded yet.</p>
+                  )}
+                  {/* Upload new banner */}
+                  <label className="btn-press inline-block cursor-pointer">
+                    <span className="px-4 py-2 rounded-[8px] border border-[var(--color-border)] bg-[var(--color-bg-main)] text-sm text-[var(--color-text-primary)]">
+                      {bannerUploading ? 'Uploading...' : '+ Upload Banner'}
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      disabled={bannerUploading}
+                      onChange={async (e) => {
+                        const file = e.target.files[0];
+                        if (!file) return;
+                        setBannerUploading(true);
+                        try {
+                          const formData = new FormData();
+                          formData.append('banner', file);
+                          const res = await axios.post('/api/shop/owner/config/banners/upload', formData, {
+                            headers: { 'Content-Type': 'multipart/form-data' }
+                          });
+                          setHomepageConfig((c) => ({ ...c, banners: res.data?.banners || [] }));
+                        } catch (err) {
+                          alert(err.response?.data?.error || 'Upload failed.');
+                        } finally {
+                          setBannerUploading(false);
+                          e.target.value = '';
+                        }
+                      }}
+                    />
+                  </label>
+                </>
+              )}
+            </section>
+
+            {/* Best sellers management */}
+            <section className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-[8px] p-4">
+              <h2 className="text-xl font-gothic text-[var(--color-text-primary)] mb-2">Best Sellers</h2>
+              <p className="text-sm text-[var(--color-text-secondary)] mb-4">Select products to show in the Best Sellers carousel on the homepage.</p>
+              {configLoading ? (
+                <p className="text-[var(--color-text-secondary)] text-sm">Loading...</p>
+              ) : (
+                <div className="max-h-80 overflow-y-auto border border-[var(--color-border)] rounded-[8px]">
+                  {bestSellerOptions.map((product) => {
+                    const isSelected = homepageConfig.bestSellerIds.some((id) => String(id) === String(product._id));
+                    return (
+                      <div
+                        key={product._id}
+                        onClick={async () => {
+                          let next;
+                          if (isSelected) {
+                            next = homepageConfig.bestSellerIds.filter((id) => String(id) !== String(product._id));
+                          } else {
+                            next = [...homepageConfig.bestSellerIds, product._id];
+                          }
+                          try {
+                            const res = await axios.put('/api/shop/owner/config/best-sellers', { bestSellerIds: next });
+                            setHomepageConfig((c) => ({ ...c, bestSellerIds: res.data?.bestSellerIds || [] }));
+                          } catch (err) {
+                            alert(err.response?.data?.error || 'Update failed.');
+                          }
+                        }}
+                        className={`flex items-center gap-3 p-3 cursor-pointer border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-bg-elevated)] transition-colors ${
+                          isSelected ? 'bg-[var(--color-accent)]/10' : ''
+                        }`}
+                      >
+                        <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 ${
+                          isSelected ? 'border-[var(--color-accent)] bg-[var(--color-accent)]' : 'border-[var(--color-border)]'
+                        }`}>
+                          {isSelected && <span className="text-white text-xs">✓</span>}
+                        </div>
+                        <img
+                          src={getProductImageUrl(product.image || '')}
+                          alt={product.name}
+                          className="w-8 h-8 object-contain rounded bg-[var(--color-bg-main)] shrink-0"
+                          onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-gothic text-[var(--color-text-primary)] truncate">{product.name}</p>
+                          <p className="text-xs text-[var(--color-text-secondary)]">{product.category} — ${product.price}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {bestSellerOptions.length === 0 && (
+                    <p className="p-3 text-[var(--color-text-secondary)] text-sm">No products available. Add products in the Products tab first.</p>
+                  )}
+                </div>
               )}
             </section>
           </>

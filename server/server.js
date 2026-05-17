@@ -114,6 +114,11 @@ app.use('/products', express.static(PRODUCT_IMAGE_DIR));
 // Also keep /api/product-images for backward compatibility
 app.use('/api/product-images', express.static(PRODUCT_IMAGE_DIR));
 
+// Banner image static serve
+const BANNER_DIR = path.resolve(process.env.BANNER_IMAGE_DIR || './uploads/banners');
+try { fs.mkdirSync(BANNER_DIR, { recursive: true }); } catch (_) {}
+app.use('/api/banners', express.static(BANNER_DIR));
+
 app.get('/', (req, res) => res.status(200).json({ status: 'ok', service: 'gaming-shop' }));
 
 app.use((err, req, res, next) => {

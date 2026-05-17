@@ -11,6 +11,8 @@ const Proof = require('../models/Proof');
 const ProofImage = require('../models/ProofImage');
 const WalletTransaction = require('../models/WalletTransaction');
 const DeliverySlot = require('../models/DeliverySlot');
+const Game = require('../models/Game');
+const ShopConfig = require('../models/ShopConfig');
 const {
     createOrderTicket,
     createWalletDeliveryTicket,
@@ -2405,6 +2407,33 @@ const buildConfirmCouponCode = (orderId) => {
     return normalizeCouponCode(`NOS5-${String(orderId || '').replace(/[^a-zA-Z0-9]/g, '').slice(-6)}-${suffix}`);
 };
 
+/**
+ * Parse a local date+time string as a UTC Date using a named IANA timezone.
+ * The `dateStr` is in YYYY-MM-DD format; `timeStr` is HH:MM (24-hour).
+ * Returns a Date representing that local moment in time (UTC milliseconds).
+ */
+const parseLocalDateTimeInZone = (dateStr, timeStr, timezone) => {
+    try {
+        const [year, month, day] = dateStr.split('-').map(Number);
+        const [hour, minute] = timeStr.split(':').map(Number);
+        const localDate = new Date(year, month - 1, day, hour, minute, 0, 0);
+
+        // Get the offset by formatting a reference moment in both UTC and target timezone
+        const ref = new Date(Date.UTC(localDate.getUTCFullYear(), localDate.getUTCMonth(), localDate.getUTCDate(), 12, 0, 0));
+        const utcStr = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', hour: '2-digit', minute: '2-digit', hour12: false })
+            .format(ref);
+        const tzStr = new Intl.DateTimeFormat('en-US', { timeZone: timezone, hour: '2-digit', minute: '2-digit', hour12: false })
+            .format(ref);
+        const utcMinutes = Number(utcStr.split(':')[0]) * 60 + Number(utcStr.split(':')[1]);
+        const tzMinutes = Number(tzStr.split(':')[0]) * 60 + Number(tzStr.split(':')[1]);
+        const offsetMinutes = tzMinutes - utcMinutes;
+
+        return new Date(localDate.getTime() - offsetMinutes * 60 * 1000);
+    } catch {
+        return new Date(`${dateStr}T${timeStr}`);
+    }
+};
+
 router.get('/roblox/search', async (req, res) => {
     try {
         const username = String(req.query?.username || '').trim();
@@ -3200,7 +3229,7 @@ router.post('/owner/products', authRequired, async (req, res) => {
         const isOwner = await canAccessOwnerEndpoints(discordId);
         if (!isOwner) return res.status(403).json({ error: 'Forbidden' });
 
-        const { name, price, originalPriceString, bulkPrice, bulkPriceString, image, desc, category } = req.body || {};
+        const { name, price, originalPriceString, bulkPrice, bulkPriceString, image, desc, category, gameId } = req.body || {};
         if (!name || !String(name).trim()) return res.status(400).json({ error: 'Product name is required.' });
         if (price === undefined || price === null || Number(price) <= 0) return res.status(400).json({ error: 'Valid price is required.' });
         if (!category || !String(category).trim()) return res.status(400).json({ error: 'Category is required.' });
@@ -3214,7 +3243,8 @@ router.post('/owner/products', authRequired, async (req, res) => {
             bulkPriceString: String(bulkPriceString || '').trim(),
             image: String(image).trim(),
             desc: String(desc || '').trim(),
-            category: String(category).trim()
+            category: String(category).trim(),
+            gameId: gameId ? new (require('mongoose').Types.ObjectId)(String(gameId)) : null
         });
         return res.json({ product });
     } catch (error) {
@@ -3236,7 +3266,7 @@ router.put('/owner/products/:id', authRequired, async (req, res) => {
         const product = await Product.findById(id);
         if (!product) return res.status(404).json({ error: 'Product not found.' });
 
-        const { name, price, originalPriceString, bulkPrice, bulkPriceString, image, desc, category } = req.body || {};
+        const { name, price, originalPriceString, bulkPrice, bulkPriceString, image, desc, category, gameId } = req.body || {};
         if (name !== undefined) product.name = String(name).trim();
         if (price !== undefined) {
             if (Number(price) <= 0) return res.status(400).json({ error: 'Price must be greater than 0.' });
@@ -3248,6 +3278,9 @@ router.put('/owner/products/:id', authRequired, async (req, res) => {
         if (image !== undefined) product.image = String(image).trim();
         if (desc !== undefined) product.desc = String(desc || '').trim();
         if (category !== undefined) product.category = String(category).trim();
+        if (gameId !== undefined) {
+            product.gameId = gameId ? new (require('mongoose').Types.ObjectId)(String(gameId)) : null;
+        }
 
         await product.save();
         return res.json({ product });
@@ -3290,23 +3323,24 @@ router.post('/delivery-slots/bulk', authRequired, async (req, res) => {
         }
 
         const dateStr = String(date).trim();
+        const tz = String(ownerTimezone).trim();
         const created = [];
         for (const range of ranges) {
             const { startTime, endTime, note } = range || {};
             if (!startTime || !endTime) continue;
 
-            const startAt = new Date(`${dateStr}T${startTime}`);
-            const endAt = new Date(`${dateStr}T${endTime}`);
+            const startAt = parseLocalDateTimeInZone(dateStr, startTime, tz);
+            const endAt = parseLocalDateTimeInZone(dateStr, endTime, tz);
             if (!Number.isFinite(startAt.getTime()) || !Number.isFinite(endAt.getTime()) || endAt <= startAt) continue;
 
             const slot = await DeliverySlot.create({
                 ownerDiscordId,
-                ownerTimezone: String(ownerTimezone).trim(),
+                ownerTimezone: tz,
                 startAt,
                 endAt,
                 note: String(note || '').trim().slice(0, 500)
             });
-            created.push(toDeliverySlotPayload(slot, ownerTimezone));
+            created.push(toDeliverySlotPayload(slot, tz));
         }
 
         return res.json({ slots: created });
@@ -3385,3 +3419,238 @@ router.delete('/delivery-slots/:id', authRequired, async (req, res) => {
 });
 
 module.exports = router;
+
+// ─── BANNER IMAGE CONFIG ───────────────────────────────────────────────────────
+const BANNER_DIR = path.resolve(process.env.BANNER_IMAGE_DIR || './uploads/banners');
+try { fs.mkdirSync(BANNER_DIR, { recursive: true }); } catch (_) {}
+const bannerStorage = multer.diskStorage({
+    destination: (req, file, cb) => cb(null, BANNER_DIR),
+    filename: (req, file, cb) => {
+        const ext = path.extname(file.originalname).toLowerCase();
+        const base = path.basename(file.originalname, ext).replace(/[^a-zA-Z0-9_\-]/g, '_');
+        cb(null, `${base}_${Date.now()}${ext}`);
+    }
+});
+const bannerUpload = multer({
+    storage: bannerStorage,
+    fileFilter: (req, file, cb) => {
+        const ext = path.extname(file.originalname).toLowerCase();
+        if (['.png', '.jpg', '.jpeg', '.webp', '.gif'].includes(ext)) cb(null, true);
+        else cb(new Error('Only image files are allowed.'), false);
+    },
+    limits: { fileSize: 5 * 1024 * 1024 }
+});
+
+// ─── MASKED USERNAME HELPER ────────────────────────────────────────────────────
+const maskUsername = (username) => {
+    const raw = String(username || '').trim();
+    if (!raw || raw.length <= 2) return raw + '***';
+    return raw[0] + '*'.repeat(Math.min(raw.length - 1, 4));
+};
+
+// ─── PUBLIC SHOP ENDPOINTS ────────────────────────────────────────────────────
+
+// GET /api/shop/games — list active games
+router.get('/games', async (req, res) => {
+    try {
+        const games = await Game.find({ active: true }).sort({ name: 1 }).lean();
+        return res.json(games);
+    } catch (error) {
+        console.error('List games error:', error);
+        return res.status(500).json({ error: 'Could not list games.' });
+    }
+});
+
+// GET /api/shop/config — banners + best sellers
+router.get('/config', async (req, res) => {
+    try {
+        const config = await ShopConfig.getConfig();
+        return res.json({
+            banners: Array.isArray(config.banners) ? config.banners : [],
+            bestSellerIds: Array.isArray(config.bestSellerIds) ? config.bestSellerIds : [],
+            featuredProductIds: Array.isArray(config.featuredProductIds) ? config.featuredProductIds : []
+        });
+    } catch (error) {
+        console.error('Shop config error:', error);
+        return res.status(500).json({ error: 'Could not load shop config.' });
+    }
+});
+
+// GET /api/shop/recent-purchases — public feed of confirmed orders (masked usernames)
+router.get('/recent-purchases', async (req, res) => {
+    try {
+        const limit = Math.min(Number(req.query?.limit) || 20, 50);
+        const orders = await Order.find({ confirmedAt: { $ne: null } })
+            .sort({ confirmedAt: -1 }).limit(limit).lean();
+        return res.json(orders.map((o) => ({
+            username: maskUsername(o.discordUsername || o.discordId || ''),
+            productName: Array.isArray(o.items) && o.items[0]?.name ? o.items[0].name : 'Item'
+        })));
+    } catch (error) {
+        console.error('Recent purchases error:', error);
+        return res.status(500).json({ error: 'Could not load recent purchases.' });
+    }
+});
+
+// ─── ADMIN SHOP ENDPOINTS ──────────────────────────────────────────────────────
+
+// GET /api/shop/owner/games
+router.get('/owner/games', authRequired, async (req, res) => {
+    try {
+        const discordId = String(req.user?.discordId || '').trim();
+        if (!discordId) return res.status(401).json({ error: 'Authentication required' });
+        const isOwner = await canAccessOwnerEndpoints(discordId);
+        if (!isOwner) return res.status(403).json({ error: 'Forbidden' });
+        const games = await Game.find({}).sort({ name: 1 }).lean();
+        return res.json(games);
+    } catch (error) {
+        console.error('Owner list games error:', error);
+        return res.status(500).json({ error: 'Could not list games.' });
+    }
+});
+
+// POST /api/shop/owner/games
+router.post('/owner/games', authRequired, async (req, res) => {
+    try {
+        const discordId = String(req.user?.discordId || '').trim();
+        if (!discordId) return res.status(401).json({ error: 'Authentication required' });
+        const isOwner = await canAccessOwnerEndpoints(discordId);
+        if (!isOwner) return res.status(403).json({ error: 'Forbidden' });
+        const { name, slug, image, active } = req.body || {};
+        if (!name || !String(name).trim()) return res.status(400).json({ error: 'Game name is required.' });
+        if (!slug || !String(slug).trim()) return res.status(400).json({ error: 'Game slug is required.' });
+        const game = await Game.create({
+            name: String(name).trim(),
+            slug: String(slug).trim().toLowerCase().replace(/[^a-z0-9-]/g, '-'),
+            image: String(image || '').trim(),
+            active: Boolean(active)
+        });
+        return res.json(game);
+    } catch (error) {
+        if (error?.code === 11000) return res.status(409).json({ error: 'Game name or slug already exists.' });
+        console.error('Create game error:', error);
+        return res.status(500).json({ error: 'Could not create game.' });
+    }
+});
+
+// PUT /api/shop/owner/games/:id
+router.put('/owner/games/:id', authRequired, async (req, res) => {
+    try {
+        const discordId = String(req.user?.discordId || '').trim();
+        if (!discordId) return res.status(401).json({ error: 'Authentication required' });
+        const isOwner = await canAccessOwnerEndpoints(discordId);
+        if (!isOwner) return res.status(403).json({ error: 'Forbidden' });
+        const { id } = req.params;
+        if (!OBJECT_ID_PATTERN.test(id)) return res.status(400).json({ error: 'Invalid game ID.' });
+        const { name, slug, image, active } = req.body || {};
+        const game = await Game.findByIdAndUpdate(id, {
+            ...(name !== undefined && { name: String(name).trim() }),
+            ...(slug !== undefined && { slug: String(slug).trim().toLowerCase().replace(/[^a-z0-9-]/g, '-') }),
+            ...(image !== undefined && { image: String(image || '').trim() }),
+            ...(active !== undefined && { active: Boolean(active) })
+        }, { new: true, runValidators: true });
+        if (!game) return res.status(404).json({ error: 'Game not found.' });
+        return res.json(game);
+    } catch (error) {
+        if (error?.code === 11000) return res.status(409).json({ error: 'Game name or slug already exists.' });
+        console.error('Update game error:', error);
+        return res.status(500).json({ error: 'Could not update game.' });
+    }
+});
+
+// DELETE /api/shop/owner/games/:id
+router.delete('/owner/games/:id', authRequired, async (req, res) => {
+    try {
+        const discordId = String(req.user?.discordId || '').trim();
+        if (!discordId) return res.status(401).json({ error: 'Authentication required' });
+        const isOwner = await canAccessOwnerEndpoints(discordId);
+        if (!isOwner) return res.status(403).json({ error: 'Forbidden' });
+        const { id } = req.params;
+        if (!OBJECT_ID_PATTERN.test(id)) return res.status(400).json({ error: 'Invalid game ID.' });
+        await Game.findByIdAndDelete(id);
+        return res.json({ success: true });
+    } catch (error) {
+        console.error('Delete game error:', error);
+        return res.status(500).json({ error: 'Could not delete game.' });
+    }
+});
+
+// POST /api/shop/owner/config/banners/upload
+router.post('/owner/config/banners/upload', authRequired, bannerUpload.single('banner'), async (req, res) => {
+    try {
+        const discordId = String(req.user?.discordId || '').trim();
+        if (!discordId) return res.status(401).json({ error: 'Authentication required' });
+        const isOwner = await canAccessOwnerEndpoints(discordId);
+        if (!isOwner) return res.status(403).json({ error: 'Forbidden' });
+        if (!req.file) return res.status(400).json({ error: 'No banner file uploaded.' });
+        const config = await ShopConfig.getConfig();
+        config.banners.push(req.file.filename);
+        await config.save();
+        return res.json({ filename: req.file.filename, banners: config.banners });
+    } catch (error) {
+        console.error('Upload banner error:', error);
+        return res.status(500).json({ error: 'Could not upload banner.' });
+    }
+});
+
+// DELETE /api/shop/owner/config/banners/:filename
+router.delete('/owner/config/banners/:filename', authRequired, async (req, res) => {
+    try {
+        const discordId = String(req.user?.discordId || '').trim();
+        if (!discordId) return res.status(401).json({ error: 'Authentication required' });
+        const isOwner = await canAccessOwnerEndpoints(discordId);
+        if (!isOwner) return res.status(403).json({ error: 'Forbidden' });
+        const { filename } = req.params;
+        const config = await ShopConfig.getConfig();
+        config.banners = config.banners.filter((f) => f !== filename);
+        await config.save();
+        // Try to delete the file
+        try { fs.unlinkSync(path.join(BANNER_DIR, filename)); } catch (_) {}
+        return res.json({ success: true, banners: config.banners });
+    } catch (error) {
+        console.error('Delete banner error:', error);
+        return res.status(500).json({ error: 'Could not delete banner.' });
+    }
+});
+
+// PUT /api/shop/owner/config/best-sellers
+router.put('/owner/config/best-sellers', authRequired, async (req, res) => {
+    try {
+        const discordId = String(req.user?.discordId || '').trim();
+        if (!discordId) return res.status(401).json({ error: 'Authentication required' });
+        const isOwner = await canAccessOwnerEndpoints(discordId);
+        if (!isOwner) return res.status(403).json({ error: 'Forbidden' });
+        const { bestSellerIds } = req.body || {};
+        if (!Array.isArray(bestSellerIds)) return res.status(400).json({ error: 'bestSellerIds must be an array.' });
+        const config = await ShopConfig.getConfig();
+        config.bestSellerIds = bestSellerIds
+            .filter((id) => OBJECT_ID_PATTERN.test(String(id)))
+            .map((id) => new (require('mongoose').Types.ObjectId)(String(id)));
+        await config.save();
+        return res.json({ success: true, bestSellerIds: config.bestSellerIds });
+    } catch (error) {
+        console.error('Update best sellers error:', error);
+        return res.status(500).json({ error: 'Could not update best sellers.' });
+    }
+});
+
+// PUT /api/shop/owner/config/featured
+router.put('/owner/config/featured', authRequired, async (req, res) => {
+    try {
+        const discordId = String(req.user?.discordId || '').trim();
+        if (!discordId) return res.status(401).json({ error: 'Authentication required' });
+        const isOwner = await canAccessOwnerEndpoints(discordId);
+        if (!isOwner) return res.status(403).json({ error: 'Forbidden' });
+        const { featuredProductIds } = req.body || {};
+        if (!Array.isArray(featuredProductIds)) return res.status(400).json({ error: 'featuredProductIds must be an array.' });
+        const config = await ShopConfig.getConfig();
+        config.featuredProductIds = featuredProductIds
+            .filter((id) => OBJECT_ID_PATTERN.test(String(id)))
+            .map((id) => new (require('mongoose').Types.ObjectId)(String(id)));
+        await config.save();
+        return res.json({ success: true, featuredProductIds: config.featuredProductIds });
+    } catch (error) {
+        console.error('Update featured products error:', error);
+        return res.status(500).json({ error: 'Could not update featured products.' });
+    }
+});

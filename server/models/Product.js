@@ -8,7 +8,8 @@ const productSchema = new mongoose.Schema({
     bulkPriceString: { type: String, default: '' },
     image: { type: String, required: true },
     desc: { type: String },
-    category: { type: String, required: true }
+    category: { type: String, required: true },
+    gameId: { type: mongoose.Schema.Types.ObjectId, ref: 'Game', default: null }
 });
 
 module.exports = mongoose.model('Product', productSchema);

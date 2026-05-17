@@ -199,6 +199,15 @@ body {
   letter-spacing: 0.02em;
 }
 
+.ticker-track {
+  animation: ticker-scroll 40s linear infinite;
+}
+
+@keyframes ticker-scroll {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
 .btn-press {
   transition: transform 0.14s ease, filter 0.2s ease, box-shadow 0.2s ease;
 }
