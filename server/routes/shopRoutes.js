@@ -47,6 +47,7 @@ const {
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const { uploadToImgbb } = require('../utils/imgbbService');
 
 const PRODUCT_IMAGE_DIR = path.resolve(process.env.PRODUCT_IMAGE_DIR || './uploads/product-images');
 try { fs.mkdirSync(PRODUCT_IMAGE_DIR, { recursive: true }); } catch (_) {}
@@ -3195,7 +3196,12 @@ router.post('/owner/product-images/upload', authRequired, uploadProductImage.sin
         if (!isOwner) return res.status(403).json({ error: 'Forbidden' });
 
         if (!req.file) return res.status(400).json({ error: 'No image file uploaded.' });
-        return res.json({ filename: req.file.filename });
+
+        // Upload to imgbb; fall back to local disk path if it fails
+        const imgbbUrl = await uploadToImgbb(req.file.buffer, req.file.originalname);
+        const imageUrl = imgbbUrl || `/products/${req.file.filename}`;
+
+        return res.json({ filename: imageUrl });
     } catch (error) {
         console.error('Upload product image error:', error);
         return res.status(500).json({ error: 'Could not upload product image.' });
@@ -3583,29 +3589,37 @@ router.post('/owner/config/banners/upload', authRequired, bannerUpload.single('b
         const isOwner = await canAccessOwnerEndpoints(discordId);
         if (!isOwner) return res.status(403).json({ error: 'Forbidden' });
         if (!req.file) return res.status(400).json({ error: 'No banner file uploaded.' });
+
+        // Upload to imgbb; fall back to local disk path if it fails
+        const imgbbUrl = await uploadToImgbb(req.file.buffer, req.file.originalname);
+        const bannerUrl = imgbbUrl || `/products/${req.file.filename}`;
+
         const config = await ShopConfig.getConfig();
-        config.banners.push(req.file.filename);
+        config.banners.push(bannerUrl);
         await config.save();
-        return res.json({ filename: req.file.filename, banners: config.banners });
+        return res.json({ filename: bannerUrl, banners: config.banners });
     } catch (error) {
         console.error('Upload banner error:', error);
         return res.status(500).json({ error: 'Could not upload banner.' });
     }
 });
 
-// DELETE /api/shop/owner/config/banners/:filename
-router.delete('/owner/config/banners/:filename', authRequired, async (req, res) => {
+// DELETE /api/shop/owner/config/banners — body: { bannerUrl }
+router.delete('/owner/config/banners', authRequired, async (req, res) => {
     try {
         const discordId = String(req.user?.discordId || '').trim();
         if (!discordId) return res.status(401).json({ error: 'Authentication required' });
         const isOwner = await canAccessOwnerEndpoints(discordId);
         if (!isOwner) return res.status(403).json({ error: 'Forbidden' });
-        const { filename } = req.params;
+        const { bannerUrl } = req.body || {};
+        if (!bannerUrl) return res.status(400).json({ error: 'bannerUrl is required.' });
         const config = await ShopConfig.getConfig();
-        config.banners = config.banners.filter((f) => f !== filename);
+        config.banners = config.banners.filter((f) => f !== bannerUrl);
         await config.save();
-        // Try to delete the file
-        try { fs.unlinkSync(path.join(BANNER_DIR, filename)); } catch (_) {}
+        // Try to delete local file only if it's a local path
+        if (!bannerUrl.startsWith('http')) {
+            try { fs.unlinkSync(path.join(BANNER_DIR, bannerUrl)); } catch (_) {}
+        }
         return res.json({ success: true, banners: config.banners });
     } catch (error) {
         console.error('Delete banner error:', error);

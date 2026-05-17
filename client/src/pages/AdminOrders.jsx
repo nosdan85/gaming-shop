@@ -1145,10 +1145,12 @@ const AdminOrders = () => {
                   {/* Banner preview grid */}
                   {homepageConfig.banners.length > 0 && (
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
-                      {homepageConfig.banners.map((banner, idx) => (
+                      {homepageConfig.banners.map((banner, idx) => {
+                        const bannerSrc = banner.startsWith('http') ? banner : `/api/banners/${encodeURIComponent(banner)}`;
+                        return (
                         <div key={idx} className="relative group rounded-[8px] overflow-hidden border border-[var(--color-border)]">
                           <img
-                            src={`/api/banners/${encodeURIComponent(banner)}`}
+                            src={bannerSrc}
                             alt={`Banner ${idx + 1}`}
                             className="w-full h-24 object-cover"
                             onError={(e) => { e.currentTarget.style.display = 'none'; }}
@@ -1156,7 +1158,7 @@ const AdminOrders = () => {
                           <button
                             onClick={async () => {
                               try {
-                                const res = await axios.delete(`/api/shop/owner/config/banners/${encodeURIComponent(banner)}`);
+                                const res = await axios.delete('/api/shop/owner/config/banners', { data: { bannerUrl: banner } });
                                 setHomepageConfig((c) => ({ ...c, banners: res.data?.banners || [] }));
                               } catch (err) {
                                 alert(err.response?.data?.error || 'Delete failed.');
@@ -1167,7 +1169,8 @@ const AdminOrders = () => {
                             ×
                           </button>
                         </div>
-                      ))}
+                      );
+                    })}
                     </div>
                   )}
                   {homepageConfig.banners.length === 0 && (
