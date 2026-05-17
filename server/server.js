@@ -5,8 +5,15 @@ const cors = require('cors');
 const { client } = require('./bot');
 const { getDiscordGatewayStatus } = require('./config/discordGateway');
 const { apiLimiter } = require('./middleware/rateLimit');
+const { log, createRequestLogger, createErrorLogger, logEnvCheck } = require('./utils/loggingService');
 
 const app = express();
+
+// Log environment check on startup
+logEnvCheck();
+
+// Apply request logger
+app.use(createRequestLogger());
 const normalizeEnvValue = (value) => {
     const text = String(value || '').trim();
     if (!text) return '';
@@ -125,7 +132,13 @@ app.use((err, req, res, next) => {
     if (err?.message === 'CORS_NOT_ALLOWED') {
         return res.status(403).json({ error: 'Origin is not allowed by CORS policy' });
     }
-    console.error('Unhandled server error:', err?.message || err);
+    log.error('Unhandled server error', {
+        requestId: req.requestId,
+        error: err?.message || err,
+        stack: err?.stack,
+        path: req.path,
+        method: req.method
+    });
     if (res.headersSent) {
         return next(err);
     }
@@ -136,47 +149,58 @@ app.use((err, req, res, next) => {
     });
 });
 
+// Apply error logger
+app.use(createErrorLogger());
+
 const normalizedBotToken = normalizeEnvValue(process.env.DISCORD_BOT_TOKEN);
 if (normalizedBotToken && shouldEnableBotGateway) {
-    client.login(normalizedBotToken).catch((err) => {
-        console.error('Bot login failed:', err.message);
+    log.info('[DISCORD] Bot attempting to login...');
+    client.login(normalizedBotToken).then(() => {
+        log.info('[DISCORD] Bot login successful');
+    }).catch((err) => {
+        log.error('[DISCORD] Bot login failed', { error: err.message });
     });
-    client.on('error', (err) => console.error('Bot error:', err.message));
+    client.on('error', (err) => log.error('[DISCORD] Bot error', { error: err.message }));
+    client.on('ready', () => log.info('[DISCORD] Bot is ready', { tag: client.user?.tag }));
 } else if (normalizedBotToken && !shouldEnableBotGateway) {
-    console.warn(
-        'Discord gateway login disabled (DISCORD_ENABLE_GATEWAY=false or serverless runtime). ' +
-        'Ticket message commands (!close) and auto-vouch from images will not run.'
-    );
+    log.warn('[DISCORD] Gateway login disabled (DISCORD_ENABLE_GATEWAY=false or serverless runtime)');
 } else {
-    console.warn('DISCORD_BOT_TOKEN missing - bot disabled');
+    log.warn('[DISCORD] DISCORD_BOT_TOKEN missing - bot disabled');
 }
 
 const PORT = process.env.PORT || 5000;
 const shouldStartHttpServer = !isVercelRuntime || forceHttpListen;
 const connectMongo = async () => {
     if (!process.env.MONGO_URI) {
-        console.error('MONGO_URI is not configured');
+        log.error('[MONGODB] MONGO_URI is not configured');
         return false;
     }
+    log.info('[MONGODB] Attempting to connect...', { uri: process.env.MONGO_URI.replace(/\/\/([^:]+):([^@]+)@/, '//[REDACTED]:[REDACTED]@') });
     try {
         await mongoose.connect(process.env.MONGO_URI);
-        console.log('MongoDB connected');
+        log.info('[MONGODB] Connected successfully');
         return true;
     } catch (err) {
-        console.error('MongoDB connection error:', err?.message || err);
+        log.error('[MONGODB] Connection failed', { error: err?.message || err });
         return false;
     }
 };
 
 const bootstrap = async () => {
+    log.info('[BOOTSTRAP] Starting server initialization...');
     const mongoConnected = await connectMongo();
     if (shouldStartHttpServer) {
         const requireDbBeforeListen = String(process.env.REQUIRE_DB_BEFORE_LISTEN || 'true').trim().toLowerCase() !== 'false';
         if (requireDbBeforeListen && !mongoConnected) {
+            log.error('[BOOTSTRAP] Required DB not connected, exiting...');
             process.exit(1);
             return;
         }
-        app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+        app.listen(PORT, () => {
+            log.info('[SERVER] Listening', { port: PORT, nodeEnv: process.env.NODE_ENV || 'development' });
+        });
+    } else {
+        log.info('[BOOTSTRAP] Running in serverless mode (no HTTP server)');
     }
 };
 

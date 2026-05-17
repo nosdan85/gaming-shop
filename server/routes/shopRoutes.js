@@ -48,6 +48,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { uploadToImgbb } = require('../utils/imgbbService');
+const { log } = require('../utils/loggingService');
 
 const PRODUCT_IMAGE_DIR = path.resolve(process.env.PRODUCT_IMAGE_DIR || './uploads/product-images');
 try { fs.mkdirSync(PRODUCT_IMAGE_DIR, { recursive: true }); } catch (_) {}
@@ -1211,18 +1212,40 @@ const exchangeDiscordAuthCode = async (code, redirectUri) => {
 };
 
 router.post('/auth/discord', discordAuthLimiter, async (req, res) => {
+    const startTime = Date.now();
     const { code: rawCode, redirect_uri: frontendRedirectUri } = req.body || {};
     const code = typeof rawCode === 'string' ? rawCode.trim() : '';
     const redirectUri = resolveDiscordAuthRedirectUri(frontendRedirectUri);
-    if (!code) return res.status(400).json({ error: 'Missing authorization code' });
-    if (!redirectUri) return res.status(400).json({ error: 'redirect_uri required' });
+
+    log.info('[AUTH DISCORD] Discord auth request received', {
+        requestId: req.requestId,
+        ip: req.ip,
+        hasCode: Boolean(code),
+        hasRedirectUri: Boolean(redirectUri)
+    });
+
+    if (!code) {
+        log.warn('[AUTH DISCORD] Missing code', { requestId: req.requestId });
+        return res.status(400).json({ error: 'Missing authorization code' });
+    }
+    if (!redirectUri) {
+        log.warn('[AUTH DISCORD] Missing redirect_uri', { requestId: req.requestId });
+        return res.status(400).json({ error: 'redirect_uri required' });
+    }
     const oauthConfigError = getDiscordOauthConfigError();
-    if (oauthConfigError) return res.status(500).json({ error: oauthConfigError });
+    if (oauthConfigError) {
+        log.error('[AUTH DISCORD] OAuth config error', { requestId: req.requestId, error: oauthConfigError });
+        return res.status(500).json({ error: oauthConfigError });
+    }
 
     cleanupAuthSuccessCache();
     const cacheKey = getAuthCodeCacheKey(code);
     const cached = discordAuthSuccessCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
+        log.info('[AUTH DISCORD] Auth success (cached)', {
+            requestId: req.requestId,
+            duration: `${Date.now() - startTime}ms`
+        });
         return res.json(cached.payload);
     }
 
@@ -1230,8 +1253,17 @@ router.post('/auth/discord', discordAuthLimiter, async (req, res) => {
     if (inFlightPromise) {
         try {
             const payload = await inFlightPromise;
+            log.info('[AUTH DISCORD] Auth success (in-flight)', {
+                requestId: req.requestId,
+                duration: `${Date.now() - startTime}ms`
+            });
             return res.json(payload);
         } catch (error) {
+            log.error('[AUTH DISCORD] Auth failed (in-flight)', {
+                requestId: req.requestId,
+                error: error?.message || error,
+                step: error?.discordStep
+            });
             if (error?.code === 'DISCORD_OAUTH_CONFIG_ERROR') {
                 return res.status(500).json({ error: error.message });
             }
@@ -1267,8 +1299,20 @@ router.post('/auth/discord', discordAuthLimiter, async (req, res) => {
             payload,
             expiresAt: Date.now() + AUTH_CODE_CACHE_TTL_MS
         });
+        log.info('[AUTH DISCORD] Auth success', {
+            requestId: req.requestId,
+            discordId: payload?.user?.discordId,
+            duration: `${Date.now() - startTime}ms`
+        });
         return res.json(payload);
     } catch (error) {
+        log.error('[AUTH DISCORD] Auth failed', {
+            requestId: req.requestId,
+            error: error?.message || error,
+            step: error?.discordStep,
+            status: error?.response?.status,
+            duration: `${Date.now() - startTime}ms`
+        });
         if (error?.code === 'DISCORD_OAUTH_CONFIG_ERROR') {
             return res.status(500).json({ error: error.message });
         }
@@ -1276,12 +1320,6 @@ router.post('/auth/discord', discordAuthLimiter, async (req, res) => {
         const data = error.response?.data;
         const message = getDiscordErrorMessage(data);
         const step = error.discordStep || 'unknown';
-        console.error('Discord auth error:', {
-            step,
-            status,
-            retryAfterHeader: error.response?.headers?.['retry-after'],
-            data: data || error.message
-        });
 
         if (isDiscordTemporaryBlock(status, data)) {
             if (shouldApplyDiscordAuthCooldown(status, data)) {
@@ -1846,12 +1884,23 @@ router.post('/wallet/admin/topups/:transactionId/reject', authRequired, async (r
 });
 
 router.post('/checkout', checkoutLimiter, async (req, res) => {
+    const startTime = Date.now();
+    log.info('[CHECKOUT] Incoming checkout request', {
+        requestId: req.requestId,
+        ip: req.ip,
+        userAgent: req.get('user-agent'),
+        hasCartItems: Array.isArray(req.body?.cartItems) && req.body.cartItems.length > 0,
+        cartItemCount: Array.isArray(req.body?.cartItems) ? req.body.cartItems.length : 0,
+        hasCoupon: Boolean(req.body?.couponCode)
+    });
+
     try {
         const viewer = getOptionalRequestUser(req);
         const discordId = String(viewer?.discordId || '').trim();
         const cartItems = Array.isArray(req.body?.cartItems) ? req.body.cartItems : [];
         const couponCodeRaw = req.body?.couponCode;
         if (cartItems.length === 0) {
+            log.warn('[CHECKOUT] Empty cart items', { requestId: req.requestId });
             return res.status(400).json({ error: 'Invalid request payload' });
         }
 
@@ -1859,6 +1908,11 @@ router.post('/checkout', checkoutLimiter, async (req, res) => {
 
         const cartSummary = await calculateCartSummary({ cartItems, couponCodeRaw });
         if (cartSummary.error) {
+            log.warn('[CHECKOUT] Cart summary error', {
+                requestId: req.requestId,
+                discordId,
+                error: cartSummary.error
+            });
             return res.status(cartSummary.status || 400).json({ error: cartSummary.error });
         }
 
@@ -1873,6 +1927,7 @@ router.post('/checkout', checkoutLimiter, async (req, res) => {
 
         const totalCents = moneyToCents(totalAmount);
         if (!Number.isFinite(totalCents) || totalCents <= 0) {
+            log.warn('[CHECKOUT] Invalid total', { requestId: req.requestId, totalAmount });
             return res.status(400).json({ error: 'Invalid checkout total' });
         }
 
@@ -1931,8 +1986,23 @@ router.post('/checkout', checkoutLimiter, async (req, res) => {
         }
 
         if (!newOrder) {
+            log.error('[CHECKOUT] Failed to create order after retries', { requestId: req.requestId });
             return res.status(503).json({ error: 'Could not create order right now. Please retry.' });
         }
+
+        log.info('[CHECKOUT] Order created successfully', {
+            requestId: req.requestId,
+            orderId,
+            discordId,
+            discordUsername: dbUser?.discordUsername || 'anonymous',
+            subtotalAmount,
+            discountAmount,
+            discountPercent,
+            couponCode,
+            totalAmount,
+            itemCount: items.length,
+            duration: `${Date.now() - startTime}ms`
+        });
 
         return res.json({
             success: true,
@@ -1952,7 +2022,12 @@ router.post('/checkout', checkoutLimiter, async (req, res) => {
             ticketError: ''
         });
     } catch (err) {
-        console.error('Checkout error:', err);
+        log.error('[CHECKOUT] Server error', {
+            requestId: req.requestId,
+            error: err?.message || err,
+            stack: err?.stack,
+            duration: `${Date.now() - startTime}ms`
+        });
         return res.status(500).json({ error: 'Server error' });
     }
 });
@@ -2045,9 +2120,20 @@ router.get('/order-payment-info', async (req, res) => {
 });
 
 router.post('/create-payment', async (req, res) => {
+    const startTime = Date.now();
+    const { orderId, method } = req.body || {};
+
+    log.info('[CREATE_PAYMENT] Request received', {
+        requestId: req.requestId,
+        ip: req.ip,
+        orderId,
+        method,
+        hasAuth: Boolean(req.headers.authorization)
+    });
+
     try {
-        const { orderId, method } = req.body || {};
         if (!orderId || !method) {
+            log.warn('[CREATE_PAYMENT] Missing params', { requestId: req.requestId, orderId, method });
             return res.status(400).json({ error: 'Missing orderId or method' });
         }
 
@@ -2055,13 +2141,23 @@ router.post('/create-payment', async (req, res) => {
         const { order, status, error } = viewer?.discordId
             ? await getOwnedOrder(orderId, viewer.discordId)
             : await getPublicOrder(orderId);
-        if (!order) return res.status(status).json({ error });
+        if (!order) {
+            log.warn('[CREATE_PAYMENT] Order not found', { requestId: req.requestId, orderId, status });
+            return res.status(status).json({ error });
+        }
 
         if (order.status === 'Completed') {
+            log.warn('[CREATE_PAYMENT] Order already completed', { requestId: req.requestId, orderId });
             return res.status(400).json({ error: 'Order is already paid' });
         }
 
         if (method === 'paypal_ff') {
+            log.info('[CREATE_PAYMENT] PayPal F&F selected', {
+                requestId: req.requestId,
+                orderId,
+                discordId: order.discordId,
+                totalAmount: order.totalAmount
+            });
             const instructions = await ensurePayPalFfInstructions(order, { sendEmail: true });
             return res.json({
                 type: 'paypal_ff',
@@ -2076,23 +2172,34 @@ router.post('/create-payment', async (req, res) => {
             const backendBaseUrl = getBackendBaseUrl() || getOriginBaseUrl(`${req.protocol}://${req.get('host')}`);
             const clientBaseUrl = getClientBaseUrl() || getOriginBaseUrl(req.headers.origin);
             if (!backendBaseUrl || !clientBaseUrl) {
+                log.error('[CREATE_PAYMENT] Payment URLs not configured', { requestId: req.requestId });
                 return res.status(500).json({ error: 'Payment URLs are not configured' });
             }
 
             const returnUrl = `${backendBaseUrl}/api/shop/paypal/capture?orderId=${encodeURIComponent(orderId)}`;
             const cancelUrl = `${clientBaseUrl}/pay?orderId=${encodeURIComponent(orderId)}`;
+            log.info('[CREATE_PAYMENT] Creating PayPal order', { requestId: req.requestId, orderId, returnUrl, cancelUrl });
+
             const paypal = await withTimeout(
                 createPayPalOrder(orderId, order.totalAmount, returnUrl, cancelUrl),
                 PAYMENT_PROVIDER_TIMEOUT_MS,
                 null
             );
             if (!paypal?.approvalLink || !paypal?.orderId) {
+                log.error('[CREATE_PAYMENT] PayPal order creation failed', { requestId: req.requestId, orderId });
                 return res.status(503).json({ error: 'PayPal is temporarily unavailable. Please use another payment option.' });
             }
 
             await Order.findByIdAndUpdate(order._id, {
                 paypalOrderId: paypal.orderId,
                 paymentMethod: 'paypal'
+            });
+
+            log.info('[CREATE_PAYMENT] PayPal order created', {
+                requestId: req.requestId,
+                orderId,
+                paypalOrderId: paypal.orderId,
+                duration: `${Date.now() - startTime}ms`
             });
 
             return res.json({
@@ -2103,6 +2210,12 @@ router.post('/create-payment', async (req, res) => {
         }
 
         if (method === 'ltc') {
+            log.info('[CREATE_PAYMENT] LTC payment selected', {
+                requestId: req.requestId,
+                orderId,
+                totalAmount: order.totalAmount
+            });
+
             await Order.findByIdAndUpdate(order._id, {
                 paymentMethod: 'ltc',
                 paymentStatus: 'pending'
@@ -2115,9 +2228,16 @@ router.post('/create-payment', async (req, res) => {
             });
         }
 
+        log.warn('[CREATE_PAYMENT] Invalid payment method', { requestId: req.requestId, orderId, method });
         return res.status(400).json({ error: 'Invalid payment method' });
     } catch (err) {
-        console.error('Create payment error:', err);
+        log.error('[CREATE_PAYMENT] Server error', {
+            requestId: req.requestId,
+            orderId,
+            method,
+            error: err?.message || err,
+            duration: `${Date.now() - startTime}ms`
+        });
         return res.status(500).json({ error: 'Server error' });
     }
 });

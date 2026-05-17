@@ -17,6 +17,8 @@ const ProofImage = require('./models/ProofImage');
 const { encryptSecret, decryptSecret } = require('./utils/tokenCrypto');
 const { formatDeliveredUnitsLabel } = require('./utils/itemQuantityDisplay');
 
+const { log } = require('./utils/loggingService');
+
 const DISCORD_API_BASE = 'https://discord.com/api/v10';
 const SNOWFLAKE_PATTERN = /^\d{16,22}$/;
 const BOT_SELF_CACHE_TTL_MS = 10 * 60 * 1000;
@@ -1183,6 +1185,12 @@ const buildCreateChannelPayloads = async ({ channelName, customerId }) => {
 };
 
 const createTicketChannel = async ({ channelName, customerId }) => {
+    log.info('[TICKET] Creating ticket channel', {
+        channelName,
+        customerId,
+        guildId: getGuildId()
+    });
+
     if (!isSnowflake(customerId)) {
         throw new DiscordBotError('Customer Discord ID is invalid', {
             status: 400,
@@ -1192,14 +1200,13 @@ const createTicketChannel = async ({ channelName, customerId }) => {
 
     const inGuild = await checkUserInGuild(customerId);
     if (inGuild === false) {
+        log.warn('[TICKET] User not in guild', { customerId });
         throw new DiscordBotError('You must join the Discord server before creating a ticket.', {
             status: 403,
             code: 'USER_NOT_IN_GUILD'
         });
     }
     if (inGuild === null) {
-        // Discord member lookup can intermittently fail on hosted IPs.
-        // Continue ticket flow and let channel creation be the real gate.
         console.warn(`Ticket guild membership check unavailable for ${customerId}; proceeding with channel create.`);
     }
 
@@ -1210,6 +1217,11 @@ const createTicketChannel = async ({ channelName, customerId }) => {
         let lastRecoverableError = null;
         for (const payload of payloads) {
             try {
+                log.debug('[TICKET] Attempting channel create', {
+                    guildId,
+                    payload: { ...payload, permission_overwrites: '[HIDDEN]' }
+                });
+
                 const res = await botRequest({
                     method: 'post',
                     path: `/guilds/${guildId}/channels`,
@@ -1225,6 +1237,11 @@ const createTicketChannel = async ({ channelName, customerId }) => {
                 });
                 const channelId = String(res?.data?.id || '').trim();
                 if (isSnowflake(channelId)) {
+                    log.info('[TICKET] Channel created successfully', {
+                        channelId,
+                        channelName,
+                        customerId
+                    });
                     return channelId;
                 }
                 lastRecoverableError = new DiscordBotError('Discord returned an invalid channel id', {
@@ -1232,6 +1249,12 @@ const createTicketChannel = async ({ channelName, customerId }) => {
                     code: 'DISCORD_CHANNEL_CREATE_INVALID'
                 });
             } catch (error) {
+                log.error('[TICKET] Channel create failed', {
+                    channelName,
+                    customerId,
+                    error: error?.message || error,
+                    status: error?.status
+                });
                 if (!(error instanceof DiscordBotError)) {
                     throw error;
                 }
@@ -1244,15 +1267,18 @@ const createTicketChannel = async ({ channelName, customerId }) => {
                     }
                     throw error;
                 }
-                // Hard fail: config/permission/unavailable
                 if (error.status === 500 || error.status === 503) {
                     throw error;
                 }
-                // Recoverable candidate mismatch (bad category/role/payload), keep trying fallback payloads
                 lastRecoverableError = error;
             }
         }
 
+        log.error('[TICKET] All channel create attempts failed', {
+            channelName,
+            customerId,
+            lastError: lastRecoverableError?.message
+        });
         throw lastRecoverableError || new DiscordBotError('Could not create Discord ticket channel', {
             status: 503,
             code: 'DISCORD_CHANNEL_CREATE_FAILED'
@@ -1908,11 +1934,25 @@ client.on('messageCreate', async (message) => {
 });
 
 client.on('clientReady', () => {
-    console.log(`Bot online: ${client.user?.tag || client.user?.id || 'unknown'}`);
+    log.info('[DISCORD BOT] Bot is online', {
+        tag: client.user?.tag || 'unknown',
+        userId: client.user?.id || 'unknown'
+    });
 });
 
 client.on('error', (error) => {
-    console.error('Bot error:', error?.message || error);
+    log.error('[DISCORD BOT] Client error', {
+        error: error?.message || error,
+        name: error?.name
+    });
+});
+
+client.on('disconnect', () => {
+    log.warn('[DISCORD BOT] Disconnected from gateway');
+});
+
+client.on('reconnecting', () => {
+    log.info('[DISCORD BOT] Reconnecting to gateway...');
 });
 
 module.exports = {
