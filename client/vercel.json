@@ -30,6 +30,10 @@
       "handle": "filesystem"
     },
     {
+      "src": "/auth/discord/callback",
+      "dest": "/index.html"
+    },
+    {
       "src": "/(.*)",
       "dest": "/index.html"
     }
