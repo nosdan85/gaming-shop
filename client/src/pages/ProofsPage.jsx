@@ -21,7 +21,7 @@ const buildPublicApiClient = () => {
   const runtimeHost = typeof window !== 'undefined' ? String(window.location.hostname || '').trim().toLowerCase() : '';
   const isKnownProductionHost = ['nosmarket.com', 'www.nosmarket.com', 'nosdan.store', 'www.nosdan.store'].includes(runtimeHost);
   const resolvedApiBaseUrl = configuredApiBaseUrl
-    || (isKnownProductionHost ? (fallbackApiBaseUrl || 'https://gaming-shop-2.onrender.com') : '');
+    || (isKnownProductionHost ? (fallbackApiBaseUrl || 'https://api.nosdan.store') : '');
 
   const client = axios.create({ baseURL: resolvedApiBaseUrl });
   delete client.defaults.headers.common.Authorization;

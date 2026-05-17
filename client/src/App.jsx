@@ -19,7 +19,7 @@ const fallbackApiBaseUrl = String(import.meta.env.VITE_FALLBACK_API_URL || '').t
 const runtimeHost = typeof window !== 'undefined' ? String(window.location.hostname || '').trim().toLowerCase() : '';
 const isNosMarketHost = runtimeHost === 'nosmarket.com' || runtimeHost === 'www.nosmarket.com';
 const resolvedApiBaseUrl = configuredApiBaseUrl
-  || (isNosMarketHost ? (fallbackApiBaseUrl || 'https://gaming-shop-2.onrender.com') : '');
+  || (isNosMarketHost ? (fallbackApiBaseUrl || 'https://api.nosdan.store') : '');
 if (resolvedApiBaseUrl) {
   axios.defaults.baseURL = resolvedApiBaseUrl;
 }

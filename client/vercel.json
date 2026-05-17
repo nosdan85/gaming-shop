@@ -20,11 +20,11 @@
     },
     {
       "src": "/ipn.php",
-      "dest": "https://gaming-shop-2.onrender.com/ipn.php"
+      "dest": "https://api.nosdan.store/ipn.php"
     },
     {
       "src": "/api/(.*)",
-      "dest": "https://gaming-shop-2.onrender.com/api/$1"
+      "dest": "https://api.nosdan.store/api/$1"
     },
     {
       "handle": "filesystem"
