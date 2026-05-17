@@ -140,7 +140,7 @@ const BannerAndBestSellerRow = ({ banners, bestSellers, allProducts, bannerHeigh
                 if (el.naturalWidth && el.naturalHeight) {
                   const containerW = el.parentElement?.clientWidth || 800;
                   const h = Math.round(containerW * el.naturalHeight / el.naturalWidth);
-                  onBannerHeightChange(Math.min(Math.max(h, 180), 440));
+                  onBannerHeightChange(Math.min(Math.max(h, 180), 360));
                 }
               }}
               onError={(e) => { e.currentTarget.style.display = 'none'; }}
@@ -202,13 +202,13 @@ const BannerAndBestSellerRow = ({ banners, bestSellers, allProducts, bannerHeigh
         {bestSellers.length > 0 ? (
           <div
             ref={bsScrollRef}
-            className="flex-1 flex gap-2 overflow-x-auto pb-1 scrollbar-hide rounded-[12px] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-2"
+            className="flex-1 flex gap-3 overflow-x-auto pb-1 scrollbar-hide rounded-[12px] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3"
             style={{ minHeight: bannerHeight }}
             onMouseEnter={pauseBsScroll}
             onMouseLeave={startBsScroll}
           >
             {bestSellers.map((product) => (
-              <div key={product._id} className="shrink-0 w-[160px]">
+              <div key={product._id} className="shrink-0" style={{ width: 200, minWidth: 180 }}>
                 <ProductCard product={product} onOpenDetail={() => {}} />
               </div>
             ))}
@@ -269,7 +269,7 @@ const Home = () => {
   const [sortBy, setSortBy] = useState('none');
   const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'section'
   // Shared banner height so banner and best seller panel stay aligned
-  const [bannerHeight, setBannerHeight] = useState(280);
+  const [bannerHeight, setBannerHeight] = useState(260);
 
   const closeProofNotice = () => {
     setShowProofNotice(false);

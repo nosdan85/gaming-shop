@@ -104,6 +104,15 @@ body {
   background: var(--color-text-secondary);
 }
 
+/* Hide scrollbar but keep functionality */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
 @keyframes popIn {
   0% {
     opacity: 0;
