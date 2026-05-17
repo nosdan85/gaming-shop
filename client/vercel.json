@@ -1,41 +1,30 @@
 {
   "version": 2,
   "cleanUrls": true,
-  "routes": [
+  "rewrites": [
     {
-      "src": "/products/(.*)",
-      "dest": "/products/$1"
+      "source": "/auth/discord/callback",
+      "destination": "/index.html"
     },
     {
-      "src": "/pictures/(.*)",
-      "dest": "/pictures/$1"
+      "source": "/api/shop/auth/discord",
+      "destination": "https://api.nosdan.store/api/shop/auth/discord"
     },
     {
-      "src": "/favicon.png",
-      "dest": "/favicon.png"
+      "source": "/api/shop/auth/discord-bridge",
+      "destination": "https://api.nosdan.store/api/shop/auth/discord-bridge"
     },
     {
-      "src": "/site-logo.png",
-      "dest": "/site-logo.png"
+      "source": "/api/:path*",
+      "destination": "https://api.nosdan.store/api/:path*"
     },
     {
-      "src": "/ipn.php",
-      "dest": "https://api.nosdan.store/ipn.php"
+      "source": "/ipn.php",
+      "destination": "https://api.nosdan.store/ipn.php"
     },
     {
-      "src": "/api/(.*)",
-      "dest": "https://api.nosdan.store/api/$1"
-    },
-    {
-      "handle": "filesystem"
-    },
-    {
-      "src": "/auth/discord/callback",
-      "dest": "/index.html"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/index.html"
+      "source": "/:path*",
+      "destination": "/index.html"
     }
   ]
 }
