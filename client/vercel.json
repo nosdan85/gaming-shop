@@ -1,29 +1,19 @@
 {
   "version": 2,
   "cleanUrls": true,
-  "rewrites": [
+  "redirects": [
     {
-      "source": "/auth/discord/callback",
-      "destination": "/index.html"
-    },
-    {
-      "source": "/api/shop/auth/discord",
-      "destination": "https://api.nosdan.store/api/shop/auth/discord"
-    },
-    {
-      "source": "/api/shop/auth/discord-bridge",
-      "destination": "https://api.nosdan.store/api/shop/auth/discord-bridge"
-    },
-    {
-      "source": "/api/:path*",
-      "destination": "https://api.nosdan.store/api/:path*"
+      "source": "/api/(.*)",
+      "destination": "https://api.nosdan.store/api/$1"
     },
     {
       "source": "/ipn.php",
       "destination": "https://api.nosdan.store/ipn.php"
-    },
+    }
+  ],
+  "rewrites": [
     {
-      "source": "/:path*",
+      "source": "/(.*)",
       "destination": "/index.html"
     }
   ]
