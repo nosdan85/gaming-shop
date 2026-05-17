@@ -107,7 +107,7 @@ const ProductDetailModal = ({ product, onClose }) => {
                   setIsPortraitImage(naturalHeight > (naturalWidth * 1.05));
                 }}
                 onError={(e) => {
-                  e.currentTarget.src = '/products/aura-chest.png';
+                  e.currentTarget.src = getProductImageUrl('');
                   setIsPortraitImage(false);
                 }}
               />

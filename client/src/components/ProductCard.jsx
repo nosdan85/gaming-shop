@@ -25,9 +25,8 @@ const ProductCard = ({ product, onOpenDetail }) => {
       }
     })();
     const primary = getProductImageUrl(decodedName);
-    const fallback1 = `/products/${encodeURIComponent(decodedName)}`;
-    const fallback2 = `/products/${decodedName}`;
-    return Array.from(new Set([primary, fallback1, fallback2, '/products/aura-chest.png']));
+    const fallback = '/products/aura-chest.png';
+    return [primary, fallback];
   }, [product?.image]);
   const productImageSrc = imageCandidates[Math.min(imageVariantIndex, imageCandidates.length - 1)];
 

@@ -106,9 +106,12 @@ app.use('/api/admin', require('./routes/adminRoutes'));
 
 // Product image static serve
 const path = require('path');
-const PRODUCT_IMAGE_DIR = path.resolve(process.env.PRODUCT_IMAGE_DIR || './uploads/product-images');
 const fs = require('fs');
+const PRODUCT_IMAGE_DIR = path.resolve(process.env.PRODUCT_IMAGE_DIR || './uploads/product-images');
 try { fs.mkdirSync(PRODUCT_IMAGE_DIR, { recursive: true }); } catch (_) {}
+// Serve uploaded images at /products/ (same path as client/public/products/)
+app.use('/products', express.static(PRODUCT_IMAGE_DIR));
+// Also keep /api/product-images for backward compatibility
 app.use('/api/product-images', express.static(PRODUCT_IMAGE_DIR));
 
 app.get('/', (req, res) => res.status(200).json({ status: 'ok', service: 'gaming-shop' }));
