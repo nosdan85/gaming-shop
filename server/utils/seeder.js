@@ -1,4 +1,4 @@
-const dotenv = require('dotenv');
+﻿const dotenv = require('dotenv');
 const path = require('path');
 
 dotenv.config({ path: path.join(__dirname, '../.env') });
@@ -142,11 +142,13 @@ const importData = async () => {
         console.log(`Inserting ${products.length} Sailor Piece products...`);
         await Product.insertMany(products);
         console.log('Data imported successfully.');
-        process.exit();
     } catch (error) {
         console.error('Seed error:', error);
-        process.exit(1);
+        process.exitCode = 1;
+    } finally {
+        await mongoose.disconnect().catch(() => {});
     }
 };
 
 importData();
+

@@ -1070,11 +1070,10 @@ const sendAutoVouchFromTicketImages = async ({ order, imageUrls }) => {
     }
 
     try {
-        // Only store URLs, not Buffer data, to avoid RAM bloat in MongoDB
         await saveProofRecord({
             order,
             imageUrls: Array.from(new Set(uploadedImageUrls)),
-            imageBuffers: [],  // Don't store binary data - URLs are sufficient
+            imageBuffers: uploadedImageBuffers,
             vouchMessageIds: sentMessageIds
         });
     } catch (error) {

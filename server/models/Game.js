@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+﻿const mongoose = require('mongoose');
 
 const gameSchema = new mongoose.Schema({
     name: { type: String, required: true, trim: true },
@@ -7,7 +7,8 @@ const gameSchema = new mongoose.Schema({
     active: { type: Boolean, default: true }
 }, { timestamps: true });
 
-gameSchema.index({ slug: 1 }, { unique: true });
+// slug index already handled by unique: true in schema definition
 gameSchema.index({ active: 1 });
 
 module.exports = mongoose.model('Game', gameSchema);
+

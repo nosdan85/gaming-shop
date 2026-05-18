@@ -57,15 +57,31 @@ exports.getAllOrders = async (req, res) => {
     const startTime = Date.now();
     logAdminAction('GET_ALL_ORDERS', req);
     try {
-        const orders = await Order.find().sort({ createdAt: -1 });
+        const page = Math.max(1, Number(req.query?.page) || 1);
+        const limit = Math.min(200, Math.max(1, Number(req.query?.limit) || 50));
+        const skip = (page - 1) * limit;
+
+        const [orders, total] = await Promise.all([
+            Order.find().sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+            Order.countDocuments()
+        ]);
 
         log.info('[ADMIN GET_ALL_ORDERS] Success', {
             requestId: req.requestId,
+            page,
+            limit,
             count: orders.length,
+            total,
             duration: `${Date.now() - startTime}ms`
         });
 
-        return res.json(orders);
+        return res.json({
+            orders,
+            page,
+            limit,
+            total,
+            totalPages: Math.ceil(total / limit)
+        });
     } catch (error) {
         log.error('[ADMIN GET_ALL_ORDERS] Error', {
             requestId: req.requestId,
