@@ -1,4 +1,4 @@
-import { Routes, Route } from 'react-router-dom';
+﻿import { Routes, Route } from 'react-router-dom';
 import axios from 'axios';
 import Navbar from './components/Navbar';
 import Home from './pages/Home';
@@ -17,9 +17,8 @@ import CartModal from './components/CartModal';
 const configuredApiBaseUrl = String(import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
 const fallbackApiBaseUrl = String(import.meta.env.VITE_FALLBACK_API_URL || '').trim().replace(/\/+$/, '');
 const runtimeHost = typeof window !== 'undefined' ? String(window.location.hostname || '').trim().toLowerCase() : '';
-const isNosMarketHost = runtimeHost === 'nosmarket.com' || runtimeHost === 'www.nosmarket.com';
-const resolvedApiBaseUrl = configuredApiBaseUrl
-  || (isNosMarketHost ? (fallbackApiBaseUrl || 'https://api.nosdan.store') : '');
+const isNosMarketHost = runtimeHost === 'nosdan.store' || runtimeHost === 'www.nosdan.store';
+const resolvedApiBaseUrl = configuredApiBaseUrl || fallbackApiBaseUrl || (isNosMarketHost ? 'https://api.nosdan.store' : '');
 if (resolvedApiBaseUrl) {
   axios.defaults.baseURL = resolvedApiBaseUrl;
 }
@@ -80,3 +79,4 @@ function App() {
 }
 
 export default App;
+
